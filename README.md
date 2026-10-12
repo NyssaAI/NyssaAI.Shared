@@ -4,8 +4,8 @@ Reusable .NET libraries maintained as independently versioned packages. Each lib
 
 | Library | Consumer API | Purpose |
 | --- | --- | --- |
-| [Nyssa.Result](Nyssa.Result/README.md) | `NyssaAI.Results.Result`, `Result<T>`, `Error`, `Guard` | Represent outcomes, compose fallible operations, and validate input. |
-| [Nyssa.Configuration](Nyssa.Configuration/README.md) | `NyssaAI.Configuration.IConfiguration` | Persist typed settings and resolve encrypted, OAuth, or provider-backed values. |
+| [NyssaAI.Result](NyssaAI.Result/README.md) | `NyssaAI.Results.Result`, `Result<T>`, `Error`, `Guard` | Represent outcomes, compose fallible operations, and validate input. |
+| [NyssaAI.Configuration](NyssaAI.Configuration/README.md) | `NyssaAI.Configuration.IConfiguration` | Persist typed settings and resolve encrypted, OAuth, or provider-backed values. |
 
 ## Build and test
 
@@ -21,14 +21,14 @@ dotnet build NyssaAI.Shared.slnx --configuration Release
 For one executable tutorial suite:
 
 ```powershell
-dotnet run --project test/Nyssa.Result.UseCaseTests
+dotnet run --project test/NyssaAI.Result.UseCaseTests
 ```
 
 ## Package and repository boundaries
 
 Each package owns its source, unit tests, and documentation. Root `test/` contains public API tutorials and tests that span packages. Shared build settings and dependency versions live at the root. Package names and versions remain independent of the repository name.
 
-Public namespaces use `NyssaAI.*`. Package and assembly names remain `Nyssa.Result` and `Nyssa.Configuration`. Code imported from the former namespaces must update its `using` directives and fully qualified type names to `NyssaAI.Results` and `NyssaAI.Configuration`.
+Library directories, projects, assemblies, and package IDs use `NyssaAI.Result` and `NyssaAI.Configuration`. Public namespaces use `NyssaAI.Results` and `NyssaAI.Configuration`. Consumers of the earlier names must update their package references as well as their `using` directives and fully qualified type names.
 
 Only prepared libraries are included. See the [library import process](docs/library-imports.md) before adding another package.
 

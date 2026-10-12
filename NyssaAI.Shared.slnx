@@ -1,8 +1,8 @@
 <Solution>
-  <Project Path="Nyssa.Configuration/src/Nyssa.Configuration.csproj" />
-  <Project Path="Nyssa.Configuration/test/Nyssa.Configuration.Tests/Configuration.Tests.csproj" />
-  <Project Path="test/Nyssa.Configuration.UseCaseTests/Nyssa.Configuration.UseCaseTests.csproj" />
-  <Project Path="Nyssa.Result/src/Nyssa.Result.csproj" />
-  <Project Path="Nyssa.Result/test/Nyssa.Result.Tests/Nyssa.Result.Tests.csproj" />
-  <Project Path="test/Nyssa.Result.UseCaseTests/Nyssa.Result.UseCaseTests.csproj" />
+  <Project Path="NyssaAI.Configuration/src/NyssaAI.Configuration.csproj" />
+  <Project Path="NyssaAI.Configuration/test/NyssaAI.Configuration.Tests/NyssaAI.Configuration.Tests.csproj" />
+  <Project Path="test/NyssaAI.Configuration.UseCaseTests/NyssaAI.Configuration.UseCaseTests.csproj" />
+  <Project Path="NyssaAI.Result/src/NyssaAI.Result.csproj" />
+  <Project Path="NyssaAI.Result/test/NyssaAI.Result.Tests/NyssaAI.Result.Tests.csproj" />
+  <Project Path="test/NyssaAI.Result.UseCaseTests/NyssaAI.Result.UseCaseTests.csproj" />
 </Solution>

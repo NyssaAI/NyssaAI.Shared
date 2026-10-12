@@ -10,10 +10,10 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     $testProjects = @(
-        'Nyssa.Result/test/Nyssa.Result.Tests/Nyssa.Result.Tests.csproj',
-        'test/Nyssa.Result.UseCaseTests/Nyssa.Result.UseCaseTests.csproj',
-        'Nyssa.Configuration/test/Nyssa.Configuration.Tests/Configuration.Tests.csproj',
-        'test/Nyssa.Configuration.UseCaseTests/Nyssa.Configuration.UseCaseTests.csproj'
+        'NyssaAI.Result/test/NyssaAI.Result.Tests/NyssaAI.Result.Tests.csproj',
+        'test/NyssaAI.Result.UseCaseTests/NyssaAI.Result.UseCaseTests.csproj',
+        'NyssaAI.Configuration/test/NyssaAI.Configuration.Tests/NyssaAI.Configuration.Tests.csproj',
+        'test/NyssaAI.Configuration.UseCaseTests/NyssaAI.Configuration.UseCaseTests.csproj'
     )
     foreach ($testProject in $testProjects) {
         $projectDirectory = Split-Path -Parent $testProject

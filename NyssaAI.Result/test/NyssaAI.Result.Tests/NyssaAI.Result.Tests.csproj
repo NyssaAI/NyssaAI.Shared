@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- xUnit v3 supplies the executable test runner. -->
+    <OutputType>Exe</OutputType>
+    <RootNamespace>NyssaAI.Results.Tests</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- D10 opt-out: test types carry no public API contract, so XML docs are not required
+         on them. Every other Directory.Build.props setting still applies. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NyssaAI.Result.csproj" />
+  </ItemGroup>
+
+</Project>
