@@ -34,4 +34,4 @@ Only prepared libraries are included. See the [library import process](docs/libr
 
 ## Licensing
 
-Commercial licensing terms are being finalized. No open-source or commercial license is offered in this repository yet; see the [licensing policy under preparation](docs/licensing-policy.md). Packages are not published by the build workflow.
+These libraries are source-available under the unmodified [PolyForm Small Business License 1.0.0](LICENSE.txt). Businesses outside its eligibility limits need a separate paid commercial license. See the [licensing policy](docs/licensing-policy.md) for the thresholds and commercial licensing route. Each NuGet package includes the license; the build workflow does not publish packages.
