@@ -132,7 +132,7 @@ function Stop-RepositoryPostgres {
         & $Fixture.Executable rm --force $Fixture.Container *> $null
     }
     elseif ($Fixture.Kind -eq 'Native') {
-        & $Fixture.Executable --pgdata=$Fixture.DataDirectory --mode=immediate --wait stop *> $null
+        & $Fixture.Executable --pgdata $Fixture.DataDirectory --mode=immediate --wait stop *> $null
     }
     if ($LASTEXITCODE -ne 0) { Write-Warning 'The temporary PostgreSQL instance could not be stopped.' }
 }
