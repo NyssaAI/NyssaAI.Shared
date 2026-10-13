@@ -189,7 +189,11 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     }
 
     /// <inheritdoc/>
-    public async ValueTask<Result<string>> GetAsync(string @namespace, string key, CancellationToken cancellationToken = default)
+    public ValueTask<Result<string>> GetAsync(string @namespace, string key, CancellationToken cancellationToken = default) =>
+        ReadValueAsync(@namespace, key, encodeString: false, cancellationToken);
+
+    private async ValueTask<Result<string>> ReadValueAsync(
+        string @namespace, string key, bool encodeString, CancellationToken cancellationToken)
     {
         var document = _documents.Create(@namespace);
         if (document.IsFailure)
@@ -208,22 +212,31 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
 
         // The entry names the provider that wrote it, so a read never has to be told how the value
         // was stored. An entry naming nothing is a literal and resolves to itself.
+        Result<string> resolved;
         if (entry.IsLiteral)
-            return Result<string>.Success(entry.Value);
-
-        var provider = GetProvider(entry.Provider);
-        if (provider.IsFailure)
-            return Result<string>.Failure(provider.Errors);
-
-        var resolved = await provider.Value.ReadAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
-        if (resolved.IsFailure)
+            resolved = Result<string>.Success(entry.Value);
+        else
         {
-            _logger?.LogWarning(
-                "Provider '{Provider}' could not resolve {Namespace}/{Key} ({Category})",
-                entry.Provider, @namespace, key, resolved.Errors[0].Category);
+            var provider = GetProvider(entry.Provider);
+            if (provider.IsFailure)
+                return Result<string>.Failure(provider.Errors);
+
+            resolved = await provider.Value.ReadAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
+            if (resolved.IsFailure)
+            {
+                _logger?.LogWarning(
+                    "Provider '{Provider}' could not resolve {Namespace}/{Key} ({Category})",
+                    entry.Provider, @namespace, key, resolved.Errors[0].Category);
+                return resolved;
+            }
         }
 
-        return resolved;
+        // Namespace properties and SetAsync store strings without JSON quotes. Typed string
+        // reads encode that text before deserialization, preserving quotes and JSON-looking text
+        // while still honoring the caller's converter. Already-encoded JSON is never reinterpreted.
+        return encodeString && !entry.IsJsonValue
+            ? Result<string>.Success(JsonSerializer.Serialize(resolved.Value, ConfigurationJsonContext.Default.String))
+            : resolved;
     }
 
     /// <inheritdoc/>
@@ -490,7 +503,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     {
         var value = key is null
             ? await GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
-            : await GetAsync(@namespace, key, cancellationToken).ConfigureAwait(false);
+            : await ReadValueAsync(@namespace, key, encodeString: typeof(TValue) == typeof(string), cancellationToken).ConfigureAwait(false);
         if (value.IsFailure)
             return Result<TValue>.Failure(value.Errors);
 
@@ -521,7 +534,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     {
         var value = key is null
             ? await GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
-            : await GetAsync(@namespace, key, cancellationToken).ConfigureAwait(false);
+            : await ReadValueAsync(@namespace, key, encodeString: typeof(TValue) == typeof(string), cancellationToken).ConfigureAwait(false);
         if (value.IsFailure)
             return Result<TValue>.Failure(value.Errors);
 

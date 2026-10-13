@@ -16,6 +16,7 @@ namespace NyssaAI.Configuration.Values;
 /// </remarks>
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(Dictionary<string, ConfigurationValue>))]
+[JsonSerializable(typeof(string))]
 internal sealed partial class ConfigurationJsonContext : JsonSerializerContext
 {
 }

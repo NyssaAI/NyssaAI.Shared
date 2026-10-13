@@ -112,6 +112,11 @@ public interface IConfiguration
         CancellationToken cancellationToken = default);
 
     /// <summary>Reads and deserializes one value with the reflection-based JSON serializer.</summary>
+    /// <remarks>
+    /// String reads accept unencoded text from SetAsync or namespace settings and JSON-encoded
+    /// strings from keyed SetAsAsync writes. The entry's JSON metadata determines which form is
+    /// stored; text resembling JSON is preserved. Other types deserialize the stored JSON text.
+    /// </remarks>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     ValueTask<TValue> GetAsAsync<TValue>(
@@ -120,6 +125,10 @@ public interface IConfiguration
         CancellationToken cancellationToken = default);
 
     /// <summary>Reads and deserializes one value with a source-generated JSON type description.</summary>
+    /// <remarks>
+    /// String reads use the entry's JSON metadata to distinguish unencoded text from JSON strings,
+    /// then apply the supplied type description. Other types deserialize the stored JSON text.
+    /// </remarks>
     ValueTask<TValue> GetAsAsync<TValue>(
         string @namespace,
         string key,

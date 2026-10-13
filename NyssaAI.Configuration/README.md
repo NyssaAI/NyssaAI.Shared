@@ -60,6 +60,7 @@ The methods have a few behaviors to account for when using them:
 - `ListAsync` returns keys in ordinal order, or an empty list when the namespace does not exist.
 - `RemoveAsync` succeeds when the key is already absent. For a key stored in a vault, it removes the local pointer and leaves the remote secret in place.
 - `GetAsAsync<TValue>` and `SetAsAsync<TValue>` each have reflection-based and source-generated JSON overloads.
+- Keyed `GetAsAsync<string>` reads string properties saved through a namespace object, raw strings saved with `SetAsync`, and JSON strings saved with keyed `SetAsAsync`. Stored JSON metadata distinguishes these forms, so unencoded text such as `123`, `null`, or text containing literal quotes stays intact. Both typed read overloads follow this rule. Other requested types continue to deserialize the stored text as JSON.
 
 These operations are expected to succeed. Reads return the value directly, and writes complete without a return value. An unexpected failure throws an exception. Failures reported by the store or a provider throw `ResultException`, which retains the error details; cancellation throws `OperationCanceledException`. There is no `Result` to check or unwrap.
 
