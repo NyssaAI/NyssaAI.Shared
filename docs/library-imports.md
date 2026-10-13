@@ -10,6 +10,6 @@ Before an import is published:
 4. Inspect the NuGet package contents and compile a consumer against the package, rather than a project reference.
 5. Review the exact files and diff entering public Git history. Record unresolved limitations rather than calling unverified behavior complete.
 
-The initial imports are `NyssaAI.Result` and `NyssaAI.Configuration`, using the `NyssaAI.*` namespaces. The separately packaged Bitwarden provider and its live integration tests await clarification of SDK distribution rights; see the [Bitwarden import review](bitwarden-import-review.md). Configuration's vault contracts and isolated fake-vault tests are included. Other libraries are selected individually once their dependencies are present.
+The prepared libraries are `NyssaAI.Result`, `NyssaAI.Configuration`, `NyssaAI.Logging`, and `NyssaAI.Repository`, using the `NyssaAI.*` namespaces. The [Logging and Repository decision notes](logging-repository-decisions.md) describe their package boundaries and verification. The separately packaged Bitwarden provider and its live integration tests await clarification of SDK distribution rights; see the [Bitwarden import review](bitwarden-import-review.md). Configuration's vault contracts and isolated fake-vault tests are included. Other libraries are selected individually once their dependencies are present.
 
-The build workflow verifies source and tests. Creating a repository or pushing code does not publish a NuGet package. Package publication is a separate release action.
+The build workflow verifies source, tests, package contents, a separate package consumer, and Linux native smoke applications. Creating a repository or pushing code does not publish a NuGet package. Package publication is a separate release action.

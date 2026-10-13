@@ -5,4 +5,13 @@
   <Project Path="NyssaAI.Result/src/NyssaAI.Result.csproj" />
   <Project Path="NyssaAI.Result/test/NyssaAI.Result.Tests/NyssaAI.Result.Tests.csproj" />
   <Project Path="test/NyssaAI.Result.UseCaseTests/NyssaAI.Result.UseCaseTests.csproj" />
+  <Project Path="NyssaAI.Logging/src/NyssaAI.Logging.csproj" />
+  <Project Path="NyssaAI.Logging/test/NyssaAI.Logging.Tests/NyssaAI.Logging.Tests.csproj" />
+  <Project Path="test/NyssaAI.Logging.UseCaseTests/NyssaAI.Logging.UseCaseTests.csproj" />
+  <Project Path="test/NyssaAI.Logging.AotSmoke/NyssaAI.Logging.AotSmoke.csproj" />
+  <Project Path="NyssaAI.Repository/src/NyssaAI.Repository.csproj" />
+  <Project Path="NyssaAI.Repository/test/NyssaAI.Repository.Tests/NyssaAI.Repository.Tests.csproj" />
+  <Project Path="test/NyssaAI.Repository.UseCaseTests/NyssaAI.Repository.UseCaseTests.csproj" />
+  <Project Path="test/NyssaAI.Repository.AotCommands/NyssaAI.Repository.AotCommands.csproj" />
+  <Project Path="test/NyssaAI.Repository.AotSmoke/NyssaAI.Repository.AotSmoke.csproj" />
 </Solution>

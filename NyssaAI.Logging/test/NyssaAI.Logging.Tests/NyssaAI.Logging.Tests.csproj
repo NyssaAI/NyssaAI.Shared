@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>NyssaAI.Logging.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- D10 opt-out: test types carry no public API contract, so XML docs are not
+         required on them. Every other Directory.Build.props setting still applies. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- xUnit v3 test projects are self-executing Microsoft.Testing.Platform hosts -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NyssaAI.Logging.csproj" />
+  </ItemGroup>
+
+</Project>
