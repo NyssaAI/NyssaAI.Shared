@@ -22,7 +22,7 @@ namespace NyssaAI.Configuration.Client;
 /// One call, three shapes: nothing, a <see cref="NyssaConfigurationOptions"/> instance, or a
 /// delegate that edits one. Nothing is the ordinary shape:
 /// <see cref="NyssaConfigurationOptions"/> arrives with every value already set — the application
-/// named by its entry assembly, its configuration directory beneath the working directory, the
+/// named by its entry assembly, its configuration directory beneath the application's base directory, the
 /// user's manifest beneath the profile directory — so which directory, which vaults, and whether
 /// encryption is on are decided by its manifest section and by this package.
 /// </para>
@@ -44,7 +44,7 @@ public static class ConfigurationServiceCollectionExtensions
 
     private const int KeyLength = 32;
 
-    /// <summary>Registers Nyssa configuration with every default: the entry assembly's name, the working directory, the user's manifest.</summary>
+    /// <summary>Registers Nyssa configuration with every default: the entry assembly's name, the application's base directory, the user's manifest.</summary>
     /// <param name="services">The container to register with.</param>
     public static IServiceCollection AddNyssaConfiguration(this IServiceCollection services) =>
         services.AddNyssaConfiguration(new NyssaConfigurationOptions());
@@ -102,7 +102,7 @@ public static class ConfigurationServiceCollectionExtensions
             //    what the developer said in code. An absent section is the machine nobody has set up,
             //    and the default is written for it.
             var section = ConfigurationManifestReader.ReadApplication(manifestPath, applicationName);
-            if (section.IsFailure && section.Errors[0].Category == ErrorCategory.NotFound && options.Bootstrap.ConfigManifestIsConventional)
+            if (section.IsFailure && section.Errors[0].Category == ErrorCategory.NotFound)
                 section = ProvisionSection(manifestPath, applicationName, options.ConfigDirectory, options.Bootstrap.LockTimeout, logger);
 
             if (section.IsFailure)

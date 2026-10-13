@@ -96,35 +96,35 @@ internal interface IConfigurationValues
     /// <param name="cancellationToken">Token used to cancel the enumeration.</param>
     ValueTask<Result<IReadOnlyList<string>>> ListAsync(string @namespace, CancellationToken cancellationToken = default);
 
-    /// <summary>Reads and deserializes one value with the reflection-based JSON serializer.</summary>
+    /// <summary>Reads one entry, or assembles the namespace when key is null, using reflection-based JSON.</summary>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     ValueTask<Result<TValue>> GetAsAsync<TValue>(
         string @namespace,
-        string key,
+        string? key,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Reads and deserializes one value with a source-generated JSON type description.</summary>
+    /// <summary>Reads one entry, or assembles the namespace when key is null, using source-generated JSON.</summary>
     ValueTask<Result<TValue>> GetAsAsync<TValue>(
         string @namespace,
-        string key,
+        string? key,
         JsonTypeInfo<TValue> typeInfo,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Serializes and writes one value with the reflection-based JSON serializer.</summary>
+    /// <summary>Writes one entry, or the object properties when key is null, using reflection-based JSON.</summary>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     ValueTask<Result> SetAsAsync<TValue>(
         string @namespace,
-        string key,
+        string? key,
         TValue value,
         string? provider = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Serializes and writes one value with a source-generated JSON type description.</summary>
+    /// <summary>Writes one entry, or the object properties when key is null, using source-generated JSON.</summary>
     ValueTask<Result> SetAsAsync<TValue>(
         string @namespace,
-        string key,
+        string? key,
         TValue value,
         JsonTypeInfo<TValue> typeInfo,
         string? provider = null,

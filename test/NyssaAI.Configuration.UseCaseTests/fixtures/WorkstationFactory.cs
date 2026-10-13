@@ -50,8 +50,7 @@ public sealed class WorkstationFactory : IDisposable
     {
         RepositoryTemp.DeleteHome(_home);
 
-        // ConfigDirectory is the one default a tutorial may safely take, because it is <cwd>/.nyssa-ai/config
-        // and the working directory of a test run is the test's own output folder.
+        // ConfigDirectory defaults to .nyssa-ai/config beneath the test executable's output folder.
         var defaults = new NyssaConfigurationOptions();
         if (Directory.Exists(defaults.ConfigDirectory))
             Directory.Delete(defaults.ConfigDirectory, recursive: true);

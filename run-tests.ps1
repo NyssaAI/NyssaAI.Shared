@@ -19,8 +19,8 @@ try {
         $projectDirectory = Split-Path -Parent $testProject
         $assemblyName = [IO.Path]::GetFileNameWithoutExtension($testProject)
         $outputDirectory = Join-Path $projectDirectory "bin/$Configuration/net10.0"
-        # Configuration tutorials exercise the working-directory default. Keep their writes in
-        # their own output folder, so cleanup cannot touch a developer's configuration directory.
+        # Run each suite from its own output folder. Configuration defaults also use this
+        # folder through AppContext.BaseDirectory.
         Push-Location $outputDirectory
         try {
             $runnerArguments = @('-trait-', 'Category=LiveService')

@@ -19,11 +19,11 @@ public sealed class NyssaConfigurationOptionsTests
     }
 
     [Fact]
-    public void Constructor_DefaultsTheConfigDirectoryBeneathTheWorkingDirectory()
+    public void Constructor_DefaultsTheConfigDirectoryBeneathTheApplicationBaseDirectory()
     {
         var options = new NyssaConfigurationOptions();
 
-        Assert.Equal(Path.Combine(Directory.GetCurrentDirectory(), ".nyssa-ai", "config"), options.ConfigDirectory);
+        Assert.Equal(Path.Combine(AppContext.BaseDirectory, ".nyssa-ai", "config"), options.ConfigDirectory);
     }
 
     [Fact]

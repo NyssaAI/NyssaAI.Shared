@@ -8,8 +8,13 @@ namespace NyssaAI.Configuration.Contracts;
 /// named provider. Instances are immutable; <see cref="Validate"/> reports whether the combination
 /// of flags is coherent.
 /// </summary>
+[JsonConverter(typeof(ConfigurationValueJsonConverter))]
 internal sealed record ConfigurationValue
 {
+    /// <summary>Gets whether the resolved value is JSON rather than an unencoded string.</summary>
+    [JsonIgnore]
+    public bool IsJsonValue { get; init; }
+
     /// <summary>Gets the stored value: the literal itself, or the provider-specific reference.</summary>
     [JsonPropertyName("value")]
     public required string Value { get; init; }

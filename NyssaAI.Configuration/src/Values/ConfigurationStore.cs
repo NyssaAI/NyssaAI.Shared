@@ -19,7 +19,7 @@ namespace NyssaAI.Configuration.Values;
 /// The store accepts an <see cref="ILogger"/> and chooses no destination; provider failures are
 /// reported there once, by namespace and key, never by value.
 /// </remarks>
-internal sealed class ConfigurationStore : IConfigurationValues
+internal sealed partial class ConfigurationStore : IConfigurationValues
 {
     private const string OpenGenericJustification =
         "TValue is caller-supplied and cannot be enumerated into a source-generated context at this project's compile time; "
@@ -227,12 +227,17 @@ internal sealed class ConfigurationStore : IConfigurationValues
     }
 
     /// <inheritdoc/>
-    public async ValueTask<Result> SetAsync(
+    public ValueTask<Result> SetAsync(
         string @namespace,
         string key,
         string value,
         string? provider = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SetValueAsync(@namespace, key, value, provider, false, cancellationToken);
+
+    private async ValueTask<Result> SetValueAsync(
+        string @namespace, string key, string value, string? provider,
+        bool isJsonValue, CancellationToken cancellationToken)
     {
         var document = _documents.Create(@namespace);
         if (document.IsFailure)
@@ -259,7 +264,7 @@ internal sealed class ConfigurationStore : IConfigurationValues
 
                 if (destination.Length == 0)
                 {
-                    entries[key] = new ConfigurationValue { Value = value };
+                    entries[key] = new ConfigurationValue { Value = value, IsJsonValue = isJsonValue };
                     return Result.Success();
                 }
 
@@ -276,7 +281,7 @@ internal sealed class ConfigurationStore : IConfigurationValues
                     return Result.Failure(written.Errors);
                 }
 
-                entries[key] = written.Value;
+                entries[key] = written.Value with { IsJsonValue = isJsonValue };
                 return Result.Success();
             },
             cancellationToken).ConfigureAwait(false);
@@ -359,7 +364,7 @@ internal sealed class ConfigurationStore : IConfigurationValues
 
                 if (toProvider.Length == 0)
                 {
-                    entries[key] = new ConfigurationValue { Value = plaintext.Value };
+                    entries[key] = new ConfigurationValue { Value = plaintext.Value, IsJsonValue = existing.IsJsonValue };
                 }
                 else
                 {
@@ -371,7 +376,7 @@ internal sealed class ConfigurationStore : IConfigurationValues
                     if (written.IsFailure)
                         return Result.Failure(written.Errors);
 
-                    entries[key] = written.Value;
+                    entries[key] = written.Value with { IsJsonValue = existing.IsJsonValue };
                 }
 
                 source = existing;
@@ -476,14 +481,16 @@ internal sealed class ConfigurationStore : IConfigurationValues
     /// <see cref="GetAsAsync{TValue}(string, string, JsonTypeInfo{TValue}, CancellationToken)"/>.
     /// </summary>
     /// <param name="namespace">The namespace holding the entry.</param>
-    /// <param name="key">The key of the entry within the namespace.</param>
+    /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
     /// <param name="cancellationToken">Token used to cancel the read.</param>
     /// <typeparam name="TValue">The type the stored JSON represents.</typeparam>
     [RequiresUnreferencedCode(OpenGenericJustification)]
     [RequiresDynamicCode(OpenGenericJustification)]
-    public async ValueTask<Result<TValue>> GetAsAsync<TValue>(string @namespace, string key, CancellationToken cancellationToken = default)
+    public async ValueTask<Result<TValue>> GetAsAsync<TValue>(string @namespace, string? key, CancellationToken cancellationToken = default)
     {
-        var value = await GetAsync(@namespace, key, cancellationToken).ConfigureAwait(false);
+        var value = key is null
+            ? await GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
+            : await GetAsync(@namespace, key, cancellationToken).ConfigureAwait(false);
         if (value.IsFailure)
             return Result<TValue>.Failure(value.Errors);
 
@@ -500,19 +507,21 @@ internal sealed class ConfigurationStore : IConfigurationValues
         }
 
         return deserialized is null
-            ? Result<TValue>.Failure(ValueWasNull(@namespace, key))
+            ? Result<TValue>.Failure(ValueWasNull(@namespace, key ?? "namespaceSettings"))
             : Result<TValue>.Success(deserialized);
     }
 
     /// <summary>Reads one value and deserializes it from JSON through a source-generated type description.</summary>
     /// <param name="namespace">The namespace holding the entry.</param>
-    /// <param name="key">The key of the entry within the namespace.</param>
+    /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
     /// <param name="typeInfo">The source-generated description of <typeparamref name="TValue"/>.</param>
     /// <param name="cancellationToken">Token used to cancel the read.</param>
     /// <typeparam name="TValue">The type the stored JSON represents.</typeparam>
-    public async ValueTask<Result<TValue>> GetAsAsync<TValue>(string @namespace, string key, JsonTypeInfo<TValue> typeInfo, CancellationToken cancellationToken = default)
+    public async ValueTask<Result<TValue>> GetAsAsync<TValue>(string @namespace, string? key, JsonTypeInfo<TValue> typeInfo, CancellationToken cancellationToken = default)
     {
-        var value = await GetAsync(@namespace, key, cancellationToken).ConfigureAwait(false);
+        var value = key is null
+            ? await GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
+            : await GetAsync(@namespace, key, cancellationToken).ConfigureAwait(false);
         if (value.IsFailure)
             return Result<TValue>.Failure(value.Errors);
 
@@ -527,7 +536,7 @@ internal sealed class ConfigurationStore : IConfigurationValues
         }
 
         return deserialized is null
-            ? Result<TValue>.Failure(ValueWasNull(@namespace, key))
+            ? Result<TValue>.Failure(ValueWasNull(@namespace, key ?? "namespaceSettings"))
             : Result<TValue>.Success(deserialized);
     }
 
@@ -537,14 +546,14 @@ internal sealed class ConfigurationStore : IConfigurationValues
     /// <see cref="SetAsAsync{TValue}(string, string, TValue, JsonTypeInfo{TValue}, string, CancellationToken)"/>.
     /// </summary>
     /// <param name="namespace">The namespace to hold the entry.</param>
-    /// <param name="key">The key of the entry within the namespace.</param>
+    /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
     /// <param name="value">The value to serialize and store.</param>
     /// <param name="provider">Where the value is stored; null keeps the existing entry's provider.</param>
     /// <param name="cancellationToken">Token used to cancel the write.</param>
     /// <typeparam name="TValue">The type being serialized.</typeparam>
     [RequiresUnreferencedCode(OpenGenericJustification)]
     [RequiresDynamicCode(OpenGenericJustification)]
-    public ValueTask<Result> SetAsAsync<TValue>(string @namespace, string key, TValue value, string? provider = null, CancellationToken cancellationToken = default)
+    public ValueTask<Result> SetAsAsync<TValue>(string @namespace, string? key, TValue value, string? provider = null, CancellationToken cancellationToken = default)
     {
         // System.Text.Json throws for a type it cannot serialize; the boundary is here.
         string serialized;
@@ -557,18 +566,21 @@ internal sealed class ConfigurationStore : IConfigurationValues
             return ValueTask.FromResult(Result.Failure(Error.FromExceptions(exception, "The configuration value could not be stored.", ErrorCategory.Validation)));
         }
 
-        return SetAsync(@namespace, key, serialized, provider, cancellationToken);
+        if (key is null)
+            return SetNamespaceAsync(@namespace, serialized, cancellationToken);
+
+        return SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken);
     }
 
     /// <summary>Serializes a value to JSON through a source-generated type description and writes it to one entry.</summary>
     /// <param name="namespace">The namespace to hold the entry.</param>
-    /// <param name="key">The key of the entry within the namespace.</param>
+    /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
     /// <param name="value">The value to serialize and store.</param>
     /// <param name="typeInfo">The source-generated description of <typeparamref name="TValue"/>.</param>
     /// <param name="provider">Where the value is stored; null keeps the existing entry's provider.</param>
     /// <param name="cancellationToken">Token used to cancel the write.</param>
     /// <typeparam name="TValue">The type being serialized.</typeparam>
-    public ValueTask<Result> SetAsAsync<TValue>(string @namespace, string key, TValue value, JsonTypeInfo<TValue> typeInfo, string? provider = null, CancellationToken cancellationToken = default)
+    public ValueTask<Result> SetAsAsync<TValue>(string @namespace, string? key, TValue value, JsonTypeInfo<TValue> typeInfo, string? provider = null, CancellationToken cancellationToken = default)
     {
         string serialized;
         try
@@ -580,7 +592,10 @@ internal sealed class ConfigurationStore : IConfigurationValues
             return ValueTask.FromResult(Result.Failure(Error.FromExceptions(exception, "The configuration value could not be stored.", ErrorCategory.Validation)));
         }
 
-        return SetAsync(@namespace, key, serialized, provider, cancellationToken);
+        if (key is null)
+            return SetNamespaceAsync(@namespace, serialized, cancellationToken);
+
+        return SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken);
     }
 
     /// <summary>The failure returned when a stored JSON value deserializes to null.</summary>
