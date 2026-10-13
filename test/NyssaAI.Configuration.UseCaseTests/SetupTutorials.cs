@@ -236,24 +236,37 @@ public sealed class SetupTutorials
         Assert.False(File.Exists(workstation.ManifestPath));
     }
 
-    /// <summary>UC-010, failure case. A developer-located manifest that is not there is the same loud
-    /// failure as a missing user manifest, naming the path the developer chose.
-    /// </summary>
-    [Fact]
-    public void AddNyssaConfiguration_MissingShippedManifest_ThrowsWithPath()
+    /// <summary>UC-010. Custom paths create missing manifests and application sections while preserving other applications.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AddNyssaConfiguration_MissingCustomManifestOrSection_ProvisionsApplicationAsync(bool manifestExists)
     {
         // Arrange
         using var workstation = new Workstation();
-        var shipped = Path.Combine(workstation.Home, "deploy", "config-manifest.json");
+        var shipped = Path.Combine(workstation.Home, "deploy", "custom.json");
+        if (manifestExists)
+            Workstation.WriteManifest(shipped, """
+                { "version": 1, "applications": { "OtherApp": { "configurationDirectory": "other-data" } } }
+                """);
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         // Act
         workstation.AddNyssaConfiguration(configure: options => options.Bootstrap.ConfigManifest = shipped);
-        var failure = Record.Exception(() => workstation.Host.GetRequiredService<IConfiguration>());
+        var configuration = workstation.Host.GetRequiredService<IConfiguration>();
+        var saved = await configuration.SetAsync("mail", "host", "example.test", IConfiguration.Plain, cancellationToken);
+        var read = await configuration.GetAsync("mail", "host", cancellationToken);
 
         // Assert
-        Assert.IsType<InvalidOperationException>(failure);
-        Assert.Contains(shipped, failure.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(workstation.ManifestPath, failure.Message, StringComparison.Ordinal);
+        Assert.True(saved.IsSuccess, saved.ToString());
+        Assert.True(read.IsSuccess, read.ToString());
+        Assert.Equal("example.test", read.Value);
+        using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(shipped));
+        var applications = manifest.RootElement.GetProperty("applications");
+        Assert.Equal(workstation.ConfigurationDirectory,
+            applications.GetProperty(Workstation.ApplicationName).GetProperty("configurationDirectory").GetString());
+        if (manifestExists)
+            Assert.Equal("other-data", applications.GetProperty("OtherApp").GetProperty("configurationDirectory").GetString());
     }
 
     /// <summary>UC-011. The manifest section names a vault by provider name and kind; the developer

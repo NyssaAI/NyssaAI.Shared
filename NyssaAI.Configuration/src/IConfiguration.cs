@@ -24,9 +24,8 @@ public interface IConfiguration
 {
     /// <summary>Names plain, unprotected storage when writing a value that has no entry yet.</summary>
     /// <remarks>
-    /// Storing a value unprotected is always something the caller says out loud. The package never
-    /// infers protection from a key's name, because the first secret stored under a key that does
-    /// not look like one would land in plaintext and nothing would say so.
+    /// Keyed writes require an explicit provider for new entries. The namespace-settings overloads
+    /// use plain storage for new properties and preserve existing providers. The package never infers protection from a key's name.
     /// </remarks>
     public const string Plain = "";
 
@@ -93,6 +92,23 @@ public interface IConfiguration
         string @namespace,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Resolves the namespace entries and assembles them into a settings object.</summary>
+    /// <returns>The deserialized settings, or a failure such as NotFound when the namespace is empty.</returns>
+    /// <remarks>Uses each entry's recorded provider. Legacy namespaceSettings objects remain readable. Reading does not create a default object.</remarks>
+    [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    ValueTask<Result<TValue>> GetAsAsync<TValue>(
+        string @namespace,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Assembles namespace entries using a source-generated JSON type description.</summary>
+    /// <returns>The deserialized settings, or a failure such as NotFound when the namespace is empty.</returns>
+    /// <remarks>Uses each entry's recorded provider. Legacy namespaceSettings objects remain readable. Reading does not create a default object.</remarks>
+    ValueTask<Result<TValue>> GetAsAsync<TValue>(
+        string @namespace,
+        JsonTypeInfo<TValue> typeInfo,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Reads and deserializes one value with the reflection-based JSON serializer.</summary>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
@@ -106,6 +122,34 @@ public interface IConfiguration
         string @namespace,
         string key,
         JsonTypeInfo<TValue> typeInfo,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Stores each top-level settings property as a namespace entry.</summary>
+    /// <remarks>
+    /// Preserves existing providers; new properties use plaintext. Omitted keys are left unchanged.
+    /// Nested objects remain together. Remote writes are not atomic across providers.
+    /// A legacy protected namespaceSettings object must be explicitly moved to plaintext before migration.
+    /// </remarks>
+    /// <returns>The write result, including serialization, storage, and provider-conflict failures.</returns>
+    [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    ValueTask<Result> SetAsAsync<TValue>(
+        string @namespace,
+        TValue value,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Stores settings properties using a source-generated JSON type description.</summary>
+    /// <remarks>
+    /// Preserves existing providers; new properties use plaintext. Omitted keys are left unchanged.
+    /// Nested objects remain together. Remote writes are not atomic across providers.
+    /// A legacy protected namespaceSettings object must be explicitly moved to plaintext before migration.
+    /// Type information precedes the value to avoid ambiguity with keyed writes when TValue is string.
+    /// </remarks>
+    /// <returns>The write result, including serialization, storage, and provider-conflict failures.</returns>
+    ValueTask<Result> SetAsAsync<TValue>(
+        string @namespace,
+        JsonTypeInfo<TValue> typeInfo,
+        TValue value,
         CancellationToken cancellationToken = default);
 
     /// <summary>Serializes and writes one value with the reflection-based JSON serializer.</summary>

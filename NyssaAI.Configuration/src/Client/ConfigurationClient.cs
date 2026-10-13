@@ -42,6 +42,38 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
         CancellationToken cancellationToken = default) =>
         _entries.ListAsync(@namespace, cancellationToken);
 
+    /// <inheritdoc/>
+    [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    public ValueTask<Result<TValue>> GetAsAsync<TValue>(
+        string @namespace,
+        CancellationToken cancellationToken = default) =>
+        _entries.GetAsAsync<TValue>(@namespace, null, cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<Result<TValue>> GetAsAsync<TValue>(
+        string @namespace,
+        JsonTypeInfo<TValue> typeInfo,
+        CancellationToken cancellationToken = default) =>
+        _entries.GetAsAsync(@namespace, null, typeInfo, cancellationToken);
+
+    /// <inheritdoc/>
+    [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    public ValueTask<Result> SetAsAsync<TValue>(
+        string @namespace,
+        TValue value,
+        CancellationToken cancellationToken = default) =>
+        _entries.SetAsAsync(@namespace, null, value, IConfiguration.Plain, cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<Result> SetAsAsync<TValue>(
+        string @namespace,
+        JsonTypeInfo<TValue> typeInfo,
+        TValue value,
+        CancellationToken cancellationToken = default) =>
+        _entries.SetAsAsync(@namespace, null, value, typeInfo, IConfiguration.Plain, cancellationToken);
+
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     public ValueTask<Result<TValue>> GetAsAsync<TValue>(

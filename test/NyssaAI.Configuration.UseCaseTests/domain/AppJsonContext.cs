@@ -7,6 +7,8 @@ namespace NyssaAI.Configuration.UseCaseTests.domain;
 /// <c>AppJsonContext.Default.MailServerSettings</c> and never reflects over the type.
 /// </summary>
 [JsonSerializable(typeof(MailServerSettings))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(NamespaceMailSettings))]
 internal sealed partial class AppJsonContext : JsonSerializerContext
 {
 }

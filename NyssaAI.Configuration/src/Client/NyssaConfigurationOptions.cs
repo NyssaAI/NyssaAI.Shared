@@ -13,7 +13,7 @@ namespace NyssaAI.Configuration.Client;
 /// Every value here has a usable default the moment the instance exists, so an application
 /// registers with <c>AddNyssaConfiguration()</c> and sets nothing. There are two anchors, and they
 /// move independently: <see cref="ConfigDirectory"/> is where this application's values live,
-/// beneath the working directory; <see cref="BootstrapOptions.ConfigManifest"/> is the user's
+/// beneath the application's base directory; <see cref="BootstrapOptions.ConfigManifest"/> is the user's
 /// manifest, beneath the profile directory. A test that wants an isolated workstation sets both.
 /// </remarks>
 public sealed class NyssaConfigurationOptions
@@ -28,8 +28,8 @@ public sealed class NyssaConfigurationOptions
         var title = entryAssembly.GetCustomAttribute<AssemblyTitleAttribute>()?.Title;
         ApplicationName = string.IsNullOrWhiteSpace(title) ? entryAssembly.GetName().Name! : title;
 
-        // Keep application data beneath the working directory, independent of the user's manifest.
-        ConfigDirectory = Path.Combine(Directory.GetCurrentDirectory(), ".nyssa-ai", "config");
+        // Keep application data beneath the application's base directory, independent of the user's manifest.
+        ConfigDirectory = Path.Combine(AppContext.BaseDirectory, ".nyssa-ai", "config");
     }
 
 
@@ -43,7 +43,7 @@ public sealed class NyssaConfigurationOptions
     public string ApplicationName { get; set; } = "";
 
     /// <summary>
-    /// Gets or sets where this application's configuration lives: <c>&lt;cwd&gt;/.nyssa-ai/config</c> by
+    /// Gets or sets where this application's configuration lives: <c>&lt;app-base&gt;/.nyssa-ai/config</c> by
     /// default. It is what the library records when it provisions a manifest section for an
     /// application nobody has set up; once a section exists, the section's directory is the one
     /// that is opened, because the manifest gates which directory is consulted at all.
@@ -97,7 +97,7 @@ public sealed class BootstrapOptions
     /// <summary>
     /// Gets or sets where the manifest is. The user's own by default; an application that ships
     /// one — a service deployed with its manifest beside it — names that path instead. Same schema
-    /// either way.
+    /// either way. A missing manifest or application section is created at this path on first use.
     /// </summary>
     public string ConfigManifest { get; set; } = string.Empty;
 
@@ -111,15 +111,6 @@ public sealed class BootstrapOptions
     /// <summary>Gets or sets the key vault this application reads sealed values through, or null when it uses none.</summary>
     public VaultOptions? KeyVault { get; set; }
 
-    /// <summary>
-    /// Whether <see cref="ConfigManifest"/> sits at the conventional
-    /// <c>&lt;home&gt;/.nyssa-ai/config-manifest.json</c>. A manifest there is the library's to
-    /// create when it is absent; a path the deployment chose is the deployment's, and its absence
-    /// is that deployment's failure to report.
-    /// </summary>
-    internal bool ConfigManifestIsConventional =>
-        string.Equals(Path.GetFileName(ConfigManifest), ManifestFileName, StringComparison.Ordinal)
-        && string.Equals(Path.GetFileName(Path.GetDirectoryName(ConfigManifest)), ManifestFolderName, StringComparison.Ordinal);
 }
 
 /// <summary>
