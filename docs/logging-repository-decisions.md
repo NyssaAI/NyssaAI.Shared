@@ -16,6 +16,16 @@ Two defects surfaced during import. A provider-wide minimum-level rule let one f
 
 File writes are synchronized within one provider instance. Separate processes or instances must use separate paths. This import does not add a shared file coordinator or a durable logging queue.
 
+## Support chained logging installation
+
+`AddNyssaLogging` now returns Microsoft's `ILoggingBuilder`, so the requested `WithRotatingJsonLog(...).WithStdErr().WithConsole()` setup can continue into other providers' extensions, including OpenTelemetry. Application logging remains `ILogger<T>`. Code that previously chained service registrations directly after `AddNyssaLogging` must use the builder's `.Services` property first. The original path and minimum-level arguments retain their behavior; the unpublished package version stays unchanged.
+
+Standard error remains the default destination. Repeating `WithStdErr` or `WithConsole` does not create duplicate destinations. Both streams can be enabled together. Microsoft's ordinary `AddConsole` calls share a provider and options, so standard output uses a separate internal registration of the Microsoft console implementation, with its own routing. It has the provider filter alias `NyssaConsole`; standard error retains `Console`.
+
+The new file call accepts a bare file name and prefixes its opening date in UTC. It reuses the existing size rotation and permissions implementation, keeping its chosen path for its lifetime. Earlier dated base files are retained; the existing 30-day policy applies only to the numbered backups of the current file. The README states this retention boundary explicitly.
+
+OpenTelemetry is an application dependency. A public consumer test registers the actual OpenTelemetry provider and in-memory exporter in the same chain, then verifies the structured event reaches both telemetry and the JSON file. The production package gains no OpenTelemetry dependency. Package and native consumers also exercise the fluent setup.
+
 ## Give Repository one clear application interface
 
 `IRepository` replaces the earlier `IRepositoryBase` name. `RepositoryClient` implements it and coordinates command selection and scope creation. Applications own their commands and SQL; providers open database connections. Sessions and transactions own those connections and must be disposed by the caller.

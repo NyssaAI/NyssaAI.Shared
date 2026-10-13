@@ -13,7 +13,10 @@ try
 {
     var logPath = Path.Combine(directory, "application.jsonl");
     var services = new ServiceCollection();
-    services.AddNyssaLogging(logPath);
+    services.AddNyssaLogging(logPath)
+        .WithRotatingJsonLog(Path.Combine(directory, "chained.jsonl"))
+        .WithStdErr()
+        .WithConsole();
     services.AddNyssaRepository(new RepositoryConfiguration
     {
         DatabaseProvider = "sqlite",
@@ -38,6 +41,9 @@ try
     using var entry = JsonDocument.Parse(File.ReadAllLines(logPath).Single());
     if (entry.RootElement.GetProperty("AdditionalFields").GetProperty("Answer").GetInt32() != 42)
         throw new InvalidOperationException("The packaged logger lost structured data.");
+    var datedPath = Directory.GetFiles(directory, "*-chained.jsonl").Single();
+    if (File.ReadAllLines(datedPath).Length != 1)
+        throw new InvalidOperationException("The packaged logging chain did not write the dated file.");
     Console.WriteLine("Package consumer passed: typed SQLite command and structured file logging.");
 }
 finally

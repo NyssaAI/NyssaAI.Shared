@@ -1,6 +1,6 @@
 # NyssaAI.Logging
 
-`NyssaAI.Logging` gives .NET applications a simple way to write logs to standard error and to a rotating JSON file. Application classes use the standard `ILogger<T>` interface. The library configures the destinations and handles the file's format, permissions, and rotation.
+`NyssaAI.Logging` gives .NET applications a very simple way to write logs for AI use cases. It comes with logging sinks for STDERR, console output, and a rotating JSON file. It is a very simple, small library that uses the standard `ILogger<T>` interface. The library configures the destinations and handles the file's format, permissions, and rotation.
 
 The package targets .NET 10 and enables Native AOT compatibility checks. It requires no configuration store or separate logging interface.
 
@@ -13,10 +13,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NyssaAI.Logging.Configuration;
 
-services.AddNyssaLogging();
+services.AddNyssaLogging()
+        .WithRotatingJsonLog("application-log.json") // creates yyyy.MM.dd-application-log.json
+        .WithStdErr()
+        .WithConsole();
 ```
 
-To write to a file as well, supply its path instead:
+This writes to the dated JSON file, standard error, and standard output. `WithStdErr()` keeps the default standard error destination; calling it again does not duplicate the output. `WithConsole()` adds standard output. Each destination receives the same accepted records.
+
+The earlier one-call setup still works. Supply a path to write to that exact file alongside standard error:
 
 ```csharp
 services.AddNyssaLogging("logs/service.log");
@@ -32,6 +37,8 @@ The library supports a few common ways to use logging:
 
 - **Write to standard error.** Call `AddNyssaLogging()` without a file path. This keeps standard output available for command output or piped data.
 - **Keep a local log.** Supply a file path to add structured JSON records alongside standard error.
+- **Chain the destinations.** Use `WithRotatingJsonLog`, `WithStdErr`, and `WithConsole` on the returned logging builder.
+- **Export with OpenTelemetry.** Add its logging provider to the same chain. Application code still uses `ILogger<T>`.
 - **Use existing logging setup.** Add `AddNyssaJsonFile` to your application's `AddLogging` call.
 - **Keep searchable values.** Use message placeholders such as `{OrderId}`. Their values are stored separately from the formatted message.
 - **Choose a minimum level.** Set the application's minimum, or give an individual file a higher minimum.
@@ -46,13 +53,29 @@ services.AddNyssaLogging("logs/service.log", LogLevel.Warning);
 
 This changes the default minimum for the logging factory to `Warning`. Microsoft's category and provider filters still apply.
 
+`AddNyssaLogging` returns Microsoft's `ILoggingBuilder`. Use `.Services` when you want to continue registering application services after the logging chain.
+
 If the application already configures logging, add just the file destination:
 
 ```csharp
 services.AddLogging(logging => logging.AddNyssaJsonFile("logs/service.log"));
 ```
 
-`AddNyssaJsonFile` adds no console output. You can combine it with other Microsoft logging providers, including a console provider, a telemetry exporter, or a remote log service.
+`AddNyssaJsonFile` adds no console output. You can combine it with other Microsoft logging providers, including OpenTelemetry or a remote log service.
+
+### Add OpenTelemetry
+
+Install `OpenTelemetry.Exporter.OpenTelemetryProtocol` in the application, then add its provider to the chain:
+
+```csharp
+using OpenTelemetry.Logs;
+
+services.AddNyssaLogging()
+    .WithRotatingJsonLog("application-log.json")
+    .AddOpenTelemetry(options => options.AddOtlpExporter());
+```
+
+The application configures the exporter and collector endpoint using [OpenTelemetry's settings](https://opentelemetry.io/docs/languages/dotnet/exporters/). NyssaAI.Logging does not install an exporter or add tracing and metrics. The same `logger.LogInformation(...)` call reaches each configured logging provider.
 
 ### Choose which records reach a file
 
@@ -69,7 +92,9 @@ The first file receives `Information` and higher levels. The second receives onl
 
 ### Choose the path
 
-There is no default file path. The path must include a directory: `logs/service.log` is valid, while `service.log` alone disables the file destination and reports the reason on standard error.
+There is no default file path. `WithRotatingJsonLog("application-log.json")` accepts a file name and creates a file such as `2026.10.13-application-log.json` in the working directory. Supply a directory to place it elsewhere. The prefix is the UTC date when the provider opens the file; it stays fixed until that provider is disposed. Rotation is based on size, not a midnight rollover.
+
+`AddNyssaLogging(filePath)` and `AddNyssaJsonFile(filePath)` keep the exact path you supply, without a date prefix. These calls require a directory: `logs/service.log` is valid, while `service.log` alone disables the file destination and reports the reason on standard error.
 
 Relative paths use the process's working directory. To place logs beneath the application's directory, supply that path explicitly:
 
@@ -159,6 +184,8 @@ The library handles rotation using fixed settings:
 | Backup names | `service.log.1` is the newest; `service.log.5` is the oldest. |
 | Age limit | Backups older than 30 days are removed at startup and during rotation. |
 
+These limits apply to each active file and its numbered backups. Date-prefixed files from earlier application starts are separate files; this library does not delete those older base files automatically.
+
 Before writing a record, the provider checks whether the active file already exceeds the threshold. If it does, it shifts the backups, archives the active file, and opens a new one. A large record can push a file over the threshold, so this is not a strict disk-space limit.
 
 If rotation fails, the provider reports it on standard error and tries to reopen the active path. When reopening succeeds, it waits for another 10 MiB of growth before retrying rotation. If reopening fails, that provider stops writing to the file.
@@ -200,8 +227,9 @@ ILogger<T>
     |
 Microsoft logger factory
     +-- Console provider --> Standard error
+    +-- Console output provider --> Standard output
     +-- NyssaAI file provider --> JSON log file
-    +-- Other registered providers
+    +-- OpenTelemetry / other registered providers
 ```
 
 [`LoggingServiceCollectionExtensions`](src/Configuration/LoggingServiceCollectionExtensions.cs) provides the simple setup call. [`LoggingBuilderExtensions`](src/Configuration/LoggingBuilderExtensions.cs) adds an individual file destination. Both are in `NyssaAI.Logging.Configuration`.
@@ -212,7 +240,7 @@ Records are written with `Utf8JsonWriter`, using explicit handling for each supp
 
 ## Run the tutorials and tests
 
-The [executable tutorials](docs/tutorials/README.md) show registration, ordinary logging, structured fields, filtering, and continuing when a file cannot be opened. They use temporary directories and exercise the public registration calls.
+The [executable tutorials](docs/tutorials/README.md) show chained setup with OpenTelemetry, ordinary logging, structured fields, filtering, and continuing when a file cannot be opened. They use temporary directories and exercise the public registration calls.
 
 The [unit tests](test/NyssaAI.Logging.Tests) cover the JSON format, permissions, rotation, retention, filtering, failure reporting, and disposal. Platform-specific permission tests run on their matching operating system.
 

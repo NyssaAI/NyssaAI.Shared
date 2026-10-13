@@ -15,9 +15,12 @@ internal static class Program
         try
         {
             var services = new ServiceCollection();
-            services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Information)
+            services.AddNyssaLogging()
+                .WithRotatingJsonLog(Path.Combine(directory, "application.jsonl"))
+                .WithStdErr()
+                .WithConsole()
                 .AddNyssaJsonFile(informationPath)
-                .AddNyssaJsonFile(warningPath, LogLevel.Warning));
+                .AddNyssaJsonFile(warningPath, LogLevel.Warning);
             using (var container = services.BuildServiceProvider())
             {
                 var logger = container.GetRequiredService<ILoggerFactory>().CreateLogger("NativeSmoke");
@@ -28,6 +31,9 @@ internal static class Program
 
             var information = File.ReadAllLines(informationPath);
             var warnings = File.ReadAllLines(warningPath);
+            var dated = Directory.GetFiles(directory, "*-application.jsonl").Single();
+            if (File.ReadAllLines(dated).Length != 2)
+                throw new InvalidOperationException("The native logging chain did not write the dated file.");
             if (information.Length != 2 || warnings.Length != 1)
                 throw new InvalidOperationException("File-specific logging filters did not preserve the expected records.");
             using var record = JsonDocument.Parse(information[0]);
@@ -35,7 +41,7 @@ internal static class Program
                 || record.RootElement.GetProperty("Operation").GetString() != "OrderSaved")
                 throw new InvalidOperationException("The native logger did not preserve structured data.");
 
-            Console.WriteLine("Logging native smoke passed: JSON fields, independent filters, disposal.");
+            Console.WriteLine("Logging native smoke passed: chained destinations, dated file, JSON fields, independent filters, disposal.");
             return 0;
         }
         finally

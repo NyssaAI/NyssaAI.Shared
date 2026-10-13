@@ -9,6 +9,7 @@ The examples are in [LoggingTutorials.cs](../../../test/NyssaAI.Logging.UseCaseT
 | `Write_Logs_To_A_Json_File` | Add the file destination to Microsoft logging and inject `ILogger<T>`. |
 | `Configure_Logging_In_One_Call` | Register standard error and a file with `AddNyssaLogging`. |
 | `Log_To_Standard_Error_Only` | Use the default destination without creating a log file. |
+| `Chain_Destinations_And_OpenTelemetry` | Chain a dated file, standard error, standard output, and the OpenTelemetry provider with an in-memory exporter. |
 | `Log_Structured_Messages` | Record an event name and separately searchable values. |
 | `Choose_Which_Records_Reach_The_File` | Set a higher minimum level for the file. |
 | `Keep_Running_When_The_Log_File_Cannot_Be_Opened` | Keep a working destination when another file cannot be opened. |

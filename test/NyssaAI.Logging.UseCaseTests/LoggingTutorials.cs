@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using NyssaAI.Logging.Configuration;
 using NyssaAI.Logging.UseCaseTests.fixtures;
 using NyssaAI.Logging.UseCaseTests.domain;
+using OpenTelemetry.Logs;
 using Xunit;
 
 namespace NyssaAI.Logging.UseCaseTests;
@@ -45,10 +46,8 @@ public sealed class LoggingTutorials
 
 
     /// <summary>Configure logging in one call, for an application that configures none of its own.
-    /// Standard error is always set up, so logging always has a destination that needs no
-    /// filesystem; naming a file adds the rotating JSON log alongside it. An application that wants
-    /// destinations this does not cover calls AddLogging directly and adds AddNyssaJsonFile among
-    /// them, which is what the tutorials above do.
+    /// Standard error is set up by default; naming a file adds the rotating JSON log alongside it.
+    /// The returned logging builder exposes Services to continue application registration.
     /// </summary>
     [Fact]
     public void Configure_Logging_In_One_Call()
@@ -57,6 +56,7 @@ public sealed class LoggingTutorials
         using var workspace = new LogWorkspace();
         var services = new ServiceCollection()
             .AddNyssaLogging(workspace.LogPath, LogLevel.Information)
+            .Services
             .AddScoped<OrderService>();
 
         // Act
@@ -82,7 +82,7 @@ public sealed class LoggingTutorials
     {
         // Arrange
         using var workspace = new LogWorkspace();
-        var services = new ServiceCollection().AddNyssaLogging(minimumLevel: LogLevel.Information);
+        var services = new ServiceCollection().AddNyssaLogging(minimumLevel: LogLevel.Information).Services;
         bool informationEnabled;
         bool debugEnabled;
 
@@ -102,6 +102,33 @@ public sealed class LoggingTutorials
 
         // No file was named, so none was created
         Assert.False(File.Exists(workspace.LogPath));
+    }
+
+    /// <summary>Chain file and terminal destinations with the real OpenTelemetry provider.</summary>
+    [Fact]
+    public void Chain_Destinations_And_OpenTelemetry()
+    {
+        using var workspace = new LogWorkspace();
+        var records = new List<LogRecord>();
+        var services = new ServiceCollection();
+        services.AddNyssaLogging()
+            .WithRotatingJsonLog(workspace.LogPath)
+            .WithStdErr()
+            .WithConsole()
+            .AddOpenTelemetry(options => options.AddInMemoryExporter(records));
+
+        using (var provider = ServiceContainer.BuildValidated(services))
+        {
+            provider.Services.GetRequiredService<ILogger<LoggingTutorials>>()
+                .LogInformation("Order {OrderId} placed", 1042);
+        }
+
+        var telemetry = Assert.Single(records);
+        Assert.Equal("Order {OrderId} placed", telemetry.Body);
+        Assert.Contains(telemetry.Attributes!, field => field.Key == "OrderId" && Equals(field.Value, 1042));
+        var file = Assert.Single(Directory.GetFiles(Path.GetDirectoryName(workspace.LogPath)!, "*-" + Path.GetFileName(workspace.LogPath)));
+        using var json = System.Text.Json.JsonDocument.Parse(Assert.Single(File.ReadAllLines(file)));
+        Assert.Equal("Order 1042 placed", json.RootElement.GetProperty("Message").GetString());
     }
 
 
