@@ -13,6 +13,7 @@ function Start-RepositoryPostgres {
     $containerName = "nyssaai-tests-$identity"
     $docker = Get-Command docker -ErrorAction SilentlyContinue
     if ($docker) {
+        Write-Host 'Checking Docker availability for the PostgreSQL test fixture.'
         $dockerKind = $null
         try { $dockerKind = & $docker.Source info --format '{{.OSType}}' 2>$null }
         catch {
@@ -78,12 +79,15 @@ function Start-RepositoryPostgres {
     $pgCtl = Join-Path $postgresBin 'pg_ctl'
     $serverLog = Join-Path $workspace 'server.log'
     try {
+        Write-Host 'Initializing the temporary native PostgreSQL cluster.'
         & (Join-Path $postgresBin 'initdb') --pgdata=$dataDirectory --username=nyssaai_test `
             --auth-host=scram-sha-256 --auth-local=trust --pwfile=$passwordFile *> (Join-Path $workspace 'initdb.log')
         if ($LASTEXITCODE -ne 0) { throw "Could not initialize PostgreSQL. See $workspace/initdb.log." }
+        Write-Host 'Starting the temporary native PostgreSQL server.'
         & $pgCtl --pgdata=$dataDirectory --log=$serverLog `
             --options="-h 127.0.0.1 -p $port" --wait start *> (Join-Path $workspace 'startup.log')
         if ($LASTEXITCODE -ne 0) { throw "Could not start PostgreSQL. See $workspace/server.log." }
+        Write-Host 'The temporary native PostgreSQL server is ready.'
         return [pscustomobject]@{
             Kind = 'Native'; Executable = $pgCtl; DataDirectory = $dataDirectory
             ConnectionString = "Host=127.0.0.1;Port=$port;Database=postgres;Username=nyssaai_test;Password=$password;Pooling=False"
