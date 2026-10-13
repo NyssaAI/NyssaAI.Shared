@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using NyssaAI.Results;
 using NyssaAI.Configuration.Client;
 using NyssaAI.Configuration.UseCaseTests.domain;
 using NyssaAI.Configuration.UseCaseTests.fixtures;
@@ -31,26 +32,26 @@ public sealed class NamespaceProvidersTutorials
             Password = "first-password", ApiKey = "first-api-key", RetryDelays = [1, 5],
         };
         // Choose secret storage before the first whole-object write.
-        (await configuration.SetAsync("mail", "Password", settings.Password, "aesLocal", cancellationToken)).ThrowIfError();
-        (await configuration.SetAsync("mail", "api-key", settings.ApiKey, "mailVault", cancellationToken)).ThrowIfError();
-        var saved = useSourceGeneration
-            ? await configuration.SetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, settings, cancellationToken)
-            : await configuration.SetAsAsync("mail", settings, cancellationToken);
-        saved.ThrowIfError();
+        await configuration.SetAsync("mail", "Password", settings.Password, "aesLocal", cancellationToken);
+        await configuration.SetAsync("mail", "api-key", settings.ApiKey, "mailVault", cancellationToken);
+        await (useSourceGeneration
+            ? configuration.SetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, settings, cancellationToken)
+            : configuration.SetAsAsync("mail", settings, cancellationToken));
+
         var loaded = useSourceGeneration
             ? await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken)
             : await configuration.GetAsAsync<NamespaceMailSettings>("mail", cancellationToken);
-        loaded.ThrowIfError();
-        Assert.Equal(587, loaded.Value.Port);
-        Assert.True(loaded.Value.UseTls);
-        Assert.Null(loaded.Value.Description);
-        Assert.Equal([1, 5], loaded.Value.RetryDelays);
-        Assert.Equal(settings.Password, loaded.Value.Password);
-        Assert.Equal(settings.ApiKey, loaded.Value.ApiKey);
+
+        Assert.Equal(587, loaded.Port);
+        Assert.True(loaded.UseTls);
+        Assert.Null(loaded.Description);
+        Assert.Equal([1, 5], loaded.RetryDelays);
+        Assert.Equal(settings.Password, loaded.Password);
+        Assert.Equal(settings.ApiKey, loaded.ApiKey);
 
         settings = settings with { Port = 465, Password = "next-password", ApiKey = "next-api-key", Host = "123" };
-        (await configuration.SetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, settings, cancellationToken)).ThrowIfError();
-        var updated = (await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken)).ThrowIfError();
+        await configuration.SetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, settings, cancellationToken);
+        var updated = await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken);
         Assert.Equal("123", updated.Host);
         Assert.Equal(465, updated.Port);
         Assert.Equal("next-password", updated.Password);
@@ -65,28 +66,31 @@ public sealed class NamespaceProvidersTutorials
         Assert.Equal(JsonValueKind.Number, json.RootElement.GetProperty("Port").GetProperty("value").ValueKind);
 
         // Keyed typed writes also remain usable in a whole-namespace read.
-        (await configuration.SetAsAsync("mail", "Port", 465, cancellationToken: cancellationToken)).ThrowIfError();
-        (await configuration.SetAsAsync("mail", "Host", "123", AppJsonContext.Default.String, cancellationToken: cancellationToken)).ThrowIfError();
-        var keyed = (await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken)).ThrowIfError();
+        await configuration.SetAsAsync("mail", "Port", 465, cancellationToken: cancellationToken);
+        await configuration.SetAsAsync("mail", "Host", "123", AppJsonContext.Default.String, cancellationToken: cancellationToken);
+        var keyed = await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken);
         Assert.Equal(465, keyed.Port);
         Assert.Equal("123", keyed.Host);
-        Assert.Equal("123", (await configuration.GetAsAsync("mail", "Host", AppJsonContext.Default.String, cancellationToken)).ThrowIfError());
+        Assert.Equal("123", await configuration.GetAsAsync("mail", "Host", AppJsonContext.Default.String, cancellationToken));
 
         // A moved number retains its JSON type through encryption, updates, a vault, and plaintext.
-        (await configuration.MoveAsync("mail", "Port", "aesLocal", cancellationToken)).ThrowIfError();
-        (await configuration.SetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, settings with { Port = 2525 }, cancellationToken)).ThrowIfError();
-        (await configuration.MoveAsync("mail", "Port", "mailVault", cancellationToken)).ThrowIfError();
-        Assert.Equal(2525, (await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken)).ThrowIfError().Port);
+        await configuration.MoveAsync("mail", "Port", "aesLocal", cancellationToken);
+        await configuration.SetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, settings with { Port = 2525 }, cancellationToken);
+        await configuration.MoveAsync("mail", "Port", "mailVault", cancellationToken);
+        Assert.Equal(2525, (await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken)).Port);
         var vault = Assert.Single(vaults.Created);
         vault.Values["mail/Port"] = "invalid-json";
-        Assert.True((await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken)).IsFailure);
+        await Assert.ThrowsAsync<ResultException>(() =>
+            configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken).AsTask());
         vault.Values["mail/Port"] = "2525";
-        (await configuration.MoveAsync("mail", "Port", IConfiguration.Plain, cancellationToken)).ThrowIfError();
-        Assert.Equal(2525, (await configuration.GetAsAsync<NamespaceMailSettings>("mail", cancellationToken)).ThrowIfError().Port);
+        await configuration.MoveAsync("mail", "Port", IConfiguration.Plain, cancellationToken);
+        Assert.Equal(2525, (await configuration.GetAsAsync<NamespaceMailSettings>("mail", cancellationToken)).Port);
 
         // A missing secret fails the whole read, rather than returning a partial DTO.
         Assert.Single(vaults.Created).Values.Remove("mail/api-key");
-        var missing = await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken);
-        Assert.True(missing.IsFailure);
+        await Assert.ThrowsAsync<ResultException>(async () =>
+        {
+            await configuration.GetAsAsync("mail", AppJsonContext.Default.NamespaceMailSettings, cancellationToken);
+        });
     }
 }

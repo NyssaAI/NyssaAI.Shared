@@ -61,7 +61,7 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
         var cancellationToken = TestContext.Current.CancellationToken;
         var configuration = Open();
         if (json is not null)
-            Assert.True((await configuration.SetAsync("nyssa.repository", "default", json, ConfigurationStore.Plain, cancellationToken)).IsSuccess);
+            await configuration.SetAsync("nyssa.repository", "default", json, ConfigurationStore.Plain, cancellationToken);
         var services = new ServiceCollection();
         services.AddSingleton(new object());
         var original = services.ToArray();
@@ -73,7 +73,7 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
         Assert.DoesNotContain("sentinel-secret", errors[0].UserMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("sentinel-secret", errors[0].TechnicalMessage, StringComparison.Ordinal);
         if (json is null)
-            Assert.Empty((await configuration.ListAsync("nyssa.repository", cancellationToken)).Value);
+            Assert.Empty(await configuration.ListAsync("nyssa.repository", cancellationToken));
     }
 
     [Fact]

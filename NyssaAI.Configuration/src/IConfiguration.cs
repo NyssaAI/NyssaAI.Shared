@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization.Metadata;
-using NyssaAI.Results;
 
 using NyssaAI.Configuration.Contracts;
 
@@ -10,7 +9,10 @@ namespace NyssaAI.Configuration;
 /// <remarks>
 /// <para>
 /// The contract reads, writes, removes, and lists values in a namespace and key hierarchy, including
-/// JSON values deserialized into a caller-supplied type. Directory discovery and registration
+/// JSON values deserialized into a caller-supplied type. Operations return values directly and
+/// throw on failure. Store and provider failures throw <see cref="NyssaAI.Results.ResultException"/>;
+/// cancellation throws <see cref="OperationCanceledException"/>.
+/// Directory discovery and registration
 /// happen before opening; the manifest decides them.
 /// </para>
 /// <para>
@@ -30,7 +32,7 @@ public interface IConfiguration
     public const string Plain = "";
 
     /// <summary>Reads one string value (e.g. json, xml, etc.).</summary>
-    ValueTask<Result<string>> GetAsync(
+    ValueTask<string> GetAsync(
         string @namespace,
         string key,
         CancellationToken cancellationToken = default);
@@ -74,7 +76,7 @@ public interface IConfiguration
     /// // fails: 'db/password' is held by 'aesLocal' -- that is a move, so use MoveAsync
     /// </code>
     /// </example>
-    ValueTask<Result> SetAsync(
+    ValueTask SetAsync(
         string @namespace,
         string key,
         string value,
@@ -82,29 +84,29 @@ public interface IConfiguration
         CancellationToken cancellationToken = default);
 
     /// <summary>Removes one value, succeeding when it is already absent.</summary>
-    ValueTask<Result> RemoveAsync(
+    ValueTask RemoveAsync(
         string @namespace,
         string key,
         CancellationToken cancellationToken = default);
 
     /// <summary>Lists the keys in one namespace in ordinal order.</summary>
-    ValueTask<Result<IReadOnlyList<string>>> ListAsync(
+    ValueTask<IReadOnlyList<string>> ListAsync(
         string @namespace,
         CancellationToken cancellationToken = default);
 
     /// <summary>Resolves the namespace entries and assembles them into a settings object.</summary>
-    /// <returns>The deserialized settings, or a failure such as NotFound when the namespace is empty.</returns>
+    /// <returns>The deserialized settings. An empty namespace throws; no default object is created.</returns>
     /// <remarks>Uses each entry's recorded provider. Legacy namespaceSettings objects remain readable. Reading does not create a default object.</remarks>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
-    ValueTask<Result<TValue>> GetAsAsync<TValue>(
+    ValueTask<TValue> GetAsAsync<TValue>(
         string @namespace,
         CancellationToken cancellationToken = default);
 
     /// <summary>Assembles namespace entries using a source-generated JSON type description.</summary>
-    /// <returns>The deserialized settings, or a failure such as NotFound when the namespace is empty.</returns>
+    /// <returns>The deserialized settings. An empty namespace throws; no default object is created.</returns>
     /// <remarks>Uses each entry's recorded provider. Legacy namespaceSettings objects remain readable. Reading does not create a default object.</remarks>
-    ValueTask<Result<TValue>> GetAsAsync<TValue>(
+    ValueTask<TValue> GetAsAsync<TValue>(
         string @namespace,
         JsonTypeInfo<TValue> typeInfo,
         CancellationToken cancellationToken = default);
@@ -112,13 +114,13 @@ public interface IConfiguration
     /// <summary>Reads and deserializes one value with the reflection-based JSON serializer.</summary>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
-    ValueTask<Result<TValue>> GetAsAsync<TValue>(
+    ValueTask<TValue> GetAsAsync<TValue>(
         string @namespace,
         string key,
         CancellationToken cancellationToken = default);
 
     /// <summary>Reads and deserializes one value with a source-generated JSON type description.</summary>
-    ValueTask<Result<TValue>> GetAsAsync<TValue>(
+    ValueTask<TValue> GetAsAsync<TValue>(
         string @namespace,
         string key,
         JsonTypeInfo<TValue> typeInfo,
@@ -130,10 +132,10 @@ public interface IConfiguration
     /// Nested objects remain together. Remote writes are not atomic across providers.
     /// A legacy protected namespaceSettings object must be explicitly moved to plaintext before migration.
     /// </remarks>
-    /// <returns>The write result, including serialization, storage, and provider-conflict failures.</returns>
+    /// <returns>A task that completes when the write succeeds; serialization, storage, and provider-conflict failures throw.</returns>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
-    ValueTask<Result> SetAsAsync<TValue>(
+    ValueTask SetAsAsync<TValue>(
         string @namespace,
         TValue value,
         CancellationToken cancellationToken = default);
@@ -145,8 +147,8 @@ public interface IConfiguration
     /// A legacy protected namespaceSettings object must be explicitly moved to plaintext before migration.
     /// Type information precedes the value to avoid ambiguity with keyed writes when TValue is string.
     /// </remarks>
-    /// <returns>The write result, including serialization, storage, and provider-conflict failures.</returns>
-    ValueTask<Result> SetAsAsync<TValue>(
+    /// <returns>A task that completes when the write succeeds; serialization, storage, and provider-conflict failures throw.</returns>
+    ValueTask SetAsAsync<TValue>(
         string @namespace,
         JsonTypeInfo<TValue> typeInfo,
         TValue value,
@@ -155,7 +157,7 @@ public interface IConfiguration
     /// <summary>Serializes and writes one value with the reflection-based JSON serializer.</summary>
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
-    ValueTask<Result> SetAsAsync<TValue>(
+    ValueTask SetAsAsync<TValue>(
         string @namespace,
         string key,
         TValue value,
@@ -163,7 +165,7 @@ public interface IConfiguration
         CancellationToken cancellationToken = default);
 
     /// <summary>Serializes and writes one value with a source-generated JSON type description.</summary>
-    ValueTask<Result> SetAsAsync<TValue>(
+    ValueTask SetAsAsync<TValue>(
         string @namespace,
         string key,
         TValue value,
@@ -185,7 +187,7 @@ public interface IConfiguration
     /// <see cref="ConfigurationMove.SourceWithdrawn"/> means the value is safely readable at its new
     /// home but a copy survives at the old one; the same fact is logged as a warning.
     /// </returns>
-    ValueTask<Result<ConfigurationMove>> MoveAsync(
+    ValueTask<ConfigurationMove> MoveAsync(
         string @namespace,
         string key,
         string toProvider,

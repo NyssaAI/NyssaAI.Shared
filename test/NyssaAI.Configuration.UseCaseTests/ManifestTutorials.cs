@@ -73,16 +73,14 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
         NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
 
         // a secret, and an object
-        var password = await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
-        var preferences = await configManager.SetAsAsync(
+        await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
+        await configManager.SetAsAsync(
             "mail", "preferences", new ExportPreferences { Format = "csv", IncludeHistory = true }, "aesLocal", cancellationToken);
 
         // the one file this application's values were written into
         var mailFile = ConfigurationFile(options, "mail");
 
         // Assert
-        Assert.True(password.IsSuccess, password.ToString());               // the passwoord set worked
-        Assert.True(preferences.IsSuccess, preferences.ToString());         // preferences set worked
         Assert.Equal(Workstation.ApplicationName, options.ApplicationName); // <AssemblyTitle> in this .csproj; the assembly name is only the fallback
         Assert.True(Path.Exists(options.Bootstrap.ConfigManifest));         // the manifest was created
         Assert.Equal(_hostFactory.UserManifestPath, options.Bootstrap.ConfigManifest);              // the manifest is in this location: the stand-in for ~/.nyssa-ai/config-manifest.json
@@ -119,13 +117,12 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
         IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
         NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
 
-        var password = await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
+        await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
 
         // the one file this application's values were written into
         var mailFile = ConfigurationFile(options, "mail");
 
         // Assert
-        Assert.True(password.IsSuccess, password.ToString());                                       // the password set worked
         Assert.Equal(workstation.ManifestPath, options.Bootstrap.ConfigManifest);                   // the manifest is where the application said
         Assert.NotEqual(BootstrapOptions.DefaultConfigManifest, options.Bootstrap.ConfigManifest);  // and not at the user's default
         Assert.True(File.Exists(options.Bootstrap.ConfigManifest));                                 // there was no manifest; the library created it
@@ -162,14 +159,13 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
         IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
         NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
 
-        var password = await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
+        await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
 
         // the file the operator's directory should hold, and the one the developer's should not
         var operatorFile = ConfigurationFile(operatorDirectory, "mail");
         var developerFile = ConfigurationFile(developerDirectory, "mail");
 
         // Assert
-        Assert.True(password.IsSuccess, password.ToString());                       // the password set worked
         Assert.NotEqual(operatorDirectory, developerDirectory);                     // the two answers really are different
         Assert.Equal(operatorDirectory, DirectoryNamedInManifest(options));         // the manifest still names what the operator wrote
         Assert.Equal(developerDirectory, options.ConfigDirectory);                  // the options still carry what the developer wrote
@@ -201,15 +197,12 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
         // "plugin" is the namespace file; "name" is the entry. Plain storage is chosen for this nonsecret label.
-        var saved = await configuration.SetAsync("plugin", "name", "report-export", IConfiguration.Plain, cancellationToken);
-        saved.ThrowIfError(); // The read needs a completed write; this explicit boundary throws on failure.
+        await configuration.SetAsync("plugin", "name", "report-export", IConfiguration.Plain, cancellationToken);
 
         var name = await configuration.GetAsync("plugin", "name", cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.True(name.IsSuccess, name.ToString());
-        Assert.Equal("report-export", name.Value);
+        Assert.Equal("report-export", name);
         Assert.True(File.Exists(Path.Join(chosenHome, ".nyssa-ai", "config-manifest.json")));
         Assert.True(File.Exists(Path.Join(pluginDirectory, "plugin.json")));
         Assert.Contains("report-export", File.ReadAllText(Path.Join(pluginDirectory, "plugin.json")), StringComparison.Ordinal);

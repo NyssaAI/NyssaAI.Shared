@@ -43,10 +43,9 @@ public sealed class OAuthTutorials
         Assert.True(authorized.IsSuccess, authorized.ToString());
         Assert.Equal(1, browserLaunchesBeforeRecovery);
         Assert.Equal(1, codeExchangesAfterAuthorization);
-        Assert.True(token.IsSuccess, token.ToString());
-        Assert.Equal("access-1", token.Value);
+        Assert.Equal("access-1", token);
         Assert.Contains("\"oauth\"", document, StringComparison.Ordinal);
-        Assert.DoesNotContain(token.Value, document, StringComparison.Ordinal);
+        Assert.DoesNotContain(token, document, StringComparison.Ordinal);
         Assert.DoesNotContain("refresh-", document, StringComparison.Ordinal);
         Assert.DoesNotContain(FakeAuthorizationServer.TokenEndpoint.ToString(), document, StringComparison.Ordinal);
     }
@@ -67,7 +66,10 @@ public sealed class OAuthTutorials
             .AuthorizeAsync("mail", "token", FakeAuthorizationServer.Options("mail.read"), cancellationToken);
 
         var codeExchangesAfterAuthorization = workstation.AuthorizationServer.CodeExchanges;
-        var missing = await workstation.Host.GetRequiredService<IConfiguration>().GetAsync("mail", "token", cancellationToken);
+        var missing = await Assert.ThrowsAsync<ResultException>(async () =>
+        {
+            await workstation.Host.GetRequiredService<IConfiguration>().GetAsync("mail", "token", cancellationToken);
+        });
 
         // Assert
         Assert.True(authorized.IsFailure);
@@ -99,7 +101,7 @@ public sealed class OAuthTutorials
         // 57 minutes on: three left of a one-hour token, inside the skew (see Skew)
         // A one-hour token now has three minutes left, inside the five-minute refresh window.
         workstation.Clock.Advance(TimeSpan.FromMinutes(57));
-        var pendingReads = new List<Task<Result<string>>>();
+        var pendingReads = new List<Task<string>>();
         for (var reader = 0; reader < 5; reader++)
         {
             pendingReads.Add(workstation.Host.GetRequiredService<IConfiguration>().GetAsync("mail", "token", cancellationToken).AsTask());
@@ -110,15 +112,14 @@ public sealed class OAuthTutorials
         var browserLaunchesAfterAuthorization = workstation.Browser.Launches;
 
         // Assert
-        Assert.Equal("access-1", fresh.Value);
+        Assert.Equal("access-1", fresh);
         Assert.Equal(0, refreshCallsWhileFresh);
-        Assert.All(reads, read => Assert.True(read.IsSuccess, read.ToString()));
-        Assert.All(reads, read => Assert.Equal("access-2", read.Value));
+        Assert.All(reads, read => Assert.Equal("access-2", read));
         Assert.Equal(1, refreshCallsAfterExpiry);   // five readers, one round trip
         Assert.Equal(1, browserLaunchesAfterAuthorization);                     // unchanged since acquisition
     }
 
-    /// <summary>UC-014. The server has revoked the refresh token. The read returns a typed error and opens no
+    /// <summary>UC-014. The server has revoked the refresh token. The read throws and opens no
     /// browser; the app's auth mail command recovers with ReauthorizeAsync, which needs no options because the
     /// entry already knows its server.
     /// </summary>
@@ -139,7 +140,10 @@ public sealed class OAuthTutorials
         workstation.AuthorizationServer.RejectRefreshTokens = true;
 
         // A non-interactive command hits the dead credential
-        var rejected = await workstation.Host.GetRequiredService<IConfiguration>().GetAsync("mail", "token", cancellationToken);
+        var rejected = await Assert.ThrowsAsync<ResultException>(async () =>
+        {
+            await workstation.Host.GetRequiredService<IConfiguration>().GetAsync("mail", "token", cancellationToken);
+        });
 
         var browserLaunchesBeforeRecovery = workstation.Browser.Launches;
 
@@ -152,14 +156,13 @@ public sealed class OAuthTutorials
         var token = await workstation.Host.GetRequiredService<IConfiguration>().GetAsync("mail", "token", cancellationToken);
 
         // Assert
-        Assert.True(rejected.IsFailure);
         Assert.Contains("re-authorization required", rejected.Errors[0].TechnicalMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("mail/token", rejected.Errors[0].TechnicalMessage, StringComparison.Ordinal);
         Assert.Equal(1, browserLaunchesBeforeRecovery);   // Get opened nothing
         Assert.True(recovered.IsSuccess, recovered.ToString());
         Assert.Equal(2, browserLaunchesAfterRecovery);
         Assert.Equal(2, codeExchangesAfterRecovery);
-        Assert.Equal("access-2", token.Value);
+        Assert.Equal("access-2", token);
     }
 
     /// <summary>UC-015. A vault that signs its requests with OAuth2 declares its authorization server and takes a
@@ -198,7 +201,10 @@ public sealed class OAuthTutorials
 
         var vault = workstation.VaultPackage.Created.Single();
 
-        var unauthorized = await configuration.SetAsync("mail", "password", "fictional", provider: "contoso", cancellationToken: cancellationToken);
+        var unauthorized = await Assert.ThrowsAsync<ResultException>(async () =>
+        {
+            await configuration.SetAsync("mail", "password", "fictional", provider: "contoso", cancellationToken: cancellationToken);
+        });
         var browserLaunchesBeforeRecovery = workstation.Browser.Launches;
         var vaultWritesBeforeAuthorization = vault.Writes;
 
@@ -206,7 +212,7 @@ public sealed class OAuthTutorials
         var signedIn = await extensions.AuthorizeProviderAsync("contoso", cancellationToken);
         var browserLaunchesAfterAuthorization = workstation.Browser.Launches;
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional", provider: "contoso", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional", provider: "contoso", cancellationToken: cancellationToken);
         var read = await configuration.GetAsync("mail", "password", cancellationToken);
 
         // A one-hour token now has three minutes left, inside the five-minute refresh window.
@@ -217,7 +223,6 @@ public sealed class OAuthTutorials
         var browserLaunchesAfterRefresh = workstation.Browser.Launches;
 
         // Assert
-        Assert.True(unauthorized.IsFailure);
         Assert.Contains("authorization required", unauthorized.Errors[0].TechnicalMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("contoso", unauthorized.Errors[0].TechnicalMessage, StringComparison.Ordinal);
         Assert.Equal(0, browserLaunchesBeforeRecovery);
@@ -225,10 +230,9 @@ public sealed class OAuthTutorials
         Assert.True(signedIn.IsSuccess, signedIn.ToString());
         Assert.Equal(1, browserLaunchesAfterAuthorization);
         Assert.Contains("\"oauth\"", workstation.ReadDocument("vault"), StringComparison.Ordinal);
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.Equal("fictional", read.Value);
+        Assert.Equal("fictional", read);
         Assert.Contains("access-1", vault.BearerTokensSeen);
-        Assert.True(later.IsSuccess, later.ToString());
+        Assert.Equal("fictional", later);
         Assert.Contains("access-2", vault.BearerTokensSeen);
         Assert.Equal(1, refreshCallsAfterExpiry);
         Assert.Equal(1, browserLaunchesAfterRefresh);
@@ -264,13 +268,15 @@ public sealed class OAuthTutorials
         // Try to put the vault's own credential inside the vault
         var vault = workstation.VaultPackage.Created.Single();
 
-        var circular = await configuration.SetAsync("vault", "contoso-token", "anything", provider: "contoso", cancellationToken: cancellationToken);
+        var circular = await Assert.ThrowsAsync<ResultException>(async () =>
+        {
+            await configuration.SetAsync("vault", "contoso-token", "anything", provider: "contoso", cancellationToken: cancellationToken);
+        });
 
         var vaultWritesAfterRejection = vault.Writes;
         var browserLaunchesAfterRecovery = workstation.Browser.Launches;
 
         // Assert
-        Assert.True(circular.IsFailure);
         Assert.Contains("circular", circular.Errors[0].TechnicalMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("contoso", circular.Errors[0].TechnicalMessage, StringComparison.Ordinal);
         Assert.Contains("vault/contoso-token", circular.Errors[0].TechnicalMessage, StringComparison.Ordinal);

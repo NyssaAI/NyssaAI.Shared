@@ -25,17 +25,14 @@ public sealed class ConfigurationIsolationTests
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
         // Store an ordinary label without encryption, then read it through the same caller interface.
-        var saved = await configuration.SetAsync("tutorial", "name", "isolated-workstation",
+        await configuration.SetAsync("tutorial", "name", "isolated-workstation",
             IConfiguration.Plain, cancellationToken);
-        saved.ThrowIfError(); // Reading this value requires the write to have completed successfully.
 
         var name = await configuration.GetAsync("tutorial", "name", cancellationToken);
         var manifestAfter = File.Exists(userManifest) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(userManifest))) : null;
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.True(name.IsSuccess, name.ToString());
-        Assert.Equal("isolated-workstation", name.Value);
+        Assert.Equal("isolated-workstation", name);
         Assert.Equal(manifestBefore, manifestAfter);
         Assert.NotEqual(userManifest, workstation.ManifestPath);
         Assert.True(File.Exists(workstation.ManifestPath));

@@ -1,5 +1,3 @@
-using NyssaAI.Results;
-
 namespace NyssaAI.Configuration.UseCaseTests.domain;
 
 /// <summary>
@@ -13,9 +11,9 @@ public sealed class MailService
 
     public MailService(IConfiguration configuration) => _configuration = configuration;
 
-    public ValueTask<Result> RememberPasswordAsync(string password, CancellationToken cancellationToken) =>
+    public ValueTask RememberPasswordAsync(string password, CancellationToken cancellationToken) =>
         _configuration.SetAsync("mail", "password", password, provider: "aesLocal", cancellationToken: cancellationToken);
 
-    public ValueTask<Result<string>> PasswordAsync(CancellationToken cancellationToken) =>
+    public ValueTask<string> PasswordAsync(CancellationToken cancellationToken) =>
         _configuration.GetAsync("mail", "password", cancellationToken);
 }

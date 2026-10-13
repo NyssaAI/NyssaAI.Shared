@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NyssaAI.Configuration.Client;
 using NyssaAI.Configuration.UseCaseTests.domain;
 using NyssaAI.Configuration.UseCaseTests.fixtures;
+using NyssaAI.Results;
 using Xunit;
 
 namespace NyssaAI.Configuration.UseCaseTests;
@@ -42,13 +43,12 @@ public sealed class SetupTutorials
         // then the application's own classes, which depend on IConfiguration and nothing Nyssa
         workstation.AddNyssaConfiguration(application: services => services.AddScoped<MailService>());
         var mail = workstation.Host.GetRequiredService<MailService>();
-        var remembered = await mail.RememberPasswordAsync("fictional-password", cancellationToken);
+        await mail.RememberPasswordAsync("fictional-password", cancellationToken);
         var password = await mail.PasswordAsync(cancellationToken);
 
         // Assert
         Assert.True(manifestExisted);
-        Assert.True(remembered.IsSuccess, remembered.ToString());
-        Assert.Equal("fictional-password", password.Value);
+        Assert.Equal("fictional-password", password);
         // The library created the key itself, once, at the address the application name implies, and logged it
         Assert.True(workstation.Keyring.Holds(Workstation.ApplicationName, "configuration-key"));
         Assert.Equal([(Workstation.ApplicationName, "configuration-key")], workstation.Keyring.Writes);
@@ -76,10 +76,9 @@ public sealed class SetupTutorials
         workstation.AddNyssaConfiguration();
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
         // Nobody wrote the name: <AssemblyTitle>SomeApp-cli</AssemblyTitle> found the section, the directory, and the key
         Assert.Equal(Path.Combine(workstation.Home, ".nyssa-ai", "SomeApp-cli"), workstation.ConfigurationDirectory);
         Assert.True(workstation.Keyring.Holds(Workstation.ApplicationName, "configuration-key"));
@@ -101,10 +100,9 @@ public sealed class SetupTutorials
         workstation.AddNyssaConfiguration(configure: options => options.ApplicationName = "someone-else");
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
         // Every address moved: "someone-else" got its own section, and its own key
         Assert.Contains("someone-else", File.ReadAllText(workstation.ManifestPath), StringComparison.Ordinal);
         Assert.True(workstation.Keyring.Holds("someone-else", "configuration-key"));
@@ -149,10 +147,9 @@ public sealed class SetupTutorials
         workstation.AddNyssaConfiguration();
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
         // The manifest the machine lacked, naming the directory the application's name implies
         Assert.True(File.Exists(workstation.ManifestPath));
         Assert.Contains(Workstation.ApplicationName, File.ReadAllText(workstation.ManifestPath), StringComparison.Ordinal);
@@ -182,19 +179,19 @@ public sealed class SetupTutorials
         // Act
         workstation.AddNyssaConfiguration();
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
-        var written = await configuration.SetAsync("plugin", "name", "some-plugin", IConfiguration.Plain, cancellationToken);
+        await configuration.SetAsync("plugin", "name", "some-plugin", IConfiguration.Plain, cancellationToken);
 
         // Another user's workstation has its own manifest and knows nothing about this one
         using var other = new Workstation();
         other.AddNyssaConfiguration();
-        var elsewhere = await other.Host.GetRequiredService<IConfiguration>()
-            .GetAsync("plugin", "name", cancellationToken);
+        await Assert.ThrowsAsync<ResultException>(async () =>
+        {
+            await other.Host.GetRequiredService<IConfiguration>()
+                .GetAsync("plugin", "name", cancellationToken);
+        });
         // Assert
-        Assert.True(written.IsSuccess, written.ToString());
         Assert.True(File.Exists(Path.Combine(chosen, "plugin.json")));
         Assert.False(workstation.DocumentExists("plugin"));   // the default was not used, and not created
-
-        Assert.True(elsewhere.IsFailure);
     }
 
     /// <summary>UC-010. A service ships its manifest beside it and says so in code. The developer's
@@ -226,12 +223,11 @@ public sealed class SetupTutorials
         workstation.AddNyssaConfiguration(configure: options => options.Bootstrap.ConfigManifest = shipped);
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional", provider: "aesLocal", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional", provider: "aesLocal", cancellationToken: cancellationToken);
         var read = await configuration.GetAsync("mail", "password", cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.Equal("fictional", read.Value);
+        Assert.Equal("fictional", read);
         Assert.True(File.Exists(Path.Combine(workstation.Home, manifestFolder, "data", "mail.json")));
         Assert.False(File.Exists(workstation.ManifestPath));
     }
@@ -254,13 +250,11 @@ public sealed class SetupTutorials
         // Act
         workstation.AddNyssaConfiguration(configure: options => options.Bootstrap.ConfigManifest = shipped);
         var configuration = workstation.Host.GetRequiredService<IConfiguration>();
-        var saved = await configuration.SetAsync("mail", "host", "example.test", IConfiguration.Plain, cancellationToken);
+        await configuration.SetAsync("mail", "host", "example.test", IConfiguration.Plain, cancellationToken);
         var read = await configuration.GetAsync("mail", "host", cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.True(read.IsSuccess, read.ToString());
-        Assert.Equal("example.test", read.Value);
+        Assert.Equal("example.test", read);
         using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(shipped));
         var applications = manifest.RootElement.GetProperty("applications");
         Assert.Equal(workstation.ConfigurationDirectory,
@@ -296,12 +290,11 @@ public sealed class SetupTutorials
         workstation.AddNyssaConfiguration();
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
         var read = await configuration.GetAsync("mail", "password", cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.Equal("fictional-vault-password", read.Value);
+        Assert.Equal("fictional-vault-password", read);
         var vault = Assert.Single(workstation.VaultPackage.Created);
         Assert.Equal("contoso", vault.Settings.Name);
         Assert.Equal(new Uri("https://vault.contoso.example"), vault.Settings.Endpoint);
@@ -363,12 +356,11 @@ public sealed class SetupTutorials
             });
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
         var read = await configuration.GetAsync("mail", "password", cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.Equal("fictional-vault-password", read.Value);
+        Assert.Equal("fictional-vault-password", read);
         var vault = Assert.Single(workstation.VaultPackage.Created);
         Assert.Equal("contoso", vault.Settings.Name);
         Assert.Equal(new Uri("https://vault.contoso.example"), vault.Settings.Endpoint);
@@ -412,10 +404,9 @@ public sealed class SetupTutorials
             });
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
         var vault = Assert.Single(workstation.VaultPackage.Created);
         Assert.Equal(new Uri("https://vault.contoso.example/admin"), vault.Settings.Endpoint);
         Assert.Empty(vault.Settings.Settings);   // the code entry's settings went with it
@@ -476,12 +467,11 @@ public sealed class SetupTutorials
         workstation.AddNyssaConfiguration();
         IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
 
-        var saved = await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
+        await configuration.SetAsync("mail", "password", "fictional-vault-password", provider: "contoso", cancellationToken: cancellationToken);
         var read = await configuration.GetAsync("mail", "password", cancellationToken);
 
         // Assert
-        Assert.True(saved.IsSuccess, saved.ToString());
-        Assert.Equal("fictional-vault-password", read.Value);
+        Assert.Equal("fictional-vault-password", read);
         var vault = Assert.Single(workstation.VaultPackage.Created);
         Assert.Equal("fictional-client-secret", vault.Settings.Secrets["clientSecret"]);
         Assert.Equal("prod", vault.Settings.Settings["tenant"]);

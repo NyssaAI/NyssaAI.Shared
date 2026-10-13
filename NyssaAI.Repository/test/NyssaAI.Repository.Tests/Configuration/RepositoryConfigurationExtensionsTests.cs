@@ -23,7 +23,7 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
     public async Task GetRepositoryConfigurationAsync_InvalidPayload_ReturnsSanitizedValidation(string json)
     {
         var configuration = Open();
-        Assert.True((await configuration.SetAsync("nyssa.repository", "default", json, ConfigurationStore.Plain)).IsSuccess);
+        await configuration.SetAsync("nyssa.repository", "default", json, ConfigurationStore.Plain);
         var loaded = await configuration.GetRepositoryConfigurationAsync();
         Assert.True(loaded.IsFailure);
         Assert.Equal(ErrorCategory.Validation, Assert.Single(loaded.Errors).Category);
@@ -42,8 +42,7 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
         Assert.True(loaded.IsFailure);
         Assert.Equal(ErrorCategory.NotFound, Assert.Single(loaded.Errors).Category);
         var entries = await configuration.ListAsync("nyssa.repository");
-        Assert.True(entries.IsSuccess);
-        Assert.Empty(entries.Value);
+        Assert.Empty(entries);
     }
 
     [Fact]
@@ -81,7 +80,7 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
         var saved = await configuration.SetRepositoryConfigurationAsync(Settings(provider, connection), storageProvider: ConfigurationStore.Plain);
         Assert.True(saved.IsFailure);
         Assert.Equal(ErrorCategory.Validation, Assert.Single(saved.Errors).Category);
-        Assert.Empty((await configuration.ListAsync("nyssa.repository")).Value);
+        Assert.Empty(await configuration.ListAsync("nyssa.repository"));
     }
 
     [Fact]
@@ -94,7 +93,7 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
         var saved = await configuration.SetRepositoryConfigurationAsync(Settings("sqlite", "Data Source=test.db"), storageProvider: ConfigurationStore.Plain, cancellationToken: cancellation.Token);
         Assert.Equal(ErrorCategory.Canceled, Assert.Single(loaded.Errors).Category);
         Assert.Equal(ErrorCategory.Canceled, Assert.Single(saved.Errors).Category);
-        Assert.Empty((await configuration.ListAsync("nyssa.repository")).Value);
+        Assert.Empty(await configuration.ListAsync("nyssa.repository"));
     }
 
     [Theory]

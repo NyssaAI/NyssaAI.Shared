@@ -27,14 +27,16 @@ public static class RepositoryConfigurationExtensions
         {
             var loaded = await configuration.GetAsAsync(ConfigurationNamespace, key,
                 RepositoryConfigurationJsonContext.Default.RepositoryConfiguration, cancellationToken).ConfigureAwait(false);
-            if (loaded.IsFailure)
-                return Result<RepositoryConfiguration>.Failure(Sanitize(loaded.Errors));
-            var required = Guard.Against.False(loaded.Value, settings => settings is not null, "Repository settings are required.");
+            var required = Guard.Against.False(loaded, settings => settings is not null, "Repository settings are required.");
             if (required.IsFailure) return Result<RepositoryConfiguration>.Failure(required.Errors);
             var validated = required.Value.Validate();
             return validated.IsFailure
                 ? Result<RepositoryConfiguration>.Failure(validated.Errors)
                 : Result<RepositoryConfiguration>.Success(required.Value);
+        }
+        catch (ResultException exception)
+        {
+            return Result<RepositoryConfiguration>.Failure(Sanitize(exception.Errors));
         }
         catch (OperationCanceledException)
         {
@@ -63,9 +65,13 @@ public static class RepositoryConfigurationExtensions
             return validated;
         try
         {
-            var saved = await configuration.SetAsAsync(ConfigurationNamespace, key, settings,
+            await configuration.SetAsAsync(ConfigurationNamespace, key, settings,
                 RepositoryConfigurationJsonContext.Default.RepositoryConfiguration, storageProvider, cancellationToken).ConfigureAwait(false);
-            return saved.IsFailure ? Result.Failure(Sanitize(saved.Errors)) : Result.Success();
+            return Result.Success();
+        }
+        catch (ResultException exception)
+        {
+            return Result.Failure(Sanitize(exception.Errors));
         }
         catch (OperationCanceledException)
         {
