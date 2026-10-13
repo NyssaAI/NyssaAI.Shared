@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Xml.Linq;
 using Xunit;
 
@@ -48,7 +47,8 @@ public sealed class PackageSurfaceTests
     {
         get
         {
-            var directory = new DirectoryInfo(Path.GetDirectoryName(ThisFile())!);
+            // CI maps compile-time source paths; the executing assembly still has a real path.
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
             while (directory is not null)
             {
                 if (Directory.Exists(Path.Combine(directory.FullName, "src"))
@@ -60,9 +60,7 @@ public sealed class PackageSurfaceTests
                 directory = directory.Parent;
             }
 
-            throw new DirectoryNotFoundException("Could not locate the package root above this test file.");
+            throw new DirectoryNotFoundException("Could not locate the package root above the test assembly.");
         }
     }
-
-    private static string ThisFile([CallerFilePath] string path = "") => path;
 }
