@@ -84,9 +84,31 @@ function Start-RepositoryPostgres {
             --auth-host=scram-sha-256 --auth-local=trust --pwfile=$passwordFile *> (Join-Path $workspace 'initdb.log')
         if ($LASTEXITCODE -ne 0) { throw "Could not initialize PostgreSQL. See $workspace/initdb.log." }
         Write-Host 'Starting the temporary native PostgreSQL server.'
-        & $pgCtl --pgdata=$dataDirectory --log=$serverLog `
-            --options="-h 127.0.0.1 -p $port" --wait start *> (Join-Path $workspace 'startup.log')
-        if ($LASTEXITCODE -ne 0) { throw "Could not start PostgreSQL. See $workspace/server.log." }
+        if ($env:OS -eq 'Windows_NT') {
+            # Wait only for pg_ctl; PostgreSQL must keep running after its launcher exits.
+            # A direct pipeline can remain attached to the server's inherited handles.
+            $arguments = '--pgdata="{0}" --log="{1}" --options="-h 127.0.0.1 -p {2}" --timeout=30 --wait start' -f `
+                $dataDirectory, $serverLog, $port
+            $launcher = Start-Process -FilePath "$pgCtl.exe" -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+                -RedirectStandardOutput (Join-Path $workspace 'startup.log') `
+                -RedirectStandardError (Join-Path $workspace 'startup-error.log')
+            try {
+                # Keep the process handle available for ExitCode on Windows PowerShell.
+                $null = $launcher.Handle
+                if (-not $launcher.WaitForExit(45000)) {
+                    $launcher.Kill()
+                    throw "PostgreSQL startup timed out. See $serverLog."
+                }
+                $startupExitCode = $launcher.ExitCode
+            }
+            finally { $launcher.Dispose() }
+        }
+        else {
+            & $pgCtl --pgdata=$dataDirectory --log=$serverLog `
+                --options="-h 127.0.0.1 -p $port" --timeout=30 --wait start *> (Join-Path $workspace 'startup.log')
+            $startupExitCode = $LASTEXITCODE
+        }
+        if ($startupExitCode -ne 0) { throw "Could not start PostgreSQL. See $serverLog." }
         Write-Host 'The temporary native PostgreSQL server is ready.'
         return [pscustomobject]@{
             Kind = 'Native'; Executable = $pgCtl; DataDirectory = $dataDirectory
