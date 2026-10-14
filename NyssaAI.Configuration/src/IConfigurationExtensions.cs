@@ -10,7 +10,7 @@ namespace NyssaAI.Configuration;
 /// </summary>
 /// <remarks>
 /// All three open a browser through the interactive OAuth flow. None of them is ever reached from
-/// <see cref="IConfiguration"/>: a read that needs sign-in returns a typed failure, and the
+/// <see cref="IConfiguration"/>: a read that needs sign-in throws, and the
 /// application decides where and when a person can act on it.
 /// </remarks>
 public interface IConfigurationExtensions

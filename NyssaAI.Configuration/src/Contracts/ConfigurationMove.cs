@@ -8,8 +8,8 @@ namespace NyssaAI.Configuration.Contracts;
 /// <para>
 /// A move spans two stores and no transaction covers both, so the order is chosen to never lose the
 /// value: read from the source, write to the destination, publish the entry, and only then withdraw
-/// the source. If the withdrawal fails, the value is safely readable at its new home and a copy
-/// survives at the old one — which is why <see cref="SourceWithdrawn"/> exists rather than the move
+/// the source. If the provider retains a copy or withdrawal fails, the value is safely readable at
+/// its new home and a copy survives at the old one — which is why <see cref="SourceWithdrawn"/> exists rather than the move
 /// reporting a failure it did not have. A caller that must guarantee no second copy checks this
 /// flag; the same fact is logged as a warning.
 /// </para>
@@ -28,14 +28,12 @@ public sealed record ConfigurationMove
     public required string Key { get; init; }
 
     /// <summary>
-    /// Gets the provider the value left, or <see cref="IConfiguration.Plain"/> when it had been
-    /// stored unprotected.
+    /// Gets the provider the value left, or an empty string for default storage.
     /// </summary>
     public required string From { get; init; }
 
     /// <summary>
-    /// Gets the provider the value arrived at, or <see cref="IConfiguration.Plain"/> when it is now
-    /// stored unprotected.
+    /// Gets the provider the value arrived at, or an empty string for default storage.
     /// </summary>
     public required string To { get; init; }
 
@@ -44,8 +42,15 @@ public sealed record ConfigurationMove
     /// </summary>
     /// <remarks>
     /// False means the move completed and the entry is correct, but a copy remains at
-    /// <see cref="From"/> and is the caller's to clean up. It is never false for a provider that
-    /// sealed the value into the entry, because overwriting the entry withdrew it.
+    /// <see cref="From"/>, including a recoverable soft-deleted copy. Cleanup depends on that
+    /// provider's retention policy. It is never false for a provider that sealed the value into the
+    /// entry, because overwriting the entry withdrew it.
     /// </remarks>
     public required bool SourceWithdrawn { get; init; }
+    /// <summary>Detailed destination, publication, and source cleanup progress.</summary>
+    public Recovery.ConfigurationOperationProgress? Progress { get; init; }
+
+    /// <summary>Protected continuation state when cleanup remains safely recoverable.</summary>
+    public Recovery.ConfigurationRecoveryHandle? RecoveryHandle { get; init; }
+
 }

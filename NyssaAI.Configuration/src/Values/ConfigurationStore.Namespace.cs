@@ -1,3 +1,5 @@
+using NyssaAI.Configuration.Recovery;
+using NyssaAI.Configuration.CloudKeyVaults;
 using System.Text;
 using System.Text.Json;
 using NyssaAI.Configuration.Contracts;
@@ -76,75 +78,158 @@ internal sealed partial class ConfigurationStore
             : await ReadThroughAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<Result> SetNamespaceAsync(string @namespace, string serialized, CancellationToken cancellationToken)
+    private async ValueTask<ConfigurationAttempt> SetNamespaceAsync(string @namespace, string serialized, bool replace, CancellationToken cancellationToken)
     {
         try
         {
-            return await WriteNamespaceAsync(@namespace, serialized, cancellationToken).ConfigureAwait(false);
+            return await WriteNamespaceAsync(@namespace, serialized, replace, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException canceled)
         {
             return Result.Failure(Error.Canceled(canceled));
         }
+        catch (JsonException)
+        {
+            return Result.Failure(NamespaceJsonInvalid);
+        }
     }
 
-    private async ValueTask<Result> WriteNamespaceAsync(string @namespace, string serialized, CancellationToken cancellationToken)
+    private async ValueTask<ConfigurationAttempt> WriteNamespaceAsync(string @namespace, string serialized, bool replace, CancellationToken cancellationToken)
     {
         using var json = JsonDocument.Parse(serialized);
-        // Preserve the earlier scalar shorthand; objects use one entry per serialized property.
-        if (json.RootElement.ValueKind != JsonValueKind.Object)
-            return await SetAsync(@namespace, LegacySettingsKey, serialized, IConfiguration.Plain, cancellationToken).ConfigureAwait(false);
-        var properties = json.RootElement.EnumerateObject().ToArray();
-        if (properties.Any(property => string.Equals(property.Name, LegacySettingsKey, StringComparison.Ordinal))
-            || properties.Select(property => property.Name).Distinct(StringComparer.Ordinal).Count() != properties.Length)
-            return Result.Failure(NamespaceJsonInvalid);
+        var isObject = json.RootElement.ValueKind == JsonValueKind.Object;
+        Dictionary<string, ConfigurationValue> incoming;
+        if (isObject)
+        {
+            var properties = ReadNamespaceProperties(json.RootElement);
+            if (properties.IsFailure)
+                return Result.Failure(properties.Errors);
+            incoming = properties.Value;
+        }
+        else
+        {
+            if (!replace)
+                return Result.Failure(NamespaceObjectRequired);
+            // Preserve scalar shorthand, but replace the namespace with only its legacy entry.
+            incoming = new(StringComparer.Ordinal)
+            {
+                [LegacySettingsKey] = new ConfigurationValue { Value = serialized },
+            };
+        }
 
         var document = _documents.Create(@namespace);
         if (document.IsFailure)
             return Result.Failure(document.Errors);
-        return await document.Value.ModifyAsync(async entries =>
+        ConfigurationRecoveryState? state = null;
+        var publishing = false;
+        Result result;
+        try
         {
-            if (entries.TryGetValue(LegacySettingsKey, out var legacy) && !legacy.IsLiteral)
-                return Result.Failure(AlreadyStoredElsewhere(@namespace, LegacySettingsKey, legacy.Provider));
-            // Validate every destination before making any remote writes.
-            foreach (var property in properties)
+            result = await document.Value.ModifyAsync(async entries =>
             {
-                if (!entries.TryGetValue(property.Name, out var entry))
-                    continue;
-                var valid = entry.Validate();
-                if (valid.IsFailure)
-                    return valid;
-                if (!entry.IsLiteral)
+                var original = Snapshot(entries);
+                if (isObject && entries.TryGetValue(LegacySettingsKey, out var legacy))
                 {
-                    var provider = GetProvider(entry.Provider);
-                    if (provider.IsFailure)
-                        return Result.Failure(provider.Errors);
-                    var circular = CheckCircular(entry.Provider, @namespace, property.Name);
-                    if (circular.IsFailure)
-                        return circular;
+                    if (!legacy.IsLiteral)
+                        return Result.Failure(AlreadyStoredElsewhere(@namespace, LegacySettingsKey, legacy.Provider));
+                    if (!replace)
+                    {
+                        // Merge must preserve properties that existed only in the legacy object.
+                        using var legacyJson = JsonDocument.Parse(legacy.Value);
+                        var properties = ReadNamespaceProperties(legacyJson.RootElement);
+                        if (properties.IsFailure)
+                            return Result.Failure(properties.Errors);
+                        foreach (var (key, value) in properties.Value)
+                            entries.TryAdd(key, value);
+                    }
                 }
-            }
+                // Validate every destination before making any remote writes.
+                foreach (var key in incoming.Keys)
+                {
+                    if (!entries.TryGetValue(key, out var entry))
+                        continue;
+                    var valid = entry.Validate();
+                    if (valid.IsFailure)
+                        return valid;
+                    if (!entry.IsLiteral)
+                    {
+                        var provider = GetProvider(entry.Provider);
+                        if (provider.IsFailure)
+                            return Result.Failure(provider.Errors);
+                        var circular = CheckCircular(entry.Provider, @namespace, key);
+                        if (circular.IsFailure)
+                            return circular;
+                    }
+                }
 
-            foreach (var property in properties)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var isJson = property.Value.ValueKind != JsonValueKind.String;
-                var value = isJson ? property.Value.GetRawText() : property.Value.GetString()!;
-                if (!entries.TryGetValue(property.Name, out var existing) || existing.IsLiteral)
-                    entries[property.Name] = new ConfigurationValue { Value = value, IsJsonValue = isJson };
-                else
+                var steps = new List<ConfigurationRecoveryStep>();
+                foreach (var (key, value) in incoming)
                 {
-                    var provider = GetProvider(existing.Provider);
-                    var written = await provider.Value.WriteAsync(value, @namespace, property.Name, cancellationToken).ConfigureAwait(false);
-                    if (written.IsFailure)
-                        return Result.Failure(written.Errors);
-                    entries[property.Name] = written.Value with { IsJsonValue = isJson };
+                    entries.TryGetValue(key, out var existing);
+                    var step = await PrepareStepAsync(existing?.Provider ?? string.Empty, CloudKeyVaultAction.Write,
+                        @namespace, key, value.Value, existing, value.IsJsonValue, cancellationToken).ConfigureAwait(false);
+                    if (step.IsFailure) return Result.Failure(step.Errors);
+                    steps.Add(step.Value);
                 }
-            }
-            entries.Remove(LegacySettingsKey);
-            return Result.Success();
-        }, cancellationToken).ConfigureAwait(false);
+                state = new ConfigurationRecoveryState
+                {
+                    OperationId = Guid.NewGuid(), Namespace = @namespace,
+                    Kind = replace ? ConfigurationOperationKind.Replace : ConfigurationOperationKind.Merge,
+                    Original = original, Proposed = Snapshot(entries), Steps = steps,
+                };
+                if (replace)
+                {
+                    foreach (var key in state.Proposed.Keys.Where(key => !incoming.ContainsKey(key)).ToArray())
+                        state.Proposed.Remove(key);
+                }
+                else state.Proposed.Remove(LegacySettingsKey);
+                var written = await WriteStepsAsync(state, cancellationToken).ConfigureAwait(false);
+                if (written.IsFailure) return written;
+                entries.Clear();
+                foreach (var entry in state.Proposed) entries.Add(entry.Key, entry.Value);
+                cancellationToken.ThrowIfCancellationRequested();
+                publishing = true;
+                state = state with { Publication = ConfigurationPublicationState.Unknown };
+                return Result.Success();
+            }, cancellationToken).ConfigureAwait(false);
+            if (state is not null)
+                state = state with { Publication = result.IsSuccess ? ConfigurationPublicationState.Published
+                    : publishing ? ConfigurationPublicationState.Failed : ConfigurationPublicationState.NotAttempted };
+        }
+        catch (OperationCanceledException)
+        {
+            result = Result.Failure(Error.FromMessage(Error.CanceledUserMessage, ErrorCategory.Canceled));
+        }
+        catch (JsonException) { result = Result.Failure(NamespaceJsonInvalid); }
+        catch (Exception) { result = Result.Failure(RecoveryUnfinished); }
+        return Attempt(result, state);
     }
+
+    private static Result<Dictionary<string, ConfigurationValue>> ReadNamespaceProperties(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+            return Result<Dictionary<string, ConfigurationValue>>.Failure(NamespaceObjectRequired);
+        var properties = new Dictionary<string, ConfigurationValue>(StringComparer.Ordinal);
+        foreach (var property in value.EnumerateObject())
+        {
+            var isJson = property.Value.ValueKind != JsonValueKind.String;
+            var entry = new ConfigurationValue
+            {
+                // ValueKind.String guarantees GetString returns a non-null value.
+                Value = isJson ? property.Value.GetRawText() : property.Value.GetString()!,
+                IsJsonValue = isJson,
+            };
+            if (string.Equals(property.Name, LegacySettingsKey, StringComparison.Ordinal)
+                || !properties.TryAdd(property.Name, entry))
+                return Result<Dictionary<string, ConfigurationValue>>.Failure(NamespaceJsonInvalid);
+        }
+        return Result<Dictionary<string, ConfigurationValue>>.Success(properties);
+    }
+
+    private static Error NamespaceObjectRequired => Error.FromMessages(
+        "The namespace settings could not be merged.",
+        "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
+        ErrorCategory.Validation);
 
     private static Error NamespaceJsonInvalid => Error.FromMessages(
         "The namespace settings could not be processed.",

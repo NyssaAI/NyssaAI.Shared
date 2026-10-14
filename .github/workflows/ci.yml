@@ -19,7 +19,38 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+      - name: Restore pinned dependencies
+        run: dotnet restore NyssaAI.Shared.slnx --locked-mode
       - name: Build and run all tests
         shell: pwsh
         run: ./run-tests.ps1
+      - name: Verify NuGet packages with an isolated consumer
+        shell: pwsh
+        run: ./test/verify-packages.ps1
+
+  native:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: nyssaai_test
+          POSTGRES_PASSWORD: native-test-only
+          POSTGRES_DB: nyssaai_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U nyssaai_test -d nyssaai_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Install native compiler prerequisites
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Publish and run native consumers
+        env:
+          NYSSAAI_REPOSITORY_POSTGRES: Host=127.0.0.1;Port=${{ job.services.postgres.ports['5432'] }};Database=nyssaai_test;Username=nyssaai_test;Password=native-test-only;Pooling=False
+        run: bash test/verify-native.sh

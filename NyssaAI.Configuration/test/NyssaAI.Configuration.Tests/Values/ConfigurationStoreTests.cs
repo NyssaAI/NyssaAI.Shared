@@ -14,7 +14,7 @@ public sealed class ConfigurationStoreTests
         using var directory = new TemporaryDirectory();
         var store = CreateStore(directory);
 
-        Assert.True((await store.SetAsync("service", "url", "https://example.test", IConfiguration.Plain, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.SetAsync("service", "url", "https://example.test", cancellationToken: TestContext.Current.CancellationToken)).IsSuccess);
 
         var read = await store.GetAsync("service", "url", TestContext.Current.CancellationToken);
         Assert.True(read.IsSuccess);
@@ -22,16 +22,18 @@ public sealed class ConfigurationStoreTests
     }
 
     [Fact]
-    public async Task Set_WithNoDestinationOnANewKey_ReturnsFailure()
+    public async Task Set_WithNoDestinationOnANewKey_UsesDefaultStorage()
     {
         using var directory = new TemporaryDirectory();
         var store = CreateStore(directory);
 
-        // Guessing here is how a secret lands in plaintext under a key that does not look like one.
         var written = await store.SetAsync("service", "token", "value", cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.True(written.IsFailure);
-        Assert.Equal(ConfigurationStore.DestinationRequired("service", "token"), Assert.Single(written.Errors));
+        Assert.True(written.IsSuccess);
+        var stored = await ReadRawAsync(directory, "service", "token");
+        Assert.True(stored.IsLiteral);
+        Assert.False(stored.Encrypted);
+        Assert.Equal("value", stored.Value);
     }
 
     [Fact]
@@ -57,7 +59,7 @@ public sealed class ConfigurationStoreTests
         var store = CreateSealingStore(directory);
         Assert.True((await store.SetAsync("service", "token", "s3cret", "aesLocal", TestContext.Current.CancellationToken)).IsSuccess);
 
-        var written = await store.SetAsync("service", "token", "s3cret", IConfiguration.Plain, TestContext.Current.CancellationToken);
+        var written = await store.SetAsync("service", "token", "s3cret", "otherProvider", TestContext.Current.CancellationToken);
 
         Assert.True(written.IsFailure);
         Assert.Equal(
@@ -100,8 +102,8 @@ public sealed class ConfigurationStoreTests
     {
         using var directory = new TemporaryDirectory();
         var store = CreateStore(directory);
-        await store.SetAsync("service", "one", "1", IConfiguration.Plain, TestContext.Current.CancellationToken);
-        await store.SetAsync("service", "two", "2", IConfiguration.Plain, TestContext.Current.CancellationToken);
+        await store.SetAsync("service", "one", "1", cancellationToken: TestContext.Current.CancellationToken);
+        await store.SetAsync("service", "two", "2", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True((await store.RemoveAsync("service", "one", TestContext.Current.CancellationToken)).IsSuccess);
 
@@ -117,7 +119,7 @@ public sealed class ConfigurationStoreTests
         var store = CreateStore(directory);
 
         var written = await store.SetAsAsync(
-            "service", "attempts", 42, IConfiguration.Plain, TestContext.Current.CancellationToken);
+            "service", "attempts", 42, cancellationToken: TestContext.Current.CancellationToken);
         var read = await store.GetAsAsync<int>(
             "service", "attempts", TestContext.Current.CancellationToken);
 
@@ -127,7 +129,7 @@ public sealed class ConfigurationStoreTests
     }
 
     [Fact]
-    public async Task RemoveAsync_WithProviderBackedEntry_RemovesOnlyTheLocalEntry()
+    public async Task RemoveAsync_WithLocalEncryption_RemovesEntryWithoutRemoteRetention()
     {
         using var directory = new TemporaryDirectory();
         var cipher = ConfigurationCipherAesGcm.Create(new byte[32]).Value;
@@ -140,6 +142,7 @@ public sealed class ConfigurationStoreTests
         var read = await store.GetAsync("service", "token", TestContext.Current.CancellationToken);
 
         Assert.True(removed.IsSuccess);
+        Assert.False(removed.Value.RemoteValueRemains);
         Assert.True(read.IsFailure);
         Assert.Equal(NyssaAI.Results.ErrorCategory.NotFound, Assert.Single(read.Errors).Category);
     }
@@ -183,11 +186,11 @@ public sealed class ConfigurationStoreTests
         var store = CreateSealingStore(directory);
         Assert.True((await store.SetAsync("service", "token", "s3cret", "aesLocal", TestContext.Current.CancellationToken)).IsSuccess);
 
-        var moved = await store.MoveAsync("service", "token", IConfiguration.Plain, TestContext.Current.CancellationToken);
+        var moved = await store.MoveAsync("service", "token", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(moved.IsSuccess, moved.Errors.FirstOrDefault()?.TechnicalMessage);
         Assert.Equal("aesLocal", moved.Value.From);
-        Assert.Equal(IConfiguration.Plain, moved.Value.To);
+        Assert.Equal(string.Empty, moved.Value.To);
         // The ciphertext was the entry's own value, so overwriting the entry withdrew it.
         Assert.True(moved.Value.SourceWithdrawn);
 
@@ -201,12 +204,12 @@ public sealed class ConfigurationStoreTests
     {
         using var directory = new TemporaryDirectory();
         var store = CreateSealingStore(directory);
-        Assert.True((await store.SetAsync("service", "token", "s3cret", IConfiguration.Plain, TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await store.SetAsync("service", "token", "s3cret", cancellationToken: TestContext.Current.CancellationToken)).IsSuccess);
 
         var moved = await store.MoveAsync("service", "token", "aesLocal", TestContext.Current.CancellationToken);
 
         Assert.True(moved.IsSuccess, moved.Errors.FirstOrDefault()?.TechnicalMessage);
-        Assert.Equal(IConfiguration.Plain, moved.Value.From);
+        Assert.Equal(string.Empty, moved.Value.From);
         Assert.True(moved.Value.SourceWithdrawn);
 
         var stored = await ReadRawAsync(directory, "service", "token");
@@ -226,6 +229,20 @@ public sealed class ConfigurationStoreTests
 
         Assert.True(moved.IsFailure);
         Assert.Equal(ConfigurationStore.AlreadyThere("service", "token", "aesLocal"), Assert.Single(moved.Errors));
+    }
+
+    [Fact]
+    public async Task MoveAsync_DefaultEntryWithoutDestination_ReturnsConflictAsync()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = CreateStore(directory);
+        Assert.True((await store.SetAsync("service", "host", "localhost", cancellationToken: TestContext.Current.CancellationToken)).IsSuccess);
+
+        var moved = await store.MoveAsync("service", "host", cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(moved.IsFailure);
+        Assert.Equal(ConfigurationStore.AlreadyThere("service", "host", string.Empty), Assert.Single(moved.Errors));
+        Assert.Equal("localhost", (await store.GetAsync("service", "host", TestContext.Current.CancellationToken)).Value);
     }
 
     [Fact]
@@ -257,8 +274,8 @@ public sealed class ConfigurationStoreTests
         public ValueTask<Result<ConfigurationValue>> WriteAsync(string value, string @namespace, string key, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Result<ConfigurationValue>.Success(new ConfigurationValue { Value = value, Provider = Name }));
 
-        public ValueTask<Result> EraseAsync(ConfigurationValue entry, string @namespace, string key, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Result.Failure(
+        public ValueTask<Result<ConfigurationRemoval>> EraseAsync(ConfigurationValue entry, string @namespace, string key, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result<ConfigurationRemoval>.Failure(
                 Error.FromMessages("no", "stubborn provider refuses to withdraw", ErrorCategory.Unexpected)));
     }
 

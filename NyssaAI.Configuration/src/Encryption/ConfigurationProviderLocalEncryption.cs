@@ -10,6 +10,8 @@ namespace NyssaAI.Configuration.Encryption;
 /// </summary>
 internal sealed class ConfigurationProviderLocalEncryption : IConfigurationProvider
 {
+    public bool IsLocalOnly => true;
+
     private readonly IConfigurationCipher _cipher;
 
     /// <summary>Creates a provider over one cipher.</summary>
@@ -45,13 +47,12 @@ internal sealed class ConfigurationProviderLocalEncryption : IConfigurationProvi
     /// <inheritdoc/>
     /// <remarks>
     /// The ciphertext is the entry's own value, so there is nothing outside it to withdraw:
-    /// overwriting the entry is the withdrawal, and the store has already done that by the time this
-    /// is called.
+    /// removing or overwriting the entry completes deletion.
     /// </remarks>
-    public ValueTask<Result> EraseAsync(
+    public ValueTask<Result<ConfigurationRemoval>> EraseAsync(
         ConfigurationValue entry,
         string @namespace,
         string key,
         CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult(Result.Success());
+        ValueTask.FromResult(Result<ConfigurationRemoval>.Success(new ConfigurationRemoval { RemoteValueRemains = false }));
 }

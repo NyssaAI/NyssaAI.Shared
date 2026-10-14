@@ -53,9 +53,12 @@ internal sealed class ConfigurationValueJsonConverter : JsonConverter<Configurat
         }
         else
             writer.WriteStringValue(value.Value);
-        writer.WriteBoolean("encrypted", value.Encrypted);
-        writer.WriteString("provider", value.Provider);
-        writer.WriteBoolean("reauth_required", value.ReauthRequired);
+        if (value.Encrypted)
+            writer.WriteBoolean("encrypted", true);
+        if (!value.IsLiteral)
+            writer.WriteString("provider", value.Provider);
+        if (value.ReauthRequired)
+            writer.WriteBoolean("reauth_required", true);
         if (value.IsJsonValue && (!value.IsLiteral || value.Value.TrimStart().StartsWith('"')))
             writer.WriteBoolean("json", true);
         writer.WriteEndObject();

@@ -1,10 +1,8 @@
-.temp/
-.nyssa-ai/
+# Ignore dot directories at every level (tracked files remain tracked).
+.*/
 **/bin/
 **/obj/
 **/TestResults/
-.vs/
-.idea/
 *.user
 *.suo
 *.nupkg

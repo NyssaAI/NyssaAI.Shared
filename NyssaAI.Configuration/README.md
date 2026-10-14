@@ -1,14 +1,14 @@
 # NyssaAI.Configuration
 
-`NyssaAI.Configuration` stores settings and secrets for .NET applications and command-line tools. Application code uses [`IConfiguration`](src/IConfiguration.cs) to read and write values that persist across process runs, whether they are stored as plain JSON, encrypted locally, or held in a remote vault. The library is designed to run on Windows, Linux, and macOS, with support for Native AOT compilation.
+`NyssaAI.Configuration` stores settings and secrets for .NET applications and command-line tools. Application code uses [`IConfiguration`](src/IConfiguration.cs) to read and write values that persist across runs, whether they are stored as plain JSON, encrypted locally, or held in a remote vault. The library is designed to run on Windows, Linux, and macOS, with support for Native AOT compilation.
 
 ## Easy setup, consistent access
 
-Supply a configuration settings type, register configuration, and save or retrieve that object in one call. The library can handle the files, JSON serialization, and encryption by default.
+Supply configuration DTO definitions, register the library, and save or retrieve your configuration DTOs in one call. The library can handle the files, JSON serialization, and encryption by default.
 
-- **Add default configuration.** `AddNyssaConfiguration()` uses the application's assembly identity and default storage paths. On first use, it creates a missing manifest section and prepares the configuration directory.
-- **Keep each module's settings together.** Give each module its own namespace. Save its complete settings object, including nested objects, with `SetAsAsync("orders", orderSettings)`, and retrieve it with `GetAsAsync<OrderSettings>("orders")`. Each top-level property becomes an entry. New properties use plaintext; existing properties keep their storage provider.
-- **Add encryption with a storage choice.** Select `"aesLocal"` when saving a new entry. The library creates and manages the encryption key in the OS credential store; reads return the original DTO.
+- **Add default configuration.** `AddNyssaConfiguration()` uses the application's assembly identity and default storage paths. On first use, it creates a missing manifest section and prepares the configuration directory for each named configuration package.
+- **Keeps each module's settings together.** You can give each module its own namespace and save a complete settings object, including nested objects, with `SetAsAsync("orders", orderSettings)`, and retrieve it with `GetAsAsync<OrderSettings>("orders")`. Alternatively you can specify complex types by property and vary the storage or encryption mechanism by property.
+- **Add encryption with a storage choice.** Select `"aesLocal"` when saving a new entry. The library creates and manages the encryption key in the OS credential store; encrypts the data on write and decrypts it on read returning the original DTO unencrypted.
 - **Use a remote vault through the same API.** After registering a vault provider and configuring its connection and credentials, use its provider name when saving. The value stays in the vault, and the library keeps a local pointer. The module's read call stays the same. Use `MoveAsync` to change the provider for an existing entry.
 
 Local storage and encryption work out of the box on a supported machine with an available OS credential store. You do not need to choose file paths, generate keys, or prepare a manifest for the default setup.
@@ -19,23 +19,25 @@ Suppose an application has an Orders module and a Notifications module. Each mod
 
 ```csharp
 // Save each module's settings as plain JSON.
-(await configuration.SetAsAsync("orders", orderSettings)).ThrowIfError();
-(await configuration.SetAsAsync("notifications", notificationSettings)).ThrowIfError();
+await configuration.SetAsAsync("orders", orderSettings);
+await configuration.SetAsAsync("notifications", notificationSettings);
 
 // Read the complete settings objects.
-var orders = (await configuration.GetAsAsync<OrderSettings>("orders")).ThrowIfError();
-var notifications = (await configuration.GetAsAsync<NotificationSettings>("notifications")).ThrowIfError();
+var orders = await configuration.GetAsAsync<OrderSettings>("orders");
+var notifications = await configuration.GetAsAsync<NotificationSettings>("notifications");
 ```
 
-Each save updates the DTO's properties in its namespace, keeping nested objects together. Registration prepares the service; the `SetAsAsync` calls supply the values. The same read call assembles the DTO even when some properties use local encryption or a cloud vault.
+Each save replaces its namespace with the DTO's serialized properties, keeping nested objects together. Use `MergeSettingsAsync` for partial updates when omitted entries should remain. Registration prepares the service; the `SetAsAsync` calls supply the values. The same read call assembles the DTO even when some properties use local encryption or a cloud vault.
+
+You can also store a complete DTO under one key, with one provider for the entire object. See [Store a DTO](#store-a-dto) for both call patterns and their JSON layouts.
 
 ## IConfiguration - The main interface
 
 Once configuration is registered, inject `IConfiguration` into the classes that need it. The storage choice is recorded with each key, so a database service uses the same call to read a password encrypted on disk or stored in a vault.
 
 ```csharp
-var host = (await configuration.GetAsync("database", "host")).ThrowIfError();
-var password = (await configuration.GetAsync("database", "password")).ThrowIfError();
+var host = await configuration.GetAsync("database", "host");
+var password = await configuration.GetAsync("database", "password");
 ```
 
 Application code uses `IConfiguration` to read and write values, regardless of where they are stored.
@@ -44,24 +46,26 @@ The API below is organized around `IConfiguration`. Each method accepts an optio
 
 ```text
 IConfiguration
-|-- Plain                Explicitly selects unencrypted storage ("")
-|-- GetAsync             Result<string>: NotFound when the key is missing
-|-- SetAsync             Result: new keys require a provider; updates can inherit it
-|-- GetAsAsync<TValue>   Result<TValue>: read a named key or the namespace settings
-|-- SetAsAsync<TValue>   Result: write a named key or namespace properties
-|-- RemoveAsync          Result: remove the local entry; leave any remote secret
-|-- ListAsync            Result<IReadOnlyList<string>>: keys in ordinal order
-`-- MoveAsync            Result<ConfigurationMove>: change provider and report source cleanup
+|-- GetAsync             string: read one value
+|-- SetAsync             new keys use default storage; updates preserve their provider
+|-- GetAsAsync<TValue>    TValue: read a named key or the namespace settings
+|-- SetAsAsync<TValue>    replace a named value or the namespace contents
+|-- MergeSettingsAsync   update supplied namespace properties; preserve omitted entries
+|-- RemoveAsync          ConfigurationRemoval: delete and report any retained remote copy
+|-- ListAsync            IReadOnlyList<string>: keys in ordinal order
+|-- MoveAsync            ConfigurationMove: change provider and report source cleanup
+`-- RecoverAsync         ConfigurationRecoveryOutcome: continue safely unfinished work
 ```
 
 The methods have a few behaviors to account for when using them:
 
-- `GetAsync` returns `NotFound` when the key is missing.
+- `GetAsync` throws when the key is missing. Namespace reads also throw when there are no settings to load.
 - `ListAsync` returns keys in ordinal order, or an empty list when the namespace does not exist.
-- `RemoveAsync` succeeds when the key is already absent. For a key stored in a vault, it removes the local pointer and leaves the remote secret in place.
-- `GetAsAsync<TValue>` and `SetAsAsync<TValue>` each have reflection-based and source-generated JSON overloads.
+- `RemoveAsync` requests deletion through the recorded provider, then removes the local entry. Its `RemoteValueRemains` flag reports provider retention, including soft-deleted copies. An already absent local key succeeds without contacting a provider.
+- `GetAsAsync<TValue>`, `SetAsAsync<TValue>`, and `MergeSettingsAsync<TValue>` each have reflection-based and source-generated JSON overloads.
+- Keyed `GetAsAsync<string>` reads strings saved through namespace objects, `SetAsync`, or keyed `SetAsAsync`. See [Typed string reads](#typed-string-reads) for the encoding behavior.
 
-Operations report failures through [`Result` and `Result<T>`](../NyssaAI.Result/src/Result.cs) from [`NyssaAI.Results`](../NyssaAI.Result/README.md). Check the result before using a value or starting an operation that depends on it. The examples use `ThrowIfError()` to stop execution when an operation fails.
+These operations are expected to succeed. Reads return the value directly, and writes complete without a return value. Removal and moves return an outcome describing provider cleanup. An unexpected failure throws an exception. Failures reported by the store or a provider throw `ResultException`, which retains the error details; cancellation throws `OperationCanceledException`. There is no `Result` to check or unwrap. Partial move and namespace failures use derived exceptions carrying progress; see [Recover an interrupted operation](#recover-an-interrupted-operation).
 
 Startup can also fail. Resolving the service can throw `InvalidOperationException` if startup is not successful.
 
@@ -114,48 +118,40 @@ You can specify a custom manifest location in application code, and use that man
 
 After reading the manifest, the library prepares the application's configuration folder. For a new application using the defaults, this is `.nyssa-ai/config` beneath the application's base directory (`AppContext.BaseDirectory`). The manifest records that location for future use.
 
-Each namespace has a JSON file in that folder. Each top-level DTO property has its own entry and storage provider. Nested objects remain together within their property's entry.
+Each namespace has a JSON file in that folder. A keyed DTO write stores the complete object in one entry. A namespace DTO write gives each top-level property its own entry and storage provider; nested objects remain together within their property's entry. [Store a DTO](#store-a-dto) shows both layouts.
 
 For example, `mailserverSettings.json` can build one DTO from plain settings, a locally encrypted password, and an API key stored in a cloud vault:
 
 ```json
 {
   "Host": {
-    "value": "smtp.example.com",
-    "encrypted": false,
-    "provider": "",
-    "reauth_required": false
+    "value": "smtp.example.com"
   },
   "Port": {
-    "value": 587,
-    "encrypted": false,
-    "provider": "",
-    "reauth_required": false
+    "value": 587
   },
   "UseTls": {
-    "value": true,
-    "encrypted": false,
-    "provider": "",
-    "reauth_required": false
+    "value": true
   },
   "Password": {
     "value": "<encrypted password>",
     "encrypted": true,
-    "provider": "aesLocal",
-    "reauth_required": false
+    "provider": "aesLocal"
   },
   "ApiKey": {
     "value": "mailserverSettings/ApiKey",
-    "encrypted": false,
-    "provider": "mailVault",
-    "reauth_required": false
+    "provider": "mailVault"
   }
 }
 ```
 
-The encrypted password is a placeholder. The pointer `mailserverSettings/ApiKey` uses the Bitwarden Secrets implementation's `namespace/key` format. The adapter finds the secret with that name in the configured organization and retrieves its value. `mailVault` is the configured vault name; it must match the manifest's `keyVault.name`, with the Bitwarden factory registered for kind `bitwarden-secrets`. `encrypted` describes the local value, so it is `false` for a vault pointer.
+The encrypted password is a placeholder. The pointer `mailserverSettings/ApiKey` uses the Bitwarden Secrets implementation's `namespace/key` format. The adapter finds the secret with that name in the configured organization and retrieves its value. `mailVault` is the configured vault name; it must match the manifest's `keyVault.name`, with the Bitwarden factory registered for kind `bitwarden-secrets`. `encrypted` describes the local value, so it is omitted for a vault pointer.
 
-`GetAsAsync<MailserverSettings>("mailserverSettings")` resolves all five entries and builds one DTO, including `Password` and `ApiKey`. Entry names match the DTO's serialized property names. If any entry cannot be resolved, the read returns a failure.
+Entries retain their `value` wrapper and omit metadata at its default: no `provider` means plaintext, and absent `encrypted` or `reauth_required` means false. Nondefault metadata is written when needed. The `"json": true` marker is retained for typed strings and provider-backed JSON so reads preserve their encoding.
+
+Existing files with explicit default fields remain readable; saving a namespace writes the compact form. No migration is required. Omitting a provider in an API update preserves its recorded provider; it does not remove that provider from the file.
+
+`GetAsAsync<MailserverSettings>("mailserverSettings")` resolves all five entries and builds one DTO, including `Password` and `ApiKey`. Entry names match the DTO's serialized property names. If any entry cannot be resolved, the read throws.
 
 ### The key store
 
@@ -179,9 +175,9 @@ Registration prepares the service. Initialization happens when `IConfiguration` 
 A read starts with the local namespace file, including when the value is stored in a remote vault.
 
 1. **Select the entry.** Use the requested namespace and key. When the key is omitted, read the namespace entries to assemble the DTO.
-2. **Read the namespace file.** Find the entry and its recorded provider. A missing entry returns `NotFound`.
+2. **Read the namespace file.** Find the entry and its recorded provider. A missing entry throws.
 3. **Resolve the value.** Return a plain value directly, decrypt a local value, or ask the named vault provider to retrieve the remote secret. For an OAuth entry, obtain the access token and refresh it when needed.
-4. **Return the result.** `GetAsync` returns a string. `GetAsAsync<T>` deserializes the value into the requested settings type. Failures are returned through `Result`.
+4. **Return the value.** `GetAsync` returns a string. `GetAsAsync<T>` deserializes the value into the requested settings type. An unexpected failure throws.
 
 Each read uses the provider recorded with that entry.
 
@@ -216,9 +212,9 @@ OAuth sign-in uses a separate interface, [`IConfigurationExtensions`](src/IConfi
 - If a plain setting is requested, it returns the value from the local file.
 - If an encrypted password is requested, it uses the local encryption provider to decrypt it.
 - If a cloud secret is requested, it passes the stored pointer to the configured vault provider and retrieves the secret.
-- If a complete settings DTO is requested, it resolves the namespace's entries and builds the DTO from those values.
+- If a DTO is requested by key, it resolves that entry and deserializes the complete object. If only the namespace is supplied, it resolves the namespace's entries and builds the DTO from those values.
 
-When saving a DTO, the store keeps each existing property's provider and saves new properties as plaintext. To change a property's provider, use `MoveAsync`. The store saves the value at its new location before attempting to remove the old copy.
+A namespace replacement keeps the providers of included properties, saves new properties as plaintext, and removes omitted local entries. A namespace merge preserves omitted entries. A keyed DTO write uses one provider for the complete object. To change an entry's provider, use `MoveAsync`. The store saves the value at its new location before attempting to remove the old copy.
 
 ### Providers
 
@@ -227,7 +223,7 @@ Providers handle the parts of storage that depend on encryption or an external s
 - **`Name`** identifies the provider recorded with an entry, such as `"aesLocal"` or a configured vault name.
 - **`WriteAsync`** stores or encrypts the value and returns the entry to save locally.
 - **`ReadAsync`** turns that stored entry back into a usable value.
-- **`EraseAsync`** withdraws a provider's old copy when a value moves elsewhere. Replacing the local entry is enough for locally stored encrypted data; a vault adapter must also withdraw the remote copy.
+- **`EraseAsync`** requests provider deletion when a value is explicitly removed or moves elsewhere. It returns `ConfigurationRemoval` with the provider's `RemoteValueRemains` flag. Removing or replacing the local entry completes deletion for locally stored encrypted data.
 
 The built-in providers handle local encryption and OAuth credentials, including token refresh. Plain values are handled directly by the configuration store.
 
@@ -235,73 +231,302 @@ Vault packages implement the public `ICloudKeyVaultFactory` and `ICloudKeyVault`
 
 ## Working with settings
 
-### Store a namespace's default settings
 
-When a module has one settings object, you can save it with just the namespace and the object:
+### Recover an interrupted operation
+
+Moves and namespace `SetAsAsync`/`MergeSettingsAsync` calls can finish only partly. A vault may commit a write before the connection drops, or local publication may fail after remote writes succeed. The library captures that progress and, when safe continuation is supported, supplies a protected recovery handle.
+
+**Application code does not implement a callback.** It decides whether and when to call `RecoverAsync(handle)`. The library coordinates the unfinished work; the vault adapter supplies the backend evidence needed to do it safely.
+
+A move can succeed at its destination while source cleanup remains unfinished:
 
 ```csharp
-(await configuration.SetAsAsync("ordersNamespace", orderDto)).ThrowIfError();
-var settings = (await configuration.GetAsAsync<OrderSettings>("ordersNamespace")).ThrowIfError();
+using NyssaAI.Configuration.Recovery;
+
+var moved = await configuration.MoveAsync("mail", "password", "aesLocal");
+
+// The destination is ready. Inspect Progress for cleanup failure versus retention.
+ConfigurationRecoveryHandle? handle = moved.RecoveryHandle;
+
+// When the application chooses to retry:
+if (handle is not null)
+{
+    var outcome = await configuration.RecoverAsync(handle);
+    handle = outcome.RecoveryHandle; // Replace the saved handle if work remains.
+}
 ```
 
-Saving writes each top-level property to its own entry, preserving existing providers and using plaintext for new properties. Nested objects stay together, and omitted keys remain unchanged. Reading resolves the entries and assembles the DTO; an empty namespace returns `NotFound`.
+A failed namespace write throws `ConfigurationOperationException`, which derives from `ResultException`:
 
-Both methods also accept a source-generated `JsonTypeInfo<T>` after the namespace. For writes, pass the object after the type information: `SetAsAsync("ordersNamespace", typeInfo, orderDto)`. Use these overloads for Native AOT or trimmed applications.
+```csharp
+ConfigurationRecoveryHandle? handle = null;
+try
+{
+    await configuration.SetAsAsync("mail", mailSettings);
+}
+catch (ConfigurationOperationException failure)
+{
+    var progress = failure.Progress; // Payload-free diagnostics.
+    handle = failure.RecoveryHandle; // Null when automatic recovery is unavailable.
+    // Report progress.Recovery and progress.Steps to the application's operator.
+}
 
-Use `SetAsync` to create a string property with a chosen provider, or `MoveAsync` to change an existing property's provider. Whole-DTO saves then preserve those choices. Remote writes cannot be atomic across providers: a later failure can leave earlier remote updates in place.
+// Later, after the application decides to continue:
+if (handle is not null)
+{
+    var outcome = await configuration.RecoverAsync(handle);
+    // Completed, Unfinished, Conflict, or ManualReconciliation.
+    var status = outcome.Status;
+    handle = outcome.RecoveryHandle;
+}
+```
 
-Older files containing a `namespaceSettings` entry remain readable. A whole-DTO save migrates a plaintext legacy object into individual property entries. A protected legacy object returns `Conflict` on migration; explicitly move it to plaintext first and choose providers for its properties. Scalar namespace values retain their legacy single-entry format.
+Cancellation after work starts throws `ConfigurationOperationCanceledException`, derived from `OperationCanceledException`. It carries the same `Progress` and `RecoveryHandle` properties and preserves the caller's token. Use a fresh cancellation token for a later recovery attempt. Existing catches for the base exception types still work.
+
+`Progress` separates remote effects from local publication:
+
+| Field | Meaning |
+| --- | --- |
+| `OperationId`, `Kind`, `Namespace` | The original move, replacement, or merge. |
+| `Steps` | Each key, provider, stable request ID, action, state, and optional safe target reference. |
+| `Publication` | `NotAttempted`, `Published`, `Failed`, or `Unknown` for the local namespace. |
+| `Recovery` | `Completed`, `Unfinished`, `Conflict`, or `ManualReconciliation`. |
+
+A step can be `Pending`, `Applied`, `Failed` (confirmed no effect), `Unknown`, `Conflict`, `Retained`, or `Manual`. For example, if A succeeds, B commits but its response is lost, and C never starts, the receipt reports **A: Applied, B: Unknown, C: Pending**. Recovery reconciles B, reuses confirmed outputs, completes the safe remaining writes, and publishes the original intended namespace. It does not resubmit the DTO or repeat serialization.
+
+After a move publishes its destination, recovery addresses only its recorded source cleanup. It never deletes through the entry's current provider. Changed local configuration or provider identity stops recovery with a conflict. Remote writes and deletions require atomic provider preconditions. Provider retention is terminal: it does not trigger retries or purging.
+
+To retain a handle across application restarts, explicitly export and import it:
+
+```csharp
+string savedToken = handle.Export(); // Persist through application-owned storage.
+var restored = ConfigurationRecoveryHandle.Import(savedToken);
+var outcome = await configuration.RecoverAsync(restored);
+```
+
+Exported handles are encrypted and authenticated using a separate purpose key derived from the application's existing protection key. They are bound to the application and canonical configuration root. Import only constructs a handle; `RecoverAsync` authenticates it before contacting providers. Keep tokens private and do not log them. Automatic formatting is redacted. Changing or losing the protection key invalidates saved handles.
+
+The library does not save a journal or run background retries. A crash before the caller receives and saves a handle cannot be resumed through this API. This recovery contract covers moves and namespace writes; ordinary keyed writes and explicit `RemoveAsync` retain their existing contracts. Namespace JSON files do not gain recovery metadata.
+
+#### Implement recovery in a vault adapter
+
+Implement [`ICloudKeyVaultRecovery`](src/CloudKeyVaults/ICloudKeyVaultRecovery.cs) on the same object that implements `ICloudKeyVault`. Its existing factory registration is sufficient. Existing adapters continue working without this capability; partial failures then report manual reconciliation and no automatic recovery handle.
+
+| Capability | Adapter responsibility |
+| --- | --- |
+| `StoreIdentity` | Identify the actual account, tenant, and store, independently of the registration name. Keep it stable for the adapter's lifetime. |
+| `PrepareAsync(operation)` | Read-only capture of the exact target and concurrency condition before the first mutation. Return protected opaque context and an optional non-secret target reference. |
+| `ExecuteAsync(operation, preparation)` | Atomically enforce the condition and deduplicate the stable operation ID against the identical frozen intent. Return the original pointer for a completed write. |
+| `ReconcileAsync(operation, preparation)` | Read-only determination of whether the original request completed and whether its output or pending condition is still valid. |
+
+These methods return `Result<CloudKeyVaultPreparation>` or `Result<CloudKeyVaultEffect>` inside a `ValueTask`. The library uses them on the original attempt as well as during recovery.
+
+Return `Applied` only with evidence of the original operation; matching content is insufficient. Return `Failed` only when no effect occurred and the prepared retry condition remains valid. A failed Result or thrown exception from a dispatched mutation is treated as `Unknown`. Return `Conflict` when a newer value prevents continuation, `Manual` when evidence has expired or backend guarantees are insufficient, and `Retained` for acknowledged deletion with a retained copy. `Pending` is a library state, not a provider response.
+
+Request deduplication must survive adapter recreation and concurrent callers. Applied write pointers must still identify the original output when reconciled. A read followed by an unguarded write or delete is insufficient: the mutation itself must enforce the condition atomically. Backend limitations cannot be repaired by an in-memory retry cache. Preparation contexts must not contain access tokens, refresh tokens, or reusable credentials; errors and diagnostic target references must contain no setting values or secret material.
+
+See the runnable [recovery tutorials](../test/NyssaAI.Configuration.UseCaseTests/ConfigurationRecoveryTutorials.cs) and [consumer-implemented recovery vault](../test/NyssaAI.Configuration.UseCaseTests/fixtures/RecoveryVaultFactory.cs). That fixture models backend request records and revisions; a production adapter must obtain equivalent guarantees from its remote system.
+
+### Remove a value
+
+`RemoveAsync` requests deletion from the entry's provider and then removes the local entry. It returns the provider's retention status:
+
+```csharp
+var removal = await configuration.RemoveAsync("mail", "Password");
+bool remoteValueRemains = removal.RemoteValueRemains;
+```
+
+- `false`: the provider reports no remaining remote copy, or the value was stored only locally.
+- `true`: the local entry is gone, but the provider retains a remote copy. This includes recoverable soft-deleted secrets and stores that do not support deletion.
+
+For example, Azure Key Vault can retain a recoverable secret after soft deletion until it is purged or its retention period expires. Its adapter must report `true` while that copy remains. See [Microsoft's soft-delete documentation](https://learn.microsoft.com/azure/key-vault/general/soft-delete-change).
+
+An operational failure, such as a vault outage or denied permission, throws and preserves the local entry for retry. If remote deletion succeeds but saving the local document fails, the local pointer remains; retrying deletion is safe because providers must handle already absent secrets. A provider must continue reporting `true` for a retained soft-deleted copy on retry.
+
+Removing an already absent local key returns `RemoteValueRemains = false` without contacting a provider. That retry cannot discover remote copies left by a previous successful removal, so retain the original outcome if cleanup matters.
+
+`MoveAsync` uses the same provider deletion outcome: `SourceWithdrawn` is false when the source provider retains a copy, including after soft deletion, or when source cleanup fails.
+
+**Updating callers and vault adapters:** ordinary `await configuration.RemoveAsync(...)` calls can continue ignoring the outcome. Callers that need cleanup status can capture the returned `ConfigurationRemoval`. Vault implementations must update `ICloudKeyVault.RemoveAsync` to return `ValueTask<Result<ConfigurationRemoval>>` and explicitly report `RemoteValueRemains`. Operational failures remain failed results.
+
+### Replace or merge settings
+
+`SetAsAsync` always replaces the selected value or namespace. `MergeSettingsAsync` is the explicit operation for partial namespace updates.
+
+| Call | What it replaces | What happens to omitted data |
+| --- | --- | --- |
+| `SetAsAsync(namespace, key, value)` | The complete value at one key. | Omitted object members disappear from that value; other namespace entries remain. |
+| `SetAsAsync(namespace, settings)` | All entries in that namespace. | Keys absent from the serialized object are removed locally. |
+| `MergeSettingsAsync(namespace, settings)` | Only the supplied top-level property values. | Omitted namespace keys remain unchanged. |
+
+```csharp
+await configuration.SetAsAsync("mail",
+    new { Host = "smtp.old.test", Port = 587 });
+
+await configuration.MergeSettingsAsync("mail",
+    new { Host = "smtp.new.test" });
+// Host changes; Port remains 587.
+
+await configuration.SetAsAsync("mail",
+    new { Host = "smtp.final.test" });
+// The namespace now contains only Host. Port has been removed.
+```
+
+Both namespace operations preserve the providers of included keys and use default storage for new keys. Namespace replacement removes omitted entries locally and leaves remote vault secrets in place. To request provider deletion, call `RemoveAsync` on those keys before replacing the namespace. A failed local write does not publish a partial namespace, but remote updates across providers are not atomic.
+
+Merging is shallow: supplying `Retry = new { Attempts = 3 }` replaces the entire `Retry` value, including any previous nested properties. A serialized null is stored as a value. Only properties actually emitted by the serializer are supplied; default-valued DTO properties still participate unless serialization omits them.
+
+An empty object clears the namespace with `SetAsAsync` and leaves its settings unchanged with `MergeSettingsAsync`. Reading an empty namespace still throws.
+
+**Updating existing callers:** namespace `SetAsAsync` previously merged properties. Change those calls to `MergeSettingsAsync` if they must preserve omitted entries. Keep `SetAsAsync` when the supplied object is the complete namespace snapshot. Keyed writes and stored file formats do not change.
+
+### Store a DTO
+
+Choose the storage shape by supplying or omitting a key:
+
+| Shape | Entries in the namespace file | Use when |
+| --- | --- | --- |
+| Whole DTO under one key | One entry containing the complete object. | The object should be read, replaced, and protected as a unit. |
+| DTO properties in a namespace | One entry per top-level serialized property. | Properties need individual access or different storage providers. |
+
+The examples below show alternative layouts for a new `mail` namespace. In both, `mailSettings` is a populated `MailSettings` DTO with `Host`, `Port`, and a nested `Retry` object. The JSON shows the example values.
+
+#### Store the whole DTO under one key
+
+```csharp
+await configuration.SetAsAsync(
+    "mail", "server", mailSettings);
+
+var settings = await configuration.GetAsAsync<MailSettings>("mail", "server");
+```
+
+The complete DTO is the value of the `server` entry in `mail.json`:
+
+```json
+{
+  "server": {
+    "value": {
+      "Host": "smtp.example.test",
+      "Port": 587,
+      "Retry": {
+        "Attempts": 3,
+        "DelaySeconds": 5
+      }
+    }
+  }
+}
+```
+
+`server` is the configuration key. `Host`, `Port`, and `Retry` belong to the stored object and cannot be read as separate configuration keys. Read the DTO to access them. A subsequent keyed write replaces the value of `server`.
+
+The complete object uses one provider. Omitting the provider uses default storage, which is plaintext for a new entry. To protect a new DTO containing credentials, pass `"aesLocal"` or a configured vault name instead. Later writes can omit the provider to inherit it; use `MoveAsync` to change it. With encryption, the entry holds ciphertext; with a vault, it holds a pointer to the complete serialized DTO.
+
+#### Store top-level properties in a namespace
+
+Omit the key to give each top-level property its own entry:
+
+```csharp
+await configuration.SetAsAsync("mail", mailSettings);
+var settings = await configuration.GetAsAsync<MailSettings>("mail");
+```
+
+For a new namespace, `mail.json` contains:
+
+```json
+{
+  "Host": {
+    "value": "smtp.example.test"
+  },
+  "Port": {
+    "value": 587
+  },
+  "Retry": {
+    "value": {
+      "Attempts": 3,
+      "DelaySeconds": 5
+    }
+  }
+}
+```
+
+Entry keys match the DTO's serialized property names. `Retry` stays together as a nested object. You can read either the complete DTO or an individual top-level property:
+
+```csharp
+var host = await configuration.GetAsAsync<string>("mail", "Host");
+var retry = await configuration.GetAsAsync<RetrySettings>("mail", "Retry");
+```
+
+Namespace `SetAsAsync` replaces the namespace contents. Included keys preserve their providers, new keys use plaintext, and omitted keys are removed locally. Use `MergeSettingsAsync` when omitted keys should remain. Namespace reads resolve the entries and assemble the DTO; an empty namespace throws.
+
+Use `SetAsync` to create a string property's entry with a chosen provider before the first namespace save, or `MoveAsync` to change an existing property's provider. Later writes preserve those choices for included properties. Remote writes are not atomic across providers: a later failure can leave earlier remote updates in place.
+
+Older files containing a `namespaceSettings` entry remain readable. A namespace `SetAsAsync` replaces a plaintext legacy object with the supplied property entries; `MergeSettingsAsync` first expands that object and preserves its omitted properties. A protected legacy object throws a `ResultException` with the `Conflict` error category on migration; explicitly move it to plaintext first and choose providers for its properties. Non-object namespace values retain their legacy single-entry format, replacing other entries. `MergeSettingsAsync` requires object-shaped input and rejects non-object legacy settings.
+
+#### Typed string reads
+
+`GetAsAsync<string>("mail", "Host")` reads string properties written by a namespace DTO save, unencoded text written with `SetAsync`, and JSON-encoded strings written with keyed `SetAsAsync`. Unencoded text such as `123`, `null`, or text containing literal quotes retains its exact text.
+
+The reader uses the entry's stored JSON metadata to distinguish unencoded text from JSON strings. Both typed read overloads follow this rule, including when the caller supplies a custom string converter. Invalid JSON-marked values still throw, and other requested types continue to deserialize the stored text as JSON. The storage format requires no migration.
+
+`GetAsync` returns the raw resolved text. That text can include JSON quotes when the value was written with keyed `SetAsAsync<string>`; use `GetAsAsync<string>` to obtain the deserialized string.
+
+#### Native AOT and trimming
+
+For Native AOT or trimmed applications, pass a source-generated `JsonTypeInfo<MailSettings>` from your application's JSON context. The keyed write places `typeInfo` after the value:
+
+```csharp
+await configuration.SetAsAsync(
+    "mail", "server", mailSettings, typeInfo);
+var settings = await configuration.GetAsAsync("mail", "server", typeInfo);
+```
+
+For the namespace layout, the write places `typeInfo` before the value:
+
+```csharp
+await configuration.SetAsAsync("mail", typeInfo, mailSettings);
+var settings = await configuration.GetAsAsync("mail", typeInfo);
+
+// Merge uses the same namespace/type-info/value order.
+await configuration.MergeSettingsAsync("mail", typeInfo, mailSettings);
+```
+
+The reflection-based overloads carry `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` annotations.
 
 ### Choose where a value is stored
 
-Each key records the provider that stores its value. Choose that provider when you create the key; later writes can use the recorded choice.
+New keys use plaintext by default. Supply a provider name when a new value needs encryption or a remote vault. Later writes preserve the recorded storage choice when the provider is omitted.
 
 | Provider | Storage |
 | --- | --- |
-| `IConfiguration.Plain` (`""`) | Plain JSON in the local namespace file. |
+| Omitted for a new entry | Plain JSON in the local namespace file. |
 | `"aesLocal"` | Local AES-256-GCM encryption, with the encryption key held in the OS credential store. |
 | A configured vault name | The secret stays in the remote vault; the local file holds a pointer to it. |
 
 ```csharp
 // Create a plain setting.
-(await configuration.SetAsync("server", "port", "8080", IConfiguration.Plain)).ThrowIfError();
+await configuration.SetAsync("server", "port", "8080");
 
 // Create an encrypted secret. secretKey comes from the caller.
-(await configuration.SetAsync("server", "apiKey", secretKey, "aesLocal")).ThrowIfError();
+await configuration.SetAsync("server", "apiKey", secretKey, "aesLocal");
 
 // Update the secret using its recorded provider.
-(await configuration.SetAsync("server", "apiKey", newSecretKey)).ThrowIfError();
+await configuration.SetAsync("server", "apiKey", newSecretKey);
 
 // Move the port setting from plain storage to local encryption.
-var moved = (await configuration.MoveAsync("server", "port", "aesLocal")).ThrowIfError();
+var moved = await configuration.MoveAsync("server", "port", "aesLocal");
+
+// Return the setting to default storage.
+var returned = await configuration.MoveAsync("server", "port");
 ```
 
 For the overloads that take an explicit key, the library selects the provider as follows:
 
-1. A new key must name its provider. Omitting it returns a failure. To use plain storage, pass `IConfiguration.Plain`.
+1. A new key uses default storage when the provider is omitted or null. The default is plaintext.
 2. For an existing key, omitting `provider` or passing `null` keeps the current provider.
-3. Passing the same provider is allowed. Passing a different one to `SetAsync` returns `ErrorCategory.Conflict`.
-4. Use `MoveAsync` to change providers. Moving to the current provider returns a failure.
+3. Passing the same provider is allowed. Passing a different one to `SetAsync` throws.
+4. Use `MoveAsync` to change providers. Omit its destination provider to return to default storage. Moving to the current destination throws.
 
 A move makes the value available through the new provider, then tries to remove the old copy. Check [`ConfigurationMove.SourceWithdrawn`](src/Contracts/ConfigurationMove.cs) after the move. If it is `false`, you can use the value at its destination, but a copy remains at the source. The library also logs a warning when this happens.
-
-### Store typed objects
-
-Settings that belong together can be stored as one object, including nested objects and collections. Here, `mailSettings` is a populated `MailSettings` object containing a host, port, and credentials. Use local encryption because it contains a password:
-
-```csharp
-(await configuration.SetAsAsync("mail", "smtp", mailSettings, "aesLocal")).ThrowIfError();
-var settings = (await configuration.GetAsAsync<MailSettings>("mail", "smtp")).ThrowIfError();
-```
-
-The object is stored under the `smtp` key in `mail.json`. Reading the key restores the complete object, including its credentials.
-
-For Native AOT or trimmed applications, pass a source-generated `JsonTypeInfo<T>` for both reads and writes. Here, `typeInfo` comes from your JSON context for `MailSettings`. The reflection-based overloads carry `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` annotations.
-
-```csharp
-(await configuration.SetAsAsync("mail", "smtp", mailSettings, typeInfo, "aesLocal")).ThrowIfError();
-var settings = (await configuration.GetAsAsync("mail", "smtp", typeInfo)).ThrowIfError();
-```
 
 ## Register the library
 
@@ -368,7 +593,7 @@ An available credential store is required at startup. If it is unavailable, reso
 
 ## Add interactive sign-in
 
-Use [`IConfigurationExtensions`](src/IConfigurationExtensions.cs) for setup commands that ask the user to sign in through a browser. Ordinary services use `IConfiguration`. If a read needs sign-in, it returns a failure so your application can decide when to involve the user.
+Use [`IConfigurationExtensions`](src/IConfigurationExtensions.cs) for setup commands that ask the user to sign in through a browser. Ordinary services use `IConfiguration`. If a read needs sign-in, it throws so your application can decide when to involve the user. The interactive methods return `Result` because the user can decline or cancel sign-in.
 
 Here, `authorization` is an injected `IConfigurationExtensions`, and `oauthOptions` contains the server endpoints, client ID, and requested scopes.
 
@@ -396,7 +621,7 @@ Reading an OAuth entry with `GetAsync` returns its access token. If the token is
 
 Readers use the namespace document lock to coordinate access. Each reader checks the stored token again after acquiring the lock, allowing waiting readers to use a token that another reader has just refreshed.
 
-If the server rejects the refresh grant, the library marks the entry as requiring reauthorization. Reads then return `ErrorCategory.Forbidden` without opening a browser. Call `ReauthorizeAsync` from an interactive command to obtain a new grant.
+If the server rejects the refresh grant, the library marks the entry as requiring reauthorization. Reads then throw `ResultException` with `ErrorCategory.Forbidden` without opening a browser. Call `ReauthorizeAsync` from an interactive command to obtain a new grant.
 
 ## Connect a remote vault
 
@@ -453,7 +678,7 @@ The library handles the work that would otherwise need to be repeated across app
 - Managing a local encryption key through the OS credential store.
 - Connecting provider packages so application classes can use `IConfiguration` to access a vault.
 - Refreshing OAuth tokens during reads and keeping interactive sign-in in setup commands.
-- Coordinating file access across processes and reporting operation failures through `Result`.
+- Coordinating file access across processes and throwing when configuration operations fail.
 
 An application can start with the defaults and select different paths, providers, or bootstrap settings as its needs change.
 
@@ -466,6 +691,8 @@ The [executable tutorials](docs/tutorials/README.md) show how to use the public 
 | [ManifestTutorials](../test/NyssaAI.Configuration.UseCaseTests/ManifestTutorials.cs) | First-use setup, paths, overrides, and manifest precedence. |
 | [SetupTutorials](../test/NyssaAI.Configuration.UseCaseTests/SetupTutorials.cs) | Application identity, startup failures, encryption, and vault setup. |
 | [ConfigurationTutorials](../test/NyssaAI.Configuration.UseCaseTests/ConfigurationTutorials.cs) | Plain and encrypted values, nested objects, persistence across scopes, provider moves, and source-generated JSON. |
+| [ConfigurationDefaultsTutorials](../test/NyssaAI.Configuration.UseCaseTests/ConfigurationDefaultsTutorials.cs) | Default DTO storage, updates that preserve providers, moves back to default storage, and compact JSON. |
+| [NamespaceWriteTutorials](../test/NyssaAI.Configuration.UseCaseTests/NamespaceWriteTutorials.cs) | Replacement versus merging, omitted keys, nested objects, nulls, and empty objects. |
 | [NamespaceSettingsTutorials](../test/NyssaAI.Configuration.UseCaseTests/NamespaceSettingsTutorials.cs) | Default namespace settings, plaintext storage, updates, isolation, and source-generated JSON. |
 | [OAuthTutorials](../test/NyssaAI.Configuration.UseCaseTests/OAuthTutorials.cs) | Sign-in, token refresh, revoked grants, and provider authentication. |
 

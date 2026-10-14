@@ -9,25 +9,30 @@ namespace NyssaAI.Configuration.Tests.Values;
 public sealed class ConfigurationNamespaceCancellationTests
 {
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task NamespaceOperation_CanceledDuringProviderCall_ReturnsCanceled(bool writing, bool providerThrows)
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public async Task NamespaceOperation_CanceledDuringProviderCall_ReturnsCanceled(bool writing, bool providerThrows, bool merge)
     {
         using var directory = new TemporaryDirectory();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         var provider = new CancelingProvider(cancellation, providerThrows);
         var store = ConfigurationStore.Create(new ConfigurationDocumentFactoryLocalFile(directory.Path), [provider]).ThrowIfError();
         (await store.SetAsync("settings", "First", "original", provider.Name, cancellation.Token)).ThrowIfError();
-        (await store.SetAsync("settings", "Second", "original", IConfiguration.Plain, cancellation.Token)).ThrowIfError();
+        (await store.SetAsync("settings", "Second", "original", cancellationToken: cancellation.Token)).ThrowIfError();
+        (await store.SetAsync("settings", "Omitted", "preserved on failure", cancellationToken: cancellation.Token)).ThrowIfError();
         var before = File.ReadAllText(Path.Combine(directory.Path, "settings.json"));
         provider.Armed = true;
 
         if (writing)
         {
             using var dto = JsonDocument.Parse("""{"First":"updated","Second":"updated"}""");
-            var result = await store.SetAsAsync("settings", null, dto.RootElement, cancellationToken: cancellation.Token);
+            var result = merge
+                ? await store.MergeSettingsAsync("settings", dto.RootElement, cancellation.Token)
+                : await store.SetAsAsync("settings", null, dto.RootElement, cancellationToken: cancellation.Token);
             Assert.True(result.IsFailure);
             Assert.Equal(ErrorCategory.Canceled, Assert.Single(result.Errors).Category);
         }
@@ -67,8 +72,8 @@ public sealed class ConfigurationNamespaceCancellationTests
             return ValueTask.FromResult(Result<ConfigurationValue>.Success(new ConfigurationValue { Value = value, Provider = Name }));
         }
 
-        public ValueTask<Result> EraseAsync(ConfigurationValue entry, string @namespace, string key, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Result.Success());
+        public ValueTask<Result<ConfigurationRemoval>> EraseAsync(ConfigurationValue entry, string @namespace, string key, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result<ConfigurationRemoval>.Success(new ConfigurationRemoval { RemoteValueRemains = false }));
 
         private void CancelIfArmed(CancellationToken cancellationToken)
         {

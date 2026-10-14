@@ -57,6 +57,37 @@ public sealed class CloudKeyVaultProviderTests
         Assert.True(read.IsFailure);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EraseAsync_StoredPointer_DeletesItsAddressAndPreservesRetentionFlag(bool retain)
+    {
+        var vault = new FakeVault { RetainOnRemoval = retain };
+        var provider = new CloudKeyVaultProvider(vault, "bitwarden");
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var written = await provider.WriteAsync("secret", "db", "password", cancellationToken);
+
+        var erased = await provider.EraseAsync(written.Value, "db", "password", cancellationToken);
+
+        Assert.True(erased.IsSuccess);
+        Assert.Equal("secrets/1", vault.RemovedPointer);
+        Assert.Equal(retain, erased.Value.RemoteValueRemains);
+        Assert.Equal(retain, vault.Secrets.ContainsKey("secrets/1"));
+    }
+
+    [Fact]
+    public async Task EraseAsync_InvalidPointer_RejectsWithoutContactingVault()
+    {
+        var vault = new FakeVault();
+        var provider = new CloudKeyVaultProvider(vault, "bitwarden");
+        var entry = new ConfigurationValue { Value = "not-an-address", Provider = "bitwarden" };
+
+        var erased = await provider.EraseAsync(entry, "db", "password", TestContext.Current.CancellationToken);
+
+        Assert.True(erased.IsFailure);
+        Assert.Null(vault.RemovedPointer);
+    }
+
     // Files secrets under an identifier of its own, which is what a real store does and what the
     // provider must not assume away.
     private sealed class FakeVault : ICloudKeyVault
@@ -65,6 +96,8 @@ public sealed class CloudKeyVaultProviderTests
         private int _next;
 
         public IReadOnlyDictionary<string, string> Secrets => _secrets;
+        public bool RetainOnRemoval { get; init; }
+        public string? RemovedPointer { get; private set; }
 
         public ValueTask<Result<string?>> ReadAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Result<string?>.Success(_secrets.GetValueOrDefault(pointer.Value)));
@@ -80,11 +113,16 @@ public sealed class CloudKeyVaultProviderTests
             return ValueTask.FromResult(ConfigurationPointer.Parse("bitwarden", address));
         }
 
-        public ValueTask<Result> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default)
+        public ValueTask<Result<ConfigurationRemoval>> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default)
         {
             // Absent is success, so a retried move is not a failure.
-            _secrets.Remove(pointer.Value);
-            return ValueTask.FromResult(Result.Success());
+            RemovedPointer = pointer.Value;
+            if (!RetainOnRemoval)
+                _secrets.Remove(pointer.Value);
+            return ValueTask.FromResult(Result<ConfigurationRemoval>.Success(new ConfigurationRemoval
+            {
+                RemoteValueRemains = _secrets.ContainsKey(pointer.Value),
+            }));
         }
     }
 }

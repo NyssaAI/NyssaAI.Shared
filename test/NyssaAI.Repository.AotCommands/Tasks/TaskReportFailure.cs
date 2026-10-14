@@ -1,0 +1,21 @@
+using System.Data.Common;
+using Dapper;
+using NyssaAI.Repository.Commands;
+namespace NyssaAI.Repository.AotCommands.Tasks;
+/// <summary>TaskReportFailure Failure fixture: its first query succeeds and its second query addresses an absent table.</summary>
+public sealed class TaskReportFailure : IRepoCommand<TaskParameters, TaskReport>
+{
+    /// <summary>Creates the command.</summary>
+    public TaskReportFailure(TaskParameters parameters) => Parameters = parameters;
+    /// <inheritdoc />
+    public RepoCommandKey<TaskParameters, TaskReport> Key => TaskOperations.ReportFailure;
+    /// <inheritdoc />
+    public TaskParameters Parameters { get; }
+    async Task<TaskReport> IRepoCommand<TaskParameters, TaskReport>.ExecuteCoreAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
+    {
+        var binding = TaskBinding.From(Parameters, cancellationToken);
+        var count = await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM f002_tasks WHERE id >= @Id", binding, transaction: transaction, commandTimeout: 30);
+        var rows = await connection.QueryAsync<TaskRow>("SELECT id, title, note FROM f002_absent WHERE id >= @Id", binding, transaction: transaction, commandTimeout: 30);
+        return new TaskReport { Count = count, Rows = rows.ToList() };
+    }
+}

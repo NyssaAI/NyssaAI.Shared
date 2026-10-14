@@ -40,6 +40,8 @@ namespace NyssaAI.Configuration.OAuth.Infrastructure;
 /// </remarks>
 internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizableProvider
 {
+    public bool IsLocalOnly => true;
+
     private const int PersistAttempts = 3;
 
     private readonly IConfigurationCipher _cipher;
@@ -96,7 +98,8 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
             if (persisted.IsSuccess)
                 return Result<string>.Success(held.Token.AccessToken);
 
-            _held[address] = held;
+            if (!persisted.Errors.Any(error => error.Category == ErrorCategory.Conflict))
+                _held[address] = held;
             return Result<string>.Failure(persisted.Errors);
         }
 
@@ -173,19 +176,19 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The sealed grant is the entry's own value, so the store overwriting the entry is the
+    /// The sealed grant is the entry's own value, so the store removing or overwriting the entry is the
     /// withdrawal. What this does own is the grant held in memory for that address after a publish
     /// failure; dropping it here stops a later read from re-publishing a grant the caller has moved
-    /// somewhere else.
+    /// somewhere else or removed. This does not revoke credentials at the authorization server.
     /// </remarks>
-    public ValueTask<Result> EraseAsync(
+    public ValueTask<Result<ConfigurationRemoval>> EraseAsync(
         ConfigurationValue entry,
         string @namespace,
         string key,
         CancellationToken cancellationToken = default)
     {
         _held.TryRemove($"{@namespace}/{key}", out _);
-        return ValueTask.FromResult(Result.Success());
+        return ValueTask.FromResult(Result<ConfigurationRemoval>.Success(new ConfigurationRemoval { RemoteValueRemains = false }));
     }
 
     /// <summary>The failure returned when the stored grant needs the user to authorize again.</summary>
@@ -302,7 +305,7 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
                     return Result.Failure(sealedEntry.Errors);
                 }
 
-                exchanged = new HeldGrant { Token = rotated, PresentedRefreshToken = stored.Value.RefreshToken };
+                exchanged = new HeldGrant { Token = rotated, OriginalEntry = current };
                 entries[key] = sealedEntry.Value;
                 outcome = Result<string>.Success(rotated.AccessToken);
                 return Result.Success();
@@ -321,15 +324,17 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
         if (persisted.IsSuccess)
             return Result<string>.Success(exchanged.Token.AccessToken);
 
-        _held[$"{@namespace}/{key}"] = exchanged;
-        _logger?.LogWarning("OAuth grant at {Namespace}/{Key} was refreshed but could not be persisted; holding it for the next read", @namespace, key);
+        if (!persisted.Errors.Any(error => error.Category == ErrorCategory.Conflict))
+        {
+            _held[$"{@namespace}/{key}"] = exchanged;
+            _logger?.LogWarning("OAuth grant at {Namespace}/{Key} was refreshed but could not be persisted; holding it for the next read", @namespace, key);
+        }
         return Result<string>.Failure(persisted.Errors);
     }
 
     // Writes a token that has already been exchanged, without asking the server again. The
-    // entry must still exist, still name this provider, and still carry either the refresh
-    // token that was presented or the rotated one, so a concurrent Set or Remove is never
-    // clobbered or resurrected.
+    // entry must still match the original snapshot or already contain the complete held grant,
+    // so a concurrent refresh, Set, or Remove is never clobbered or resurrected.
     private async ValueTask<Result> PersistHeldAsync(string @namespace, string key, HeldGrant held, CancellationToken cancellationToken)
     {
         Result last = Result.Success();
@@ -349,10 +354,12 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
                     if (stored.IsFailure)
                         return ValueTask.FromResult(Result.Failure(stored.Errors));
 
-                    if (string.Equals(stored.Value.RefreshToken, held.Token.RefreshToken, StringComparison.Ordinal))
+                    // A server may keep the same refresh token while issuing a new access token.
+                    // Only the complete persisted grant proves the failed publish already landed.
+                    if (!current.ReauthRequired && SameGrant(stored.Value, held.Token))
                         return ValueTask.FromResult(Result.Failure(NothingToWrite));
 
-                    if (!string.Equals(stored.Value.RefreshToken, held.PresentedRefreshToken, StringComparison.Ordinal))
+                    if (current != held.OriginalEntry)
                         return ValueTask.FromResult(Result.Failure(EntryChanged(@namespace, key)));
 
                     var sealedEntry = Seal(held.Token, @namespace, key);
@@ -374,6 +381,17 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
 
         return last;
     }
+
+    private static bool SameGrant(OAuthToken stored, OAuthToken held) =>
+        stored.AccessToken == held.AccessToken
+        && stored.RefreshToken == held.RefreshToken
+        && stored.TokenType == held.TokenType
+        && stored.ExpiresAt == held.ExpiresAt
+        && stored.AuthorizationEndpoint == held.AuthorizationEndpoint
+        && stored.TokenEndpoint == held.TokenEndpoint
+        && stored.ClientId == held.ClientId
+        && stored.Scopes.SequenceEqual(held.Scopes, StringComparer.Ordinal)
+        && stored.RedirectPort == held.RedirectPort;
 
     private Result<OAuthToken> Open(ConfigurationValue entry, string @namespace, string key)
     {
@@ -423,6 +441,6 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
     {
         public required OAuthToken Token { get; init; }
 
-        public required string PresentedRefreshToken { get; init; }
+        public required ConfigurationValue OriginalEntry { get; init; }
     }
 }

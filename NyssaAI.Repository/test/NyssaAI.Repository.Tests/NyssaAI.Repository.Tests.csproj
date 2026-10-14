@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- xUnit v3 test projects are self-executing Microsoft.Testing.Platform hosts -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <!-- D10 opt-out: test types carry no public API contract, so XML docs are not required
+         on them. Every other Directory.Build.props setting still applies. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <AssemblyName>NyssaAI.Repository.Tests</AssemblyName>
+    <RootNamespace>NyssaAI.Repository.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../../test/NyssaAI.Repository.UseCaseTests/fixtures/ConfigurationHost.cs" Link="fixtures/ConfigurationHost.cs" />
+
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- A real provider, so the repository engine and unit of work are exercised against an actual
+         database rather than asserted about by reflection. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <!-- PostgreSQL tests use the isolated database supplied by the test runner. -->
+    <PackageReference Include="Npgsql" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NyssaAI.Repository.csproj" />
+  </ItemGroup>
+
+
+
+</Project>

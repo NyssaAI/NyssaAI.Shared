@@ -43,6 +43,14 @@ public sealed class FakeVault(VaultOptions settings, IAccessTokenSource? tokens)
 
     public int Writes { get; private set; }
 
+    public int Removals { get; private set; }
+
+    public bool RetainOnRemoval { get; set; }
+
+    public Error? RemovalFailure { get; set; }
+
+    public Dictionary<string, string> RetainedValues { get; } = new(StringComparer.Ordinal);
+
     public async ValueTask<Result<string?>> ReadAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default)
     {
         var signed = await SignAsync(cancellationToken);
@@ -62,13 +70,20 @@ public sealed class FakeVault(VaultOptions settings, IAccessTokenSource? tokens)
         return ConfigurationPointer.Parse(settings.Name, $"{@namespace}/{key}");
     }
 
-    public async ValueTask<Result> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default)
+    public async ValueTask<Result<ConfigurationRemoval>> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default)
     {
+        Removals++;
         var signed = await SignAsync(cancellationToken);
         if (signed.IsFailure)
-            return signed;
-        Values.Remove(pointer.Value);
-        return Result.Success();
+            return Result<ConfigurationRemoval>.Failure(signed.Errors);
+        if (RemovalFailure is { } error)
+            return Result<ConfigurationRemoval>.Failure(error);
+        if (Values.Remove(pointer.Value, out var value) && RetainOnRemoval)
+            RetainedValues[pointer.Value] = value;
+        return Result<ConfigurationRemoval>.Success(new ConfigurationRemoval
+        {
+            RemoteValueRemains = RetainedValues.ContainsKey(pointer.Value),
+        });
     }
 
     // A real vault package puts this behind a DelegatingHandler that sets the Authorization header.
