@@ -1,7 +1,6 @@
 using NyssaAI.Repository.Commands;
 using NyssaAI.Repository.Sessions;
 using NyssaAI.Repository.Transactions;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository;
 
@@ -22,24 +21,32 @@ public interface IRepository
     /// <param name="key">The logical operation and its input and result contracts.</param>
     /// <param name="parameters">The typed values the command carries and binds during execution.</param>
     /// <returns>
-    /// A fresh command, or a validation failure for an invalid key or values, or a missing,
-    /// duplicate, or incompatible registration.
-    /// Resolution does not open a connection or execute SQL.
+    /// A fresh command. Resolution does not open a connection or execute SQL.
     /// </returns>
-    public Result<IRepoCommand<TParameters, TResult>> CommandRegistry<TParameters, TResult>(
+    /// <exception cref="ArgumentException">The key or parameters are invalid; null arguments throw ArgumentNullException.</exception>
+    /// <exception cref="KeyNotFoundException">No command matches the key and selected provider.</exception>
+    /// <exception cref="InvalidOperationException">The registered factory or its output is incompatible.</exception>
+    /// <remarks>Application factory exceptions propagate unchanged. Duplicate registrations are rejected during startup.</remarks>
+    public IRepoCommand<TParameters, TResult> CommandRegistry<TParameters, TResult>(
         RepoCommandKey<TParameters, TResult> key,
         TParameters parameters);
 
     /// <summary>Opens a connection-backed session without starting a database transaction.</summary>
     /// <param name="cancellationToken">Cancels opening the session.</param>
-    /// <returns>A caller-owned session, or a failure if opening fails or is canceled.</returns>
-    public Task<Result<IRepositorySession>> OpenSessionAsync(CancellationToken cancellationToken = default);
+    /// <returns>A caller-owned session.</returns>
+    /// <remarks>Driver exceptions propagate unchanged. Cancellation responsiveness depends on the driver; Npgsql startup reads may end with their original timeout even after caller cancellation.</remarks>
+    /// <exception cref="ObjectDisposedException">The provider is disposed.</exception>
+    /// <exception cref="OperationCanceledException">Opening is canceled; the exception carries the caller's token.</exception>
+    public Task<IRepositorySession> OpenSessionAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Opens a connection and starts a transaction shared by all commands executed through it.</summary>
     /// <param name="cancellationToken">Cancels opening the connection or starting the transaction.</param>
     /// <returns>
-    /// A caller-owned transaction, or a failure with partially opened resources released.
-    /// Disposing a transaction without a successful commit rolls it back and releases its connection.
+    /// A caller-owned transaction. Opening failures release partially acquired resources before throwing.
+    /// Disposing an uncommitted transaction attempts rollback and releases its connection; database failures can prevent rollback.
     /// </returns>
-    public Task<Result<IRepositoryTransaction>> OpenTransactionAsync(CancellationToken cancellationToken = default);
+    /// <remarks>Driver exceptions propagate unchanged. Cancellation responsiveness depends on the driver; Npgsql startup reads may end with their original timeout even after caller cancellation.</remarks>
+    /// <exception cref="ObjectDisposedException">The provider is disposed.</exception>
+    /// <exception cref="OperationCanceledException">Opening is canceled; the exception carries the caller's token.</exception>
+    public Task<IRepositoryTransaction> OpenTransactionAsync(CancellationToken cancellationToken = default);
 }

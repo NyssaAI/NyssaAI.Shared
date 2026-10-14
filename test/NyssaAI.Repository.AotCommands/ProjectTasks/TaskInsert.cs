@@ -1,7 +1,6 @@
 using System.Data.Common;
 using Dapper;
 using NyssaAI.Repository.Commands;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.AotCommands.ProjectTasks;
 
@@ -17,30 +16,22 @@ public sealed class TaskInsert : IRepoCommand<TaskCreateParameters, TaskDetails>
     /// <inheritdoc />
     public TaskCreateParameters Parameters { get; }
 
-    async Task<Result<TaskDetails>> IRepoCommand<TaskCreateParameters, TaskDetails>.ExecuteCoreAsync(
+    async Task<TaskDetails> IRepoCommand<TaskCreateParameters, TaskDetails>.ExecuteCoreAsync(
         DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
     {
-        try
+        var binding = new Binding
         {
-            var binding = new Binding
-            {
-                Id = Parameters.Id,
-                ProjectId = Parameters.ProjectId,
-                Title = Parameters.Title,
-                Note = Parameters.Note,
-                CancellationToken = cancellationToken
-            };
-            var value = await connection.QuerySingleAsync<TaskDetails>(
-                "INSERT INTO tutorial_tasks (id, project_id, title, note, is_completed) VALUES (@Id, @ProjectId, @Title, @Note, FALSE) RETURNING id AS Id, project_id AS ProjectId, title AS Title, note AS Note, is_completed AS IsCompleted",
-                binding, transaction: transaction, commandTimeout: 30).ConfigureAwait(false);
-            return Result<TaskDetails>.Success(value);
-        }
-        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
-        {
-            return Result<TaskDetails>.Failure(Error.FromMessage("The database returned an invalid value.", ErrorCategory.Validation));
-        }
+            Id = Parameters.Id,
+            ProjectId = Parameters.ProjectId,
+            Title = Parameters.Title,
+            Note = Parameters.Note,
+            CancellationToken = cancellationToken
+        };
+        var value = await connection.QuerySingleAsync<TaskDetails>(
+            "INSERT INTO tutorial_tasks (id, project_id, title, note, is_completed) VALUES (@Id, @ProjectId, @Title, @Note, FALSE) RETURNING id AS Id, project_id AS ProjectId, title AS Title, note AS Note, is_completed AS IsCompleted",
+            binding, transaction: transaction, commandTimeout: 30).ConfigureAwait(false);
+        return value;
     }
-
     // CancellationToken is execution metadata; the generated factory does not bind it as SQL data.
     internal sealed record Binding
     {

@@ -3,7 +3,6 @@ using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using NyssaAI.Repository.Sessions;
 using NyssaAI.Repository.Transactions;
-using NyssaAI.Results;
 using Xunit;
 
 namespace NyssaAI.Repository.Tests.Transactions;
@@ -23,15 +22,17 @@ public sealed class RepositoryTransactionCompletionTests
         var scope = new RepositoryTransaction(new RepositorySession(connection, "sqlite", driverTransaction));
         await using (scope)
         {
-            var failed = commit ? await scope.CommitAsync(TestContext.Current.CancellationToken) : await scope.RollbackAsync(TestContext.Current.CancellationToken);
-            Assert.Equal(canceled ? ErrorCategory.Canceled : ErrorCategory.Unavailable, Assert.Single(failed.Errors).Category);
-            Assert.DoesNotContain("sentinel-secret", failed.ToString());
+            var exceptionType = canceled ? typeof(OperationCanceledException) : typeof(CompletionException);
+            var failed = await Assert.ThrowsAsync(exceptionType,
+                () => commit ? scope.CommitAsync(TestContext.Current.CancellationToken) : scope.RollbackAsync(TestContext.Current.CancellationToken));
+            Assert.Equal("sentinel-secret", failed.Message);
             var commitCalls = driverTransaction.CommitCalls;
-            Assert.Equal(failed.Errors, (await scope.CommitAsync(TestContext.Current.CancellationToken)).Errors);
+            var rejected = await Assert.ThrowsAsync<InvalidOperationException>(() => scope.CommitAsync(TestContext.Current.CancellationToken));
+            Assert.Same(failed, rejected.InnerException);
             Assert.Equal(commitCalls, driverTransaction.CommitCalls);
             driverTransaction.FailCompletion = false;
-            Assert.True((await scope.RollbackAsync(TestContext.Current.CancellationToken)).IsSuccess);
-            Assert.True((await scope.CommitAsync(TestContext.Current.CancellationToken)).IsFailure);
+            await scope.RollbackAsync(TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => scope.CommitAsync(TestContext.Current.CancellationToken));
         }
         Assert.True(driverTransaction.IsDisposed);
         Assert.Equal(ConnectionState.Closed, connection.State);

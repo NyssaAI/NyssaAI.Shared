@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NyssaAI.Results;
 
 using NyssaAI.Configuration.Client;
+using NyssaAI.Configuration.Recovery;
 using NyssaAI.Configuration.Contracts;
 
 namespace NyssaAI.Configuration.Values;
@@ -29,6 +30,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     private readonly IReadOnlyDictionary<string, IConfigurationProvider> _providers;
     private readonly IReadOnlyDictionary<string, ProviderCredential> _credentials;
     private readonly ILogger? _logger;
+    private readonly IRecovery? _recovery;
 
     /// <summary>Creates a store over one document factory with no providers; every entry is a literal.</summary>
     /// <param name="documents">The factory that opens a namespace's document.</param>
@@ -46,12 +48,13 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         IConfigurationDocumentFactory documents,
         IReadOnlyDictionary<string, IConfigurationProvider> providers,
         IReadOnlyDictionary<string, ProviderCredential> credentials,
-        ILogger? logger)
+        ILogger? logger, IRecovery? recovery = null)
     {
         _documents = documents;
         _providers = providers;
         _credentials = credentials;
         _logger = logger;
+        _recovery = recovery;
     }
 
     /// <summary>
@@ -75,12 +78,13 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     /// <param name="documents">The factory that opens a namespace's document.</param>
     /// <param name="providers">The providers available to resolve non-literal entries.</param>
     /// <param name="credentials">Which entry each authenticating provider signs in with.</param>
+    /// <param name="recovery">The application-scoped recovery handle protector, when composed.</param>
     /// <param name="logger">The logger failures are reported to, if any.</param>
     public static Result<ConfigurationStore> Create(
         IConfigurationDocumentFactory documents,
         IEnumerable<IConfigurationProvider> providers,
         IEnumerable<ProviderCredential> credentials,
-        ILogger? logger = null)
+        ILogger? logger = null, IRecovery? recovery = null)
     {
         var registered = new Dictionary<string, IConfigurationProvider>(StringComparer.Ordinal);
         foreach (var provider in providers)
@@ -101,7 +105,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
             declared[credential.Provider] = credential;
         }
 
-        return Result<ConfigurationStore>.Success(new ConfigurationStore(documents, registered, declared, logger));
+        return Result<ConfigurationStore>.Success(new ConfigurationStore(documents, registered, declared, logger, recovery));
     }
 
     /// <summary>
@@ -264,9 +268,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
                 // An overwrite inherits where the value already lives. That is what stops a write
                 // from quietly turning a sealed secret into a plaintext literal, which is exactly
                 // what happens when the destination is re-decided on every call.
-                var destination = provider ?? (exists ? existing!.Provider : null);
-                if (destination is null)
-                    return Result.Failure(DestinationRequired(@namespace, key));
+                var destination = provider ?? existing?.Provider ?? string.Empty;
 
                 if (exists && !string.Equals(destination, existing!.Provider, StringComparison.Ordinal))
                     return Result.Failure(AlreadyStoredElsewhere(@namespace, key, existing.Provider));
@@ -341,78 +343,80 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     }
 
     /// <inheritdoc/>
-    public async ValueTask<Result<ConfigurationMove>> MoveAsync(
-        string @namespace,
-        string key,
-        string toProvider,
-        CancellationToken cancellationToken = default)
+    public async ValueTask<ConfigurationAttempt<ConfigurationMove>> MoveAsync(
+        string @namespace, string key, string? toProvider = null, CancellationToken cancellationToken = default)
     {
+        toProvider ??= string.Empty;
         var document = _documents.Create(@namespace);
-        if (document.IsFailure)
-            return Result<ConfigurationMove>.Failure(document.Errors);
-
-        // Captured inside the lock and read after it, so the outcome describes the entry that was
-        // actually published rather than whatever the document holds by the time we return.
-        ConfigurationValue? source = null;
-        string from = string.Empty;
-
-        var published = await document.Value.ModifyAsync(
-            async entries =>
+        if (document.IsFailure) return Result<ConfigurationMove>.Failure(document.Errors);
+        ConfigurationRecoveryState? state = null;
+        var from = string.Empty;
+        var publishing = false;
+        Result result;
+        try
+        {
+            result = await document.Value.ModifyAsync(async entries =>
             {
-                if (!entries.TryGetValue(key, out var existing))
-                    return Result.Failure(EntryNotFound(@namespace, key));
-
-                if (string.Equals(existing.Provider, toProvider, StringComparison.Ordinal))
-                    return Result.Failure(AlreadyThere(@namespace, key, toProvider));
-
+                if (!entries.TryGetValue(key, out var existing)) return Result.Failure(EntryNotFound(@namespace, key));
+                if (existing.Provider == toProvider) return Result.Failure(AlreadyThere(@namespace, key, toProvider));
                 var circular = CheckCircular(toProvider, @namespace, key);
-                if (circular.IsFailure)
-                    return circular;
-
-                var plaintext = existing.IsLiteral
-                    ? Result<string>.Success(existing.Value)
+                if (circular.IsFailure) return circular;
+                // Capture the deletion condition before reading the value; a replacement between
+                // preparation and reading cannot subsequently be deleted by this operation.
+                var cleanup = await PrepareStepAsync(existing.Provider, CloudKeyVaults.CloudKeyVaultAction.Remove,
+                    @namespace, key, null, existing, existing.IsJsonValue, cancellationToken).ConfigureAwait(false);
+                if (cleanup.IsFailure) return Result.Failure(cleanup.Errors);
+                var plaintext = existing.IsLiteral ? Result<string>.Success(existing.Value)
                     : await ReadThroughAsync(existing, @namespace, key, cancellationToken).ConfigureAwait(false);
-                if (plaintext.IsFailure)
-                    return Result.Failure(plaintext.Errors);
-
-                if (toProvider.Length == 0)
-                {
-                    entries[key] = new ConfigurationValue { Value = plaintext.Value, IsJsonValue = existing.IsJsonValue };
-                }
-                else
-                {
-                    var target = GetProvider(toProvider);
-                    if (target.IsFailure)
-                        return Result.Failure(target.Errors);
-
-                    var written = await target.Value.WriteAsync(plaintext.Value, @namespace, key, cancellationToken).ConfigureAwait(false);
-                    if (written.IsFailure)
-                        return Result.Failure(written.Errors);
-
-                    entries[key] = written.Value with { IsJsonValue = existing.IsJsonValue };
-                }
-
-                source = existing;
+                if (plaintext.IsFailure) return Result.Failure(plaintext.Errors);
+                var destination = await PrepareStepAsync(toProvider, CloudKeyVaults.CloudKeyVaultAction.Write,
+                    @namespace, key, plaintext.Value, null, existing.IsJsonValue, cancellationToken).ConfigureAwait(false);
+                if (destination.IsFailure) return Result.Failure(destination.Errors);
                 from = existing.Provider;
+                state = new ConfigurationRecoveryState
+                {
+                    OperationId = Guid.NewGuid(), Namespace = @namespace, Kind = ConfigurationOperationKind.Move,
+                    Original = Snapshot(entries), Proposed = Snapshot(entries), Steps = [destination.Value, cleanup.Value],
+                };
+                var written = await WriteStepsAsync(state, cancellationToken).ConfigureAwait(false);
+                if (written.IsFailure) return written;
+                cancellationToken.ThrowIfCancellationRequested();
+                entries[key] = state.Proposed[key];
+                publishing = true;
+                state = state with { Publication = ConfigurationPublicationState.Unknown };
                 return Result.Success();
-            },
-            cancellationToken).ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false);
+            if (result.IsSuccess)
+            {
+                state = state! with { Publication = ConfigurationPublicationState.Published };
+                result = await CleanupStepsAsync(state, cancellationToken).ConfigureAwait(false);
+            }
+            else if (publishing)
+                state = state! with { Publication = ConfigurationPublicationState.Failed };
+        }
+        catch (OperationCanceledException)
+        {
+            result = Result.Failure(Error.FromMessage(Error.CanceledUserMessage, ErrorCategory.Canceled));
+        }
+        catch (Exception) { result = Result.Failure(RecoveryUnfinished); }
 
-        if (published.IsFailure)
-            return Result<ConfigurationMove>.Failure(published.Errors);
-
-        // The entry is published and readable at its new home. Only now is the source withdrawn:
-        // the reverse order would risk a withdrawal that succeeded followed by a publish that did
-        // not, which destroys the only copy. A stranded copy can be cleaned up; a lost secret cannot.
-        var withdrawn = await WithdrawAsync(source!, from, @namespace, key, cancellationToken).ConfigureAwait(false);
-
+        var outcome = state is null ? null : Outcome(state);
+        var progress = outcome?.Progress;
+        var handle = outcome?.RecoveryHandle;
+        if (state?.Publication != ConfigurationPublicationState.Published
+            || result.Errors.Any(error => error.Category == ErrorCategory.Canceled))
+            return new ConfigurationAttempt<ConfigurationMove>
+            {
+                Result = Result<ConfigurationMove>.Failure(result.Errors), Progress = progress, RecoveryHandle = handle,
+            };
+        var withdrawn = state.Steps.Last().State == ConfigurationStepState.Applied;
+        if (!withdrawn)
+            _logger?.LogWarning("Moved {Namespace}/{Key}; source cleanup for '{Provider}' is {State}",
+                @namespace, key, from, state.Steps.Last().State);
         return Result<ConfigurationMove>.Success(new ConfigurationMove
         {
-            Namespace = @namespace,
-            Key = key,
-            From = from,
-            To = toProvider,
-            SourceWithdrawn = withdrawn,
+            Namespace = @namespace, Key = key, From = from, To = toProvider, SourceWithdrawn = withdrawn,
+            Progress = progress, RecoveryHandle = handle,
         });
     }
 
@@ -428,50 +432,53 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
             : await provider.Value.ReadAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<bool> WithdrawAsync(
-        ConfigurationValue source,
-        string from,
-        string @namespace,
-        string key,
-        CancellationToken cancellationToken)
-    {
-        // A literal had nothing outside the entry, and overwriting the entry withdrew it.
-        if (from.Length == 0)
-            return true;
-
-        var provider = GetProvider(from);
-        if (provider.IsFailure)
-        {
-            _logger?.LogWarning(
-                "Moved {Namespace}/{Key} but provider '{Provider}' is no longer registered, so the source copy remains",
-                @namespace, key, from);
-            return false;
-        }
-
-        var erased = await provider.Value.EraseAsync(source, @namespace, key, cancellationToken).ConfigureAwait(false);
-        if (erased.IsSuccess)
-            return true;
-
-        _logger?.LogWarning(
-            "Moved {Namespace}/{Key} but provider '{Provider}' could not withdraw the source copy ({Category}); a copy remains",
-            @namespace, key, from, erased.Errors[0].Category);
-        return false;
-    }
-
     /// <inheritdoc/>
-    public async ValueTask<Result> RemoveAsync(string @namespace, string key, CancellationToken cancellationToken = default)
+    public async ValueTask<Result<ConfigurationRemoval>> RemoveAsync(string @namespace, string key, CancellationToken cancellationToken = default)
     {
         var document = _documents.Create(@namespace);
         if (document.IsFailure)
-            return Result.Failure(document.Errors);
+            return Result<ConfigurationRemoval>.Failure(document.Errors);
 
-        return await document.Value.ModifyAsync(
-            entries =>
-            {
-                entries.Remove(key);
-                return ValueTask.FromResult(Result.Success());
-            },
-            cancellationToken).ConfigureAwait(false);
+        var removal = new ConfigurationRemoval { RemoteValueRemains = false };
+        try
+        {
+            var modified = await document.Value.ModifyAsync(
+                async entries =>
+                {
+                    if (!entries.TryGetValue(key, out var entry))
+                        return Result.Success();
+
+                    if (!entry.IsLiteral)
+                    {
+                        var circular = CheckCircular(entry.Provider, @namespace, key);
+                        if (circular.IsFailure)
+                            return circular;
+
+                        var provider = GetProvider(entry.Provider);
+                        if (provider.IsFailure)
+                            return Result.Failure(provider.Errors);
+
+                        var erased = await provider.Value.EraseAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
+                        if (erased.IsFailure)
+                            return Result.Failure(erased.Errors);
+
+                        removal = erased.Value;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    entries.Remove(key);
+                    return Result.Success();
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            return modified.IsFailure
+                ? Result<ConfigurationRemoval>.Failure(modified.Errors)
+                : Result<ConfigurationRemoval>.Success(removal);
+        }
+        catch (OperationCanceledException canceled)
+        {
+            return Result<ConfigurationRemoval>.Failure(Error.Canceled(canceled));
+        }
     }
 
     /// <inheritdoc/>
@@ -561,12 +568,23 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     /// <param name="namespace">The namespace to hold the entry.</param>
     /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
     /// <param name="value">The value to serialize and store.</param>
-    /// <param name="provider">Where the value is stored; null keeps the existing entry's provider.</param>
+    /// <param name="provider">Null preserves an existing provider or uses default storage for a new entry.</param>
     /// <param name="cancellationToken">Token used to cancel the write.</param>
     /// <typeparam name="TValue">The type being serialized.</typeparam>
     [RequiresUnreferencedCode(OpenGenericJustification)]
     [RequiresDynamicCode(OpenGenericJustification)]
-    public ValueTask<Result> SetAsAsync<TValue>(string @namespace, string? key, TValue value, string? provider = null, CancellationToken cancellationToken = default)
+    public ValueTask<ConfigurationAttempt> SetAsAsync<TValue>(string @namespace, string? key, TValue value, string? provider = null, CancellationToken cancellationToken = default) =>
+        WriteAsAsync(@namespace, key, value, provider, replaceNamespace: true, cancellationToken);
+
+    /// <inheritdoc/>
+    [RequiresUnreferencedCode(OpenGenericJustification)]
+    [RequiresDynamicCode(OpenGenericJustification)]
+    public ValueTask<ConfigurationAttempt> MergeSettingsAsync<TValue>(string @namespace, TValue value, CancellationToken cancellationToken = default) =>
+        WriteAsAsync(@namespace, null, value, null, replaceNamespace: false, cancellationToken);
+
+    [RequiresUnreferencedCode(OpenGenericJustification)]
+    [RequiresDynamicCode(OpenGenericJustification)]
+    private ValueTask<ConfigurationAttempt> WriteAsAsync<TValue>(string @namespace, string? key, TValue value, string? provider, bool replaceNamespace, CancellationToken cancellationToken)
     {
         // System.Text.Json throws for a type it cannot serialize; the boundary is here.
         string serialized;
@@ -576,13 +594,13 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         }
         catch (Exception exception) when (exception is JsonException or NotSupportedException)
         {
-            return ValueTask.FromResult(Result.Failure(Error.FromExceptions(exception, "The configuration value could not be stored.", ErrorCategory.Validation)));
+            return ValueTask.FromResult<ConfigurationAttempt>(Result.Failure(Error.FromExceptions(exception, "The configuration value could not be stored.", ErrorCategory.Validation)));
         }
 
         if (key is null)
-            return SetNamespaceAsync(@namespace, serialized, cancellationToken);
+            return SetNamespaceAsync(@namespace, serialized, replaceNamespace, cancellationToken);
 
-        return SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken);
+        return ConfigurationAttempt.FromAsync(SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken));
     }
 
     /// <summary>Serializes a value to JSON through a source-generated type description and writes it to one entry.</summary>
@@ -590,10 +608,17 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
     /// <param name="value">The value to serialize and store.</param>
     /// <param name="typeInfo">The source-generated description of <typeparamref name="TValue"/>.</param>
-    /// <param name="provider">Where the value is stored; null keeps the existing entry's provider.</param>
+    /// <param name="provider">Null preserves an existing provider or uses default storage for a new entry.</param>
     /// <param name="cancellationToken">Token used to cancel the write.</param>
     /// <typeparam name="TValue">The type being serialized.</typeparam>
-    public ValueTask<Result> SetAsAsync<TValue>(string @namespace, string? key, TValue value, JsonTypeInfo<TValue> typeInfo, string? provider = null, CancellationToken cancellationToken = default)
+    public ValueTask<ConfigurationAttempt> SetAsAsync<TValue>(string @namespace, string? key, TValue value, JsonTypeInfo<TValue> typeInfo, string? provider = null, CancellationToken cancellationToken = default) =>
+        WriteAsAsync(@namespace, key, value, typeInfo, provider, replaceNamespace: true, cancellationToken);
+
+    /// <inheritdoc/>
+    public ValueTask<ConfigurationAttempt> MergeSettingsAsync<TValue>(string @namespace, JsonTypeInfo<TValue> typeInfo, TValue value, CancellationToken cancellationToken = default) =>
+        WriteAsAsync(@namespace, null, value, typeInfo, null, replaceNamespace: false, cancellationToken);
+
+    private ValueTask<ConfigurationAttempt> WriteAsAsync<TValue>(string @namespace, string? key, TValue value, JsonTypeInfo<TValue> typeInfo, string? provider, bool replaceNamespace, CancellationToken cancellationToken)
     {
         string serialized;
         try
@@ -602,13 +627,13 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         }
         catch (Exception exception) when (exception is JsonException or NotSupportedException)
         {
-            return ValueTask.FromResult(Result.Failure(Error.FromExceptions(exception, "The configuration value could not be stored.", ErrorCategory.Validation)));
+            return ValueTask.FromResult<ConfigurationAttempt>(Result.Failure(Error.FromExceptions(exception, "The configuration value could not be stored.", ErrorCategory.Validation)));
         }
 
         if (key is null)
-            return SetNamespaceAsync(@namespace, serialized, cancellationToken);
+            return SetNamespaceAsync(@namespace, serialized, replaceNamespace, cancellationToken);
 
-        return SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken);
+        return ConfigurationAttempt.FromAsync(SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken));
     }
 
     /// <summary>The failure returned when a stored JSON value deserializes to null.</summary>
@@ -626,15 +651,6 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         "The configuration entry was not found.",
         $"No configuration entry exists at '{@namespace}/{key}'.",
         ErrorCategory.NotFound);
-
-    /// <summary>The failure returned when a new value is written without saying where it goes.</summary>
-    /// <param name="namespace">The namespace the value would be held in.</param>
-    /// <param name="key">The key of the value.</param>
-    public static Error DestinationRequired(string @namespace, string key) => Error.FromMessages(
-        "A new value needs a destination.",
-        $"configuration: '{@namespace}/{key}' does not exist, so there is no stored entry to inherit a provider from; "
-        + "pass a provider name, or IConfiguration.Plain to store it unprotected",
-        ErrorCategory.Validation);
 
     /// <summary>The failure returned when a write names a provider other than the entry's own.</summary>
     /// <param name="namespace">The namespace holding the value.</param>

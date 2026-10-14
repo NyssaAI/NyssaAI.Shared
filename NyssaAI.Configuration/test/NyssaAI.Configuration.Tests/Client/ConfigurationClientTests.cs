@@ -21,15 +21,18 @@ public sealed class ConfigurationClientTests
     }
 
     [Fact]
-    public async Task SetAsync_NewSettingWithoutProvider_ThrowsAndStoresNothing()
+    public async Task SetAsync_NewSettingWithoutProvider_StoresInDefaultStorage()
     {
         using var directory = new TemporaryDirectory();
         using var client = new ConfigurationClient(new ConfigurationStore(new ConfigurationDocumentFactoryLocalFile(directory.Path)));
 
-        await Assert.ThrowsAsync<ResultException>(() =>
-            client.SetAsync("mail", "password", "secret", cancellationToken: TestContext.Current.CancellationToken).AsTask());
+        await client.SetAsync("mail", "host", "smtp.example.test", cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.False(File.Exists(Path.Combine(directory.Path, "mail.json")));
+        Assert.Equal("smtp.example.test", await client.GetAsync("mail", "host", TestContext.Current.CancellationToken));
+        var document = await File.ReadAllTextAsync(Path.Combine(directory.Path, "mail.json"), TestContext.Current.CancellationToken);
+        Assert.DoesNotContain("\"provider\"", document, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"encrypted\"", document, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"reauth_required\"", document, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -115,7 +118,7 @@ public sealed class ConfigurationClientTests
                 : Result<ConfigurationValue>.Success(new ConfigurationValue { Value = value, Provider = Name }));
         }
 
-        public ValueTask<Result> EraseAsync(ConfigurationValue entry, string @namespace, string key, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Result.Success());
+        public ValueTask<Result<ConfigurationRemoval>> EraseAsync(ConfigurationValue entry, string @namespace, string key, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result<ConfigurationRemoval>.Success(new ConfigurationRemoval { RemoteValueRemains = false }));
     }
 }

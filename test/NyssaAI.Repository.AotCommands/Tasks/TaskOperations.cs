@@ -28,16 +28,16 @@ public static class TaskOperations
     /// <summary>Creates compiled command factories for the selected provider.</summary>
     public static IReadOnlyList<RepoCommandRegistration> Register(string provider) =>
     [
-        RepoCommandRegistration.Create(provider, Create, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, TaskRow>>.Success(new TaskCreate(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Write, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, int>>.Success(new TaskWrite(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Find, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, TaskRow>>.Success(new TaskFind(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Count, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, long>>.Success(new TaskCount(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, List, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, IReadOnlyList<TaskRow>>>.Success(new TaskList(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Report, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, TaskReport>>.Success(new TaskReportQuery(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, ReportFailure, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, TaskReport>>.Success(new TaskReportFailure(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Delay, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, int>>.Success(new TaskDelay(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Delete, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, int>>.Success(new TaskDelete(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Malformed, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, TaskRow>>.Success(new TaskMalformed(parameters))).ThrowIfError(),
-        RepoCommandRegistration.Create(provider, Outbox, parameters => NyssaAI.Results.Result<IRepoCommand<TaskParameters, int>>.Success(new TaskOutboxWrite(parameters))).ThrowIfError(),
+        RepoCommandRegistration.Create(provider, Create, parameters => new TaskCreate(parameters)),
+        RepoCommandRegistration.Create(provider, Write, parameters => new TaskWrite(parameters)),
+        RepoCommandRegistration.Create(provider, Find, parameters => new TaskFind(parameters)),
+        RepoCommandRegistration.Create(provider, Count, parameters => new TaskCount(parameters)),
+        RepoCommandRegistration.Create(provider, List, parameters => new TaskList(parameters)),
+        RepoCommandRegistration.Create(provider, Report, parameters => new TaskReportQuery(parameters)),
+        RepoCommandRegistration.Create(provider, ReportFailure, parameters => new TaskReportFailure(parameters)),
+        RepoCommandRegistration.Create(provider, Delay, parameters => new TaskDelay(parameters)),
+        RepoCommandRegistration.Create(provider, Delete, parameters => new TaskDelete(parameters)),
+        RepoCommandRegistration.Create(provider, Malformed, parameters => new TaskMalformed(parameters)),
+        RepoCommandRegistration.Create(provider, Outbox, parameters => new TaskOutboxWrite(parameters)),
     ];
 }

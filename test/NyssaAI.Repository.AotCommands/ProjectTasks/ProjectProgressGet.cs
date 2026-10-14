@@ -1,7 +1,6 @@
 using System.Data.Common;
 using Dapper;
 using NyssaAI.Repository.Commands;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.AotCommands.ProjectTasks;
 
@@ -17,27 +16,19 @@ public sealed class ProjectProgressGet : IRepoCommand<ProjectTaskParameters, Pro
     /// <inheritdoc />
     public ProjectTaskParameters Parameters { get; }
 
-    async Task<Result<ProjectProgress>> IRepoCommand<ProjectTaskParameters, ProjectProgress>.ExecuteCoreAsync(
+    async Task<ProjectProgress> IRepoCommand<ProjectTaskParameters, ProjectProgress>.ExecuteCoreAsync(
         DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
     {
-        try
+        var binding = new Binding
         {
-            var binding = new Binding
-            {
-                ProjectId = Parameters.ProjectId,
-                CancellationToken = cancellationToken
-            };
-            var value = await connection.QuerySingleAsync<ProjectProgress>(
-                "SELECT @ProjectId AS ProjectId, COUNT(*) AS TotalTasks, COALESCE(SUM(CASE WHEN is_completed = TRUE THEN 1 ELSE 0 END), 0) AS CompletedTasks, COALESCE(SUM(CASE WHEN is_completed = FALSE THEN 1 ELSE 0 END), 0) AS RemainingTasks FROM tutorial_tasks WHERE project_id = @ProjectId",
-                binding, transaction: transaction, commandTimeout: 30).ConfigureAwait(false);
-            return Result<ProjectProgress>.Success(value);
-        }
-        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
-        {
-            return Result<ProjectProgress>.Failure(Error.FromMessage("The database returned an invalid value.", ErrorCategory.Validation));
-        }
+            ProjectId = Parameters.ProjectId,
+            CancellationToken = cancellationToken
+        };
+        var value = await connection.QuerySingleAsync<ProjectProgress>(
+            "SELECT @ProjectId AS ProjectId, COUNT(*) AS TotalTasks, COALESCE(SUM(CASE WHEN is_completed = TRUE THEN 1 ELSE 0 END), 0) AS CompletedTasks, COALESCE(SUM(CASE WHEN is_completed = FALSE THEN 1 ELSE 0 END), 0) AS RemainingTasks FROM tutorial_tasks WHERE project_id = @ProjectId",
+            binding, transaction: transaction, commandTimeout: 30).ConfigureAwait(false);
+        return value;
     }
-
     // CancellationToken is execution metadata; the generated factory does not bind it as SQL data.
     internal sealed record Binding
     {

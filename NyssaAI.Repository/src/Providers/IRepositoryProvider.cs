@@ -1,5 +1,4 @@
 using System.Data.Common;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.Providers;
 
@@ -10,7 +9,11 @@ public interface IRepositoryProvider : IAsyncDisposable
     /// <summary>Gets the canonical provider identity used by later command and migration selection.</summary>
     public string DatabaseProvider { get; }
 
-    /// <summary>Returns a new already-open connection, or a sanitized failure with partial resources released.</summary>
-    /// <param name="cancellationToken">Cancels opening; cancellation is returned as a Canceled failure.</param>
-    public Task<Result<DbConnection>> OpenConnectionAsync(CancellationToken cancellationToken = default);
+    /// <summary>Returns a new already-open connection. Failures throw after releasing partially acquired resources.</summary>
+    /// <param name="cancellationToken">Cancels opening; cancellation throws OperationCanceledException.</param>
+    /// <returns>An open connection owned by the caller.</returns>
+    /// <remarks>Driver exceptions propagate unchanged. Cancellation responsiveness depends on the driver; Npgsql startup reads may end with their original timeout even after caller cancellation.</remarks>
+    /// <exception cref="ObjectDisposedException">The provider is disposed.</exception>
+    /// <exception cref="OperationCanceledException">Opening is canceled; implementations must preserve the caller's token.</exception>
+    public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default);
 }

@@ -1,3 +1,4 @@
+using NyssaAI.Configuration.Recovery;
 using System.Security.Cryptography;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -126,6 +127,7 @@ public static class ConfigurationServiceCollectionExtensions
 
             IEncryption encryption = new LocalEncryption();
             var cipher = encryption.OpenCipher(key.Value);
+            IRecovery recovery = new ConfigurationRecovery(key.Value, applicationName, directory);
             CryptographicOperations.ZeroMemory(key.Value);
             if (cipher.IsFailure)
                 throw Failed(cipher.Errors);
@@ -151,7 +153,7 @@ public static class ConfigurationServiceCollectionExtensions
                 throw Failed(built.Errors);
 
             // 5. The store.
-            var store = ConfigurationStore.Create(documents, providers, credentials, logger);
+            var store = ConfigurationStore.Create(documents, providers, credentials, logger, recovery);
             if (store.IsFailure)
                 throw Failed(store.Errors);
 

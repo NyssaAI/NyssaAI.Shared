@@ -22,19 +22,22 @@ internal static class RuntimeChecks
         try
         {
             var services = new ServiceCollection();
-            if (services.AddNyssaRepository(new RepositoryConfiguration
+            if (!SmokeCheck.Completes(() => services.AddNyssaRepository(new RepositoryConfiguration
             {
                 DatabaseProvider = databaseProvider,
                 ConnectionString = connectionString
-            }, commands: [.. TaskOperations.Register(databaseProvider), .. ProjectTaskOperations.Register(databaseProvider)]).IsFailure) return 1;
-            await using var container = services.BuildServiceProvider();
-            var repository = container.GetRequiredService<IRepository>();
-            var provider = container.GetRequiredService<IRepositoryProvider>();
-            if (await RegistryChecks.RunAsync(repository, databaseProvider).ConfigureAwait(false) != 0) return 1;
-            if (await ScopeChecks.RunAsync(repository, provider).ConfigureAwait(false) != 0) return 1;
-            if (await CommandPipelineChecks.RunAsync(repository, provider).ConfigureAwait(false) != 0) return 1;
-            if (await ProjectTaskChecks.RunAsync(repository, provider).ConfigureAwait(false) != 0) return 1;
-            return await MigrationChecks.RunAsync(databaseProvider, connectionString).ConfigureAwait(false);
+            }, commands: [.. TaskOperations.Register(databaseProvider).Where(command => command.Name != TaskOperations.Count.Name), .. ProjectTaskOperations.Register(databaseProvider)]))) return 1;
+            services.AddNyssaRepositoryCommands(commands => commands.Add(TaskOperations.Count, parameters => new TaskCount(parameters)));
+            await using (var container = services.BuildServiceProvider())
+            {
+                var repository = container.GetRequiredService<IRepository>();
+                var provider = container.GetRequiredService<IRepositoryProvider>();
+                if (await RegistryChecks.RunAsync(repository, databaseProvider).ConfigureAwait(false) != 0) return 1;
+                if (await ScopeChecks.RunAsync(repository, provider).ConfigureAwait(false) != 0) return 1;
+                if (await CommandPipelineChecks.RunAsync(repository, provider).ConfigureAwait(false) != 0) return 1;
+                if (await ProjectTaskChecks.RunAsync(repository, provider).ConfigureAwait(false) != 0) return 1;
+                return await MigrationChecks.RunAsync(databaseProvider, connectionString).ConfigureAwait(false);
+            }
         }
         catch (Exception exception)
         {

@@ -1,4 +1,3 @@
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.Configuration;
 
@@ -19,13 +18,11 @@ public sealed record RepositoryConfiguration
     public required string ConnectionString { get; init; }
 
     /// <summary>Checks that the provider key and connection string are present without accessing external resources.</summary>
-    /// <returns>A validation failure for a null, empty, or whitespace field; otherwise success.</returns>
-    public Result Validate()
+    /// <exception cref="ArgumentException">A required field is null, empty, or whitespace.</exception>
+    public void Validate()
     {
-        var provider = Guard.Against.NullOrWhiteSpace(DatabaseProvider, nameof(DatabaseProvider));
-        if (provider.IsFailure) return Result.Failure(provider.Errors);
-        var connection = Guard.Against.NullOrWhiteSpace(ConnectionString, nameof(ConnectionString));
-        return connection.IsFailure ? Result.Failure(connection.Errors) : Result.Success();
+        ArgumentException.ThrowIfNullOrWhiteSpace(DatabaseProvider);
+        ArgumentException.ThrowIfNullOrWhiteSpace(ConnectionString);
     }
 
     /// <summary>Returns the type name without exposing any configuration field values.</summary>

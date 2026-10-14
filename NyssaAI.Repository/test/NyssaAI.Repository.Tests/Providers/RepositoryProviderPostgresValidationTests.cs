@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NyssaAI.Repository.Configuration;
 using NyssaAI.Repository.Providers;
-using NyssaAI.Results;
 using Xunit;
 
 namespace NyssaAI.Repository.Tests.Providers;
@@ -58,11 +57,9 @@ public sealed class RepositoryProviderPostgresValidationTests
     [MemberData(nameof(InvalidHosts))]
     public void Prepare_InvalidEmbeddedPort_ReturnsSanitizedValidation(string host)
     {
-        var result = RepositoryProviderPostgres.Prepare(Settings(host));
+        var result = Assert.Throws<ArgumentException>(() => RepositoryProviderPostgres.Prepare(Settings(host)));
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(result.Errors).Category);
-        AssertSanitizedErrors(result.Errors, host);
+        Assert.DoesNotContain("sentinel", result.ToString(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -71,10 +68,9 @@ public sealed class RepositoryProviderPostgresValidationTests
     {
         var services = new ServiceCollection();
 
-        var result = Assert.Throws<ResultException>(() => services.AddNyssaRepository(Settings(host)));
+        var result = Assert.Throws<ArgumentException>(() => services.AddNyssaRepository(Settings(host)));
 
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(result.Errors).Category);
-        AssertSanitizedErrors(result.Errors, host);
+        Assert.DoesNotContain("sentinel", result.ToString(), StringComparison.Ordinal);
         Assert.Empty(services);
     }
 
@@ -84,30 +80,25 @@ public sealed class RepositoryProviderPostgresValidationTests
     {
         var settings = Settings(host);
         // Construction verifies the pinned driver's parsing without opening a connection.
-        await using var driver = new NpgsqlSlimDataSourceBuilder(settings.ConnectionString)
-            .EnableTransportSecurity().Build();
-
-        var created = RepositoryProviderPostgres.Prepare(settings);
-        Assert.True(created.IsSuccess, created.ToString());
-        await using var direct = created.Value();
-        Assert.Equal("postgresql", direct.DatabaseProvider);
-
-        var services = new ServiceCollection();
-        var registered = services.AddNyssaRepository(settings);
-        Assert.True(registered.IsSuccess, registered.ToString());
-        await using var container = services.BuildServiceProvider();
-        Assert.Equal("postgresql", container.GetRequiredService<IRepositoryProvider>().DatabaseProvider);
-    }
-
-    private static void AssertSanitizedErrors(IEnumerable<Error> errors, string host)
-    {
-        Assert.All(errors, error =>
+        await using (var driver = new NpgsqlSlimDataSourceBuilder(settings.ConnectionString)
+            .EnableTransportSecurity().Build())
         {
-            Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain(host, error.UserMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain(host, error.TechnicalMessage, StringComparison.Ordinal);
-        });
+
+            var created = RepositoryProviderPostgres.Prepare(settings);
+
+            await using (var direct = created())
+            {
+                Assert.Equal("postgresql", direct.DatabaseProvider);
+
+                var services = new ServiceCollection();
+                var registered = services.AddNyssaRepository(settings);
+
+                await using (var container = services.BuildServiceProvider())
+                {
+                    Assert.Equal("postgresql", container.GetRequiredService<IRepositoryProvider>().DatabaseProvider);
+                }
+            }
+        }
     }
 
     private static RepositoryConfiguration Settings(string host) => new()

@@ -78,7 +78,11 @@ public sealed class Workstation : IDisposable
 
     /// <summary>What an administrator may do: place the encryption key in the credential store ahead of time.</summary>
     public void ProvisionKey() =>
-        Keyring.Set(ApplicationName, "configuration-key", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
+        Keyring.Set(
+            ApplicationName,
+            "configuration-key",
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        );
 
     /// <summary>Read a namespace document as the bytes on disk, to prove what is and is not in it.</summary>
     public string ReadDocument(string @namespace) =>
@@ -110,14 +114,17 @@ public sealed class Workstation : IDisposable
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddLogging(builder => builder.AddProvider(Log).SetMinimumLevel(LogLevel.Information));
+        services.AddLogging(builder =>
+            builder.AddProvider(Log).SetMinimumLevel(LogLevel.Information)
+        );
         services.AddSingleton<IKeyring>(Keyring);
         services.AddSingleton<TimeProvider>(Clock);
         services.AddSingleton<IBrowserLauncher>(Browser);
         services.ConfigureHttpClientDefaults(client =>
-            client.ConfigurePrimaryHttpMessageHandler(() => AuthorizationServer));
+            client.ConfigurePrimaryHttpMessageHandler(() => AuthorizationServer)
+        );
         if (VaultPackage is not null)
-            services.AddFakeVault(VaultPackage);   // Program.cs: services.AddContosoVault()
+            services.AddFakeVault(VaultPackage); // Program.cs: services.AddContosoVault()
     }
 
     /// <summary>
@@ -150,16 +157,9 @@ public sealed class Workstation : IDisposable
         current.Dispose();
     }
 
-    /// <summary>Registers configuration while this fixture owns host construction and scope cleanup.</summary>
-    public DISimulator AddNyssaConfiguration(Action<NyssaConfigurationOptions>? configure = null,
-        Action<IServiceCollection>? application = null)
+    /// <summary>Owns the host and scope for the registrations shown in the test.</summary>
+    public DISimulator StartApplication(IServiceCollection services)
     {
-        var services = CreateServices(application);
-        services.AddNyssaConfiguration(options =>
-        {
-            Locate(options);
-            configure?.Invoke(options);
-        });
         var simulator = new DISimulator(services);
         _applications.Add(simulator);
         return simulator;

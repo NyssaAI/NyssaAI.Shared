@@ -1,6 +1,5 @@
 using System.Text.Json;
 using NyssaAI.Repository.Configuration;
-using NyssaAI.Results;
 using Xunit;
 
 namespace NyssaAI.Repository.Tests.Configuration;
@@ -25,7 +24,7 @@ public sealed class RepositoryConfigurationTests
         Assert.Equal(settings, restored);
         Assert.Equal(provider, restored.DatabaseProvider);
         Assert.Equal(connectionString, restored.ConnectionString);
-        Assert.True(restored.Validate().IsSuccess);
+        restored.Validate();
     }
 
     [Theory]
@@ -59,13 +58,8 @@ public sealed class RepositoryConfigurationTests
         var settings = JsonSerializer.Deserialize(json, RepositoryConfigurationJsonContext.Default.RepositoryConfiguration);
         Assert.NotNull(settings);
 
-        var result = settings.Validate();
+        var result = Assert.ThrowsAny<ArgumentException>(() => settings.Validate());
 
-        Assert.True(result.IsFailure);
-        var error = Assert.Single(result.Errors);
-        Assert.Equal(ErrorCategory.Validation, error.Category);
-        Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-        Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("sentinel-secret", result.ToString(), StringComparison.Ordinal);
     }
 
@@ -95,7 +89,7 @@ public sealed class RepositoryConfigurationTests
             ConnectionString = "deliberately not a connection string"
         };
 
-        Assert.True(settings.Validate().IsSuccess);
+        settings.Validate();
     }
 
     [Fact]

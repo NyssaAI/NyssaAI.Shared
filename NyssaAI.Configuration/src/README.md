@@ -2,7 +2,7 @@
 
 Consumers use `NyssaAI.Configuration.IConfiguration` for values and
 `NyssaAI.Configuration.IConfigurationExtensions` for interactive authorization. Registration and
-startup options live in `Client/`; provider implementers use public contracts in `Contracts/`.
+startup options live in `Client/`; existing provider contracts remain in `Contracts/`. New recovery provider contracts are owned by `CloudKeyVaults/`.
 
 | Directory | Responsibility |
 | --- | --- |
@@ -12,7 +12,8 @@ startup options live in `Client/`; provider implementers use public contracts in
 | `Values/` | Namespace documents, provider selection, typed access, and locking. |
 | `Encryption/` | Address-bound local encryption and the `aesLocal` provider. |
 | `OAuth/` | Authorization, persisted grants, and token refresh. |
-| `CloudKeyVaults/` | Adapt remote vault contracts into configuration providers. |
+| `CloudKeyVaults/` | Vault adaptation and the optional guarded recovery protocol. |
+| `Recovery/` | Progress and exception contracts, protected handles, and recovery envelope serialization. |
 | `OsKeyring/` | Platform credential stores and custody of the local encryption key. |
 | `FileSecurity/` | Ownership, permissions, and protected filesystem writes. |
 

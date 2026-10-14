@@ -1,5 +1,4 @@
 using System.Data.Common;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.Commands;
 
@@ -28,6 +27,6 @@ public interface IRepoCommand<TParameters, TResult>
     /// <param name="connection">The scope's open connection.</param>
     /// <param name="transaction">The active transaction, or null for a standalone session.</param>
     /// <param name="cancellationToken">Cancels execution and materialization.</param>
-    /// <returns>The complete buffered result or a domain failure.</returns>
-    public Task<Result<TResult>> ExecuteCoreAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken);
+    /// <returns>The complete buffered value. Throw on execution or domain failure.</returns>
+    public Task<TResult> ExecuteCoreAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken);
 }

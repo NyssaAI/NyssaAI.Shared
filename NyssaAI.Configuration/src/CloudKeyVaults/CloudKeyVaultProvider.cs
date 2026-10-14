@@ -6,7 +6,7 @@ namespace NyssaAI.Configuration.CloudKeyVaults;
 
 /// <summary>
 /// CloudKeyVaultProvider adapts any <see cref="ICloudKeyVault"/> to the pluggable provider contract,
-/// so a remote secret store is written once against two members and never against the entry model.
+/// so a remote secret store is written once against the vault contract and never against the entry model.
 /// </summary>
 /// <remarks>
 /// The stored entry holds a <see cref="ConfigurationPointer"/>, not a value, so nothing sensitive is
@@ -33,6 +33,10 @@ internal sealed class CloudKeyVaultProvider : IConfigurationProvider
 
     /// <inheritdoc/>
     public string Name { get; }
+
+    public string? TargetReference(ConfigurationValue entry) => entry.Value;
+
+    public ICloudKeyVaultRecovery? Recovery => _vault as ICloudKeyVaultRecovery;
 
     /// <inheritdoc/>
     public async ValueTask<Result<string>> ReadAsync(
@@ -77,9 +81,9 @@ internal sealed class CloudKeyVaultProvider : IConfigurationProvider
     /// <remarks>
     /// This is the provider that actually has something to withdraw. The entry holds only an
     /// address, so overwriting it would leave the secret in the vault with nothing pointing at it;
-    /// the move calls this so that does not happen.
+    /// explicit removal and moves call this and surface any retention reported by the vault.
     /// </remarks>
-    public async ValueTask<Result> EraseAsync(
+    public async ValueTask<Result<ConfigurationRemoval>> EraseAsync(
         ConfigurationValue entry,
         string @namespace,
         string key,
@@ -87,7 +91,7 @@ internal sealed class CloudKeyVaultProvider : IConfigurationProvider
     {
         var pointer = ConfigurationPointer.Parse(Name, entry.Value);
         if (pointer.IsFailure)
-            return Result.Failure(pointer.Errors);
+            return Result<ConfigurationRemoval>.Failure(pointer.Errors);
 
         return await _vault.RemoveAsync(pointer.Value, cancellationToken).ConfigureAwait(false);
     }

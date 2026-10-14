@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.Migrations;
 
@@ -28,36 +27,47 @@ public sealed partial record MigrationCatalog : IMigrations
     /// <param name="databaseProvider">SQLite or PostgreSQL; other providers lack verified transactional migration semantics.</param>
     /// <param name="definitions">Contiguous positive steps starting at one, in any order.</param>
     /// <param name="releases">Unique valid full SemVer identities pointing to available steps or zero.</param>
-    public static Result<MigrationCatalog> Create(string databaseProvider, IReadOnlyList<MigrationDefinition> definitions, IReadOnlyList<MigrationReleasePin> releases)
+    /// <returns>The validated immutable catalog directly.</returns>
+    /// <exception cref="ArgumentException">Definitions, arguments, or release pins are invalid.</exception>
+    /// <exception cref="NotSupportedException">The named provider has no verified migration support.</exception>
+    public static MigrationCatalog Create(string databaseProvider, IReadOnlyList<MigrationDefinition> definitions, IReadOnlyList<MigrationReleasePin> releases)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databaseProvider);
+        ArgumentNullException.ThrowIfNull(definitions);
+        ArgumentNullException.ThrowIfNull(releases);
         var provider = databaseProvider?.Trim().ToLowerInvariant();
-        if (provider is not ("sqlite" or "postgresql") || definitions is null || releases is null || releases.Count == 0)
-            return Invalid("Migration registration requires a supported provider, definitions, and release pins.");
-        if (definitions.Any(item => item is null) || releases.Any(item => item is null))
-            return Invalid("Migration definitions and pins cannot contain null.");
+        if (provider is not ("sqlite" or "postgresql"))
+            throw new NotSupportedException("This provider does not support verified transactional migrations.");
+        if (releases.Count == 0)
+            throw new ArgumentException("Migration registration requires release pins.", nameof(releases));
+        if (releases.Any(item => item is null))
+            throw new ArgumentException("Migration pins cannot contain null.", nameof(releases));
+        if (definitions.Any(item => item is null))
+            throw new ArgumentException("Migration definitions and pins cannot contain null.", nameof(definitions));
         var snapshot = definitions.OrderBy(item => item.Number).ToArray();
         for (var index = 0; index < snapshot.Length; index++)
         {
             var item = snapshot[index];
             if (item.Number != index + 1L || !MigrationSql.IsTransactional(item.UpSql) ||
                 (item.DownSql is not null && !MigrationSql.IsTransactional(item.DownSql)))
-                return Invalid("Migration steps must be contiguous from one and contain transactional SQL.");
+                throw new ArgumentException("Migration steps must be contiguous from one and contain transactional SQL.", nameof(definitions));
         }
         var pins = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var pin in releases)
         {
             if (!IsRelease(pin.Release) || pin.Number < 0 || pin.Number > snapshot.Length || !pins.TryAdd(pin.Release, pin.Number))
-                return Invalid("Migration pins require unique full semantic versions and available schema numbers.");
+                throw new ArgumentException("Migration pins require unique full semantic versions and available schema numbers.", nameof(releases));
         }
-        return Result<MigrationCatalog>.Success(new(provider, snapshot, pins));
+        return new(provider, snapshot, pins);
     }
 
-    Result<long> IMigrations.Resolve(string release)
+    long IMigrations.Resolve(string release)
     {
-        if (!IsRelease(release)) return Result<long>.Failure(Error.FromMessage("The requested release is not a semantic version.", ErrorCategory.Validation));
+        ArgumentNullException.ThrowIfNull(release);
+        if (!IsRelease(release)) throw new ArgumentException("The requested release is not a semantic version.", nameof(release));
         return _releases.TryGetValue(release, out var number)
-            ? Result<long>.Success(number)
-            : Result<long>.Failure(Error.FromMessage("No exact migration pin exists for the requested release.", ErrorCategory.NotFound));
+            ? number
+            : throw new KeyNotFoundException("No exact migration pin exists for the requested release.");
     }
 
     internal static string Fingerprint(MigrationDefinition definition)
@@ -67,7 +77,6 @@ public sealed partial record MigrationCatalog : IMigrations
     }
 
     private static bool IsRelease(string? release) => release is not null && ReleasePattern().IsMatch(release);
-    private static Result<MigrationCatalog> Invalid(string message) => Result<MigrationCatalog>.Failure(Error.FromMessage(message, ErrorCategory.Validation));
 
     [GeneratedRegex(@"\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z", RegexOptions.CultureInvariant)]
     private static partial Regex ReleasePattern();

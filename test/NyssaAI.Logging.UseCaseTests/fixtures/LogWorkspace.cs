@@ -12,17 +12,22 @@ namespace NyssaAI.Logging.UseCaseTests.fixtures;
 /// </remarks>
 public sealed class LogWorkspace : IDisposable
 {
-    private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("nyssa-logging-usecase-");
-
+    private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory(
+        "nyssa-logging-usecase-"
+    );
     public string LogPath => Path.Combine(_directory.FullName, "orders.jsonl");
 
     /// <summary>Read every JSON record written to the log file.</summary>
     public IReadOnlyList<JsonElement> ReadRecords() =>
-        File.ReadAllLines(LogPath).Select(line =>
-        {
-            using var document = JsonDocument.Parse(line);
-            return document.RootElement.Clone();
-        }).ToArray();
+        File.ReadAllLines(LogPath)
+            .Select(line =>
+            {
+                using (var document = JsonDocument.Parse(line))
+                {
+                    return document.RootElement.Clone();
+                }
+            })
+            .ToArray();
 
     public void Dispose() => _directory.Delete(recursive: true);
 }

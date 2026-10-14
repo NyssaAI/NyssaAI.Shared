@@ -119,7 +119,7 @@ public sealed class OAuthTokenProviderTests
         var cancellationToken = TestContext.Current.CancellationToken;
         var encryption = new ConfigurationProviderLocalEncryption(cipher);
         var store = ConfigurationStore.Create(documents, [encryption]).Value;
-        Assert.True((await store.SetAsync("service", "token", "value", literal ? IConfiguration.Plain : encryption.Name, cancellationToken)).IsSuccess);
+        Assert.True((await store.SetAsync("service", "token", "value", literal ? null : encryption.Name, cancellationToken)).IsSuccess);
 
         var reauthorized = await store.ReauthorizeAsync("service", "token", cancellationToken);
 

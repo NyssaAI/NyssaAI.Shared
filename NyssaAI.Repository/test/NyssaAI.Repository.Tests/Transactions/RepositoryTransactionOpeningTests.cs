@@ -3,7 +3,6 @@ using System.Data.Common;
 using Microsoft.Extensions.DependencyInjection;
 using NyssaAI.Repository.Configuration;
 using NyssaAI.Repository.Providers;
-using NyssaAI.Results;
 using Xunit;
 
 namespace NyssaAI.Repository.Tests.Transactions;
@@ -22,13 +21,15 @@ public sealed class RepositoryTransactionOpeningTests
             providers: [new RepositoryProviderRegistration
             {
                 DatabaseProvider = "controlled",
-                Prepare = _ => Result<Func<IRepositoryProvider>>.Success(() => provider)
+                Prepare = _ => () => provider
             }]);
-        await using var container = services.BuildServiceProvider();
-        var result = await container.GetRequiredService<IRepository>().OpenTransactionAsync(TestContext.Current.CancellationToken);
-        Assert.True(connection.IsDisposed);
-        Assert.Equal(canceled ? ErrorCategory.Canceled : ErrorCategory.Unavailable, Assert.Single(result.Errors).Category);
-        Assert.DoesNotContain("sentinel-secret", result.ToString());
+        await using (var container = services.BuildServiceProvider())
+        {
+            var result = await Assert.ThrowsAsync(canceled ? typeof(OperationCanceledException) : typeof(TransactionBeginException),
+                () => container.GetRequiredService<IRepository>().OpenTransactionAsync(TestContext.Current.CancellationToken));
+            Assert.True(connection.IsDisposed);
+            Assert.Equal("sentinel-secret", result.Message);
+        }
     }
 
     private sealed class TransactionProvider : IRepositoryProvider
@@ -36,8 +37,8 @@ public sealed class RepositoryTransactionOpeningTests
         private readonly DbConnection _connection;
         internal TransactionProvider(DbConnection connection) => _connection = connection;
         public string DatabaseProvider => "controlled";
-        public Task<Result<DbConnection>> OpenConnectionAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<DbConnection>.Success(_connection));
+        public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(_connection);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

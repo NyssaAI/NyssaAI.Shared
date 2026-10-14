@@ -1,7 +1,6 @@
-using NyssaAI.Repository.UseCaseTests.fixtures;
 using NyssaAI.Repository.AotCommands.ProjectTasks;
 using NyssaAI.Repository.CommandPipelines;
-using NyssaAI.Results;
+using NyssaAI.Repository.UseCaseTests.fixtures;
 using Xunit;
 
 namespace NyssaAI.Repository.UseCaseTests;
@@ -15,10 +14,9 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
     // constructor
     public RepositoryTutorials(TaskSavingFixture fixture) => _fixture = fixture;
 
-
     public async ValueTask InitializeAsync() => await _fixture.ResetAsync(TestContext.Current.CancellationToken);
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     [Fact]
     public async Task ExecuteAsync_CreateTask_PersistsTaskAsync()
@@ -32,16 +30,18 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
             Id = 1,
             ProjectId = 10,
             Title = "Write release notes",
-            Note = "Include the new search feature"
+            Note = "Include the new search feature",
         };
         TaskDetails savedTask;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            // The key fixes the return type. UnwrapAsync returns that DTO or throws on failure.
-            var createCommand = repository.CommandRegistry(ProjectTaskOperations.Create, parameters).Unwrap();
-            savedTask = await session.ExecuteAsync(createCommand, cancellationToken).UnwrapAsync();
+            // The key fixes the DTO returned by execution.
+            savedTask = await session.ExecuteAsync(
+                repository.CommandRegistry(ProjectTaskOperations.Create, parameters),
+                cancellationToken
+            );
         }
 
         var persistedTask = await _fixture.ReadTaskAsync(1, cancellationToken);
@@ -69,11 +69,12 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         TaskDetails task;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            var findCommand = repository.CommandRegistry(ProjectTaskOperations.Get, new TaskIdParameters { Id = 1 }).Unwrap();
-
-            task = await session.ExecuteAsync(findCommand, cancellationToken).UnwrapAsync();
+            task = await session.ExecuteAsync(
+                repository.CommandRegistry(ProjectTaskOperations.Get, new TaskIdParameters { Id = 1 }),
+                cancellationToken
+            );
         }
 
         // Assert
@@ -99,11 +100,15 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         IReadOnlyList<TaskSummary> tasks;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            var listCommand = repository.CommandRegistry(ProjectTaskOperations.ListOpen,new ProjectTaskParameters { ProjectId = 10 }).Unwrap();
-
-            tasks = await session.ExecuteAsync(listCommand, cancellationToken).UnwrapAsync();
+            tasks = await session.ExecuteAsync(
+                repository.CommandRegistry(
+                    ProjectTaskOperations.ListOpen,
+                    new ProjectTaskParameters { ProjectId = 10 }
+                ),
+                cancellationToken
+            );
         }
 
         // Assert
@@ -126,11 +131,15 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         TaskDetails renamedTask;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            var renameCommand = repository.CommandRegistry(ProjectTaskOperations.Rename,
-                new TaskRenameParameters { Id = 1, Title = "Publish release notes" }).Unwrap();
-            renamedTask = await session.ExecuteAsync(renameCommand, cancellationToken).UnwrapAsync();
+            renamedTask = await session.ExecuteAsync(
+                repository.CommandRegistry(
+                    ProjectTaskOperations.Rename,
+                    new TaskRenameParameters { Id = 1, Title = "Publish release notes" }
+                ),
+                cancellationToken
+            );
         }
 
         var persistedTask = await _fixture.ReadTaskAsync(1, cancellationToken);
@@ -159,11 +168,15 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         long openTaskCount;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            var countCommand = repository.CommandRegistry(ProjectTaskOperations.CountOpen,
-                new ProjectTaskParameters { ProjectId = 10 }).Unwrap();
-            openTaskCount = await session.ExecuteAsync(countCommand, cancellationToken).UnwrapAsync();
+            openTaskCount = await session.ExecuteAsync(
+                repository.CommandRegistry(
+                    ProjectTaskOperations.CountOpen,
+                    new ProjectTaskParameters { ProjectId = 10 }
+                ),
+                cancellationToken
+            );
         }
 
         // Assert
@@ -183,11 +196,15 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         ProjectProgress progress;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            var progressCommand = repository.CommandRegistry(ProjectTaskOperations.Progress,
-                new ProjectTaskParameters { ProjectId = 10 }).Unwrap();
-            progress = await session.ExecuteAsync(progressCommand, cancellationToken).UnwrapAsync();
+            progress = await session.ExecuteAsync(
+                repository.CommandRegistry(
+                    ProjectTaskOperations.Progress,
+                    new ProjectTaskParameters { ProjectId = 10 }
+                ),
+                cancellationToken
+            );
         }
 
         // Assert
@@ -208,11 +225,10 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         TaskCard card;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            var findCommand = repository.CommandRegistry(ProjectTaskOperations.Get,
-                new TaskIdParameters { Id = 1 }).Unwrap();
-            TaskDetails task = await session.ExecuteAsync(findCommand, cancellationToken).UnwrapAsync();
+            var findCommand = repository.CommandRegistry(ProjectTaskOperations.Get, new TaskIdParameters { Id = 1 });
+            TaskDetails task = await session.ExecuteAsync(findCommand, cancellationToken);
 
             // This cast uses the application-defined conversion operator in TaskCard.
             card = (TaskCard)task;
@@ -229,22 +245,21 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         // Arrange
         var repository = _fixture.Repository;
         var cancellationToken = TestContext.Current.CancellationToken;
-        Result<TaskDetails> missingTask;
+        KeyNotFoundException missingTask;
 
         // Act
-        await using (var session = await repository.OpenSessionAsync(cancellationToken).UnwrapAsync())
+        await using (var session = await repository.OpenSessionAsync(cancellationToken))
         {
-            var findCommand = repository.CommandRegistry(ProjectTaskOperations.Get,
-                new TaskIdParameters { Id = 404 }).Unwrap();
-            // Keep the Result when failure is expected, so the caller can inspect its errors.
-            missingTask = await session.ExecuteAsync(findCommand, cancellationToken);
+            var findCommand = repository.CommandRegistry(ProjectTaskOperations.Get, new TaskIdParameters { Id = 404 });
+            // A missing required row raises a KeyNotFoundException.
+            missingTask = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+                session.ExecuteAsync(findCommand, cancellationToken)
+            );
         }
 
         // Assert
-        Assert.True(missingTask.IsFailure);
-        var error = Assert.Single(missingTask.Errors);
-        Assert.Equal(ErrorCategory.NotFound, error.Category);
-        Assert.Equal("Task not found.", error.UserMessage);
+
+        Assert.Equal("Task not found.", missingTask.Message);
     }
 
     [Fact]
@@ -256,31 +271,33 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         await _fixture.AddProjectAsync(10, "Website launch", cancellationToken);
         await _fixture.AddTaskAsync(1, 10, "Write release notes", null, false, cancellationToken);
         TaskDetails followUp;
-        Result committed;
 
         // Act
-        await using (var transaction = await repository.OpenTransactionAsync(cancellationToken).UnwrapAsync())
+        await using (var transaction = await repository.OpenTransactionAsync(cancellationToken))
         {
             followUp = await transaction
                 .Pipeline(repository, ProjectTaskOperations.Complete, new TaskIdParameters { Id = 1 })
-                .Then(ProjectTaskOperations.Create, completedTask => new TaskCreateParameters
-                {
-                    Id = 2,
-                    ProjectId = completedTask.ProjectId,
-                    Title = "Publish release notes",
-                    Note = $"Follow up on: {completedTask.Title}"
-                })
-                .ExecuteAsync(cancellationToken).UnwrapAsync();
+                .Then(
+                    ProjectTaskOperations.Create,
+                    completedTask => new TaskCreateParameters
+                    {
+                        Id = 2,
+                        ProjectId = completedTask.ProjectId,
+                        Title = "Publish release notes",
+                        Note = $"Follow up on: {completedTask.Title}",
+                    }
+                )
+                .ExecuteAsync(cancellationToken);
 
             // The pipeline shares this transaction; it does not commit for us.
-            committed = await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var completedTask = await _fixture.ReadTaskAsync(1, cancellationToken);
         var persistedFollowUp = await _fixture.ReadTaskAsync(2, cancellationToken);
 
         // Assert
-        Assert.True(committed.IsSuccess, committed.ToString());
+
         Assert.Equal(2, followUp.Id);
         Assert.Equal(10, followUp.ProjectId);
         Assert.Equal("Publish release notes", followUp.Title);
@@ -305,23 +322,35 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         await _fixture.AddTaskAsync(4, 20, "Plan next release", null, false, cancellationToken);
         IReadOnlyList<TaskSummary> tasksToMove;
         TaskTransferSummary transfer;
-        Result committed;
 
         // Act
-        await using (var transaction = await repository.OpenTransactionAsync(cancellationToken).UnwrapAsync())
+        await using (var transaction = await repository.OpenTransactionAsync(cancellationToken))
         {
-            var listCommand = repository.CommandRegistry(ProjectTaskOperations.ListOpen,
-                new ProjectTaskParameters { ProjectId = 10 }).Unwrap();
-            tasksToMove = await transaction.ExecuteAsync(listCommand, cancellationToken).UnwrapAsync();
+            tasksToMove = await transaction.ExecuteAsync(
+                repository.CommandRegistry(
+                    ProjectTaskOperations.ListOpen,
+                    new ProjectTaskParameters { ProjectId = 10 }
+                ),
+                cancellationToken
+            );
 
-            var moveCommand = repository.CommandRegistry(ProjectTaskOperations.MoveOpen,
-                new TaskTransferParameters { TransferId = 100, SourceProjectId = 10, DestinationProjectId = 20 }).Unwrap();
-            TaskTransferSummary movedTasks = await transaction.ExecuteAsync(moveCommand, cancellationToken).UnwrapAsync();
+            var moveCommand = repository.CommandRegistry(
+                ProjectTaskOperations.MoveOpen,
+                new TaskTransferParameters
+                {
+                    TransferId = 100,
+                    SourceProjectId = 10,
+                    DestinationProjectId = 20,
+                }
+            );
+            TaskTransferSummary movedTasks = await transaction.ExecuteAsync(moveCommand, cancellationToken);
 
             // Persist the actual move count in the same transaction as the moves.
-            var auditCommand = repository.CommandRegistry(ProjectTaskOperations.RecordTransfer, movedTasks).Unwrap();
-            transfer = await transaction.ExecuteAsync(auditCommand, cancellationToken).UnwrapAsync();
-            committed = await transaction.CommitAsync(cancellationToken);
+            transfer = await transaction.ExecuteAsync(
+                repository.CommandRegistry(ProjectTaskOperations.RecordTransfer, movedTasks),
+                cancellationToken
+            );
+            await transaction.CommitAsync(cancellationToken);
         }
 
         var audit = await _fixture.ReadTransferAsync(100, cancellationToken);
@@ -332,7 +361,7 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         var transferCount = await _fixture.CountTransfersAsync(cancellationToken);
 
         // Assert
-        Assert.True(committed.IsSuccess, committed.ToString());
+
         Assert.Equal(2, tasksToMove.Count);
         Assert.Equal("Write release notes", tasksToMove[0].Title);
         Assert.Equal("Review screenshots", tasksToMove[1].Title);
@@ -364,21 +393,32 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
         // Reusing this transfer ID will fail the audit insert's primary-key constraint.
         await _fixture.AddTransferAsync(100, 10, 20, 7, cancellationToken);
         TaskTransferSummary movedTasks;
-        Result<TaskTransferSummary> auditResult;
-        Result commitResult;
+        System.Data.Common.DbException auditResult;
+        InvalidOperationException commitResult;
 
         // Act
-        await using (var transaction = await repository.OpenTransactionAsync(cancellationToken).UnwrapAsync())
+        await using (var transaction = await repository.OpenTransactionAsync(cancellationToken))
         {
-            var moveCommand = repository.CommandRegistry(ProjectTaskOperations.MoveOpen,
-                new TaskTransferParameters { TransferId = 100, SourceProjectId = 10, DestinationProjectId = 20 }).Unwrap();
-            movedTasks = await transaction.ExecuteAsync(moveCommand, cancellationToken).UnwrapAsync();
+            movedTasks = await transaction.ExecuteAsync(
+                repository.CommandRegistry(
+                    ProjectTaskOperations.MoveOpen,
+                    new TaskTransferParameters
+                    {
+                        TransferId = 100,
+                        SourceProjectId = 10,
+                        DestinationProjectId = 20,
+                    }
+                ),
+                cancellationToken
+            );
 
-            var auditCommand = repository.CommandRegistry(ProjectTaskOperations.RecordTransfer, movedTasks).Unwrap();
-            auditResult = await transaction.ExecuteAsync(auditCommand, cancellationToken);
+            var auditCommand = repository.CommandRegistry(ProjectTaskOperations.RecordTransfer, movedTasks);
+            auditResult = await Assert.ThrowsAnyAsync<System.Data.Common.DbException>(() =>
+                transaction.ExecuteAsync(auditCommand, cancellationToken)
+            );
 
             // A failed command makes this transaction uncommittable. Disposal rolls it back.
-            commitResult = await transaction.CommitAsync(cancellationToken);
+            commitResult = await Assert.ThrowsAsync<InvalidOperationException>(() => transaction.CommitAsync(cancellationToken));
         }
 
         var originalAudit = await _fixture.ReadTransferAsync(100, cancellationToken);
@@ -389,8 +429,8 @@ public sealed class RepositoryTutorials : IClassFixture<TaskSavingFixture>, IAsy
 
         // Assert
         Assert.Equal(2L, movedTasks.TasksMoved);
-        Assert.True(auditResult.IsFailure);
-        Assert.True(commitResult.IsFailure);
+
+        Assert.Same(auditResult, commitResult.InnerException);
         Assert.Equal(10, storedTask1.ProjectId);
         Assert.Equal(10, storedTask2.ProjectId);
         Assert.Equal(10, storedTask3.ProjectId);

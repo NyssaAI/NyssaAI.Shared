@@ -26,52 +26,52 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
         var key = namedKey ? "reporting" : "default";
         var database = Path.Combine(_directory, "selected.db");
         var settings = new RepositoryConfiguration { DatabaseProvider = "sqlite", ConnectionString = $"Data Source={database}" };
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(settings, key, "aesLocal", cancellationToken)).IsSuccess);
+        await configuration.SetRepositoryConfigurationAsync(settings, key, "aesLocal", cancellationToken);
         var services = new ServiceCollection();
 
         var added = namedKey
             ? await services.AddNyssaRepositoryAsync(configuration, key: key, cancellationToken: cancellationToken)
             : await services.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellationToken);
 
-        Assert.True(added.IsSuccess, added.ToString());
-        Assert.Equal(3, services.Count);
+        Assert.Equal(4, services.Count);
         Assert.Single(services, service => service.ServiceType == typeof(IMigrationRunner));
         Assert.False(File.Exists(database));
         var replacement = settings with { ConnectionString = $"Data Source={Path.Combine(_directory, "replacement.db")}" };
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(replacement, key, cancellationToken: cancellationToken)).IsSuccess);
-        await using var container = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
-        var provider = container.GetRequiredService<IRepositoryProvider>();
-        Assert.Same(provider, container.GetRequiredService<IRepositoryProvider>());
-        Assert.False(File.Exists(database));
-        var opened = await provider.OpenConnectionAsync(cancellationToken);
-        Assert.True(opened.IsSuccess, opened.ToString());
-        await using var connection = opened.Value;
-        Assert.Equal(database, connection.DataSource);
-        Assert.False(File.Exists(Path.Combine(_directory, "replacement.db")));
+        await configuration.SetRepositoryConfigurationAsync(replacement, key, cancellationToken: cancellationToken);
+        await using (var container = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true }))
+        {
+            var provider = container.GetRequiredService<IRepositoryProvider>();
+            Assert.Same(provider, container.GetRequiredService<IRepositoryProvider>());
+            Assert.False(File.Exists(database));
+            var opened = await provider.OpenConnectionAsync(cancellationToken);
+
+            await using (var connection = opened)
+            {
+                Assert.Equal(database, connection.DataSource);
+                Assert.False(File.Exists(Path.Combine(_directory, "replacement.db")));
+            }
+        }
     }
 
     [Theory]
-    [InlineData(null, ErrorCategory.NotFound)]
-    [InlineData("{sentinel-secret", ErrorCategory.Validation)]
-    [InlineData("{}", ErrorCategory.Validation)]
-    [InlineData("{\"DatabaseProvider\":\"unknown\",\"ConnectionString\":\"sentinel-secret\"}", ErrorCategory.Validation)]
-    [InlineData("{\"DatabaseProvider\":\"sqlite\",\"ConnectionString\":\"sentinel-secret\"}", ErrorCategory.Validation)]
-    public async Task AddNyssaRepositoryAsync_UnusableSettings_ThrowsSanitizedFailureWithoutRegistration(string? json, ErrorCategory category)
+    [InlineData(null, typeof(ResultException))]
+    [InlineData("{sentinel-secret", typeof(ResultException))]
+    [InlineData("{}", typeof(ResultException))]
+    [InlineData("{\"DatabaseProvider\":\"unknown\",\"ConnectionString\":\"sentinel-secret\"}", typeof(InvalidOperationException))]
+    [InlineData("{\"DatabaseProvider\":\"sqlite\",\"ConnectionString\":\"sentinel-secret\"}", typeof(ArgumentException))]
+    public async Task AddNyssaRepositoryAsync_UnusableSettings_ThrowsSanitizedFailureWithoutRegistration(string? json, Type exceptionType)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var configuration = Open();
         if (json is not null)
-            await configuration.SetAsync("nyssa.repository", "default", json, ConfigurationStore.Plain, cancellationToken);
+            await configuration.SetAsync("nyssa.repository", "default", json, cancellationToken: cancellationToken);
         var services = new ServiceCollection();
         services.AddSingleton(new object());
         var original = services.ToArray();
 
-        var errors = (await Assert.ThrowsAsync<ResultException>(() => services.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellationToken))).Errors;
+        await Assert.ThrowsAsync(exceptionType, () => services.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellationToken));
 
-        Assert.Equal(category, Assert.Single(errors).Category);
         Assert.Equal(original, services.ToArray());
-        Assert.DoesNotContain("sentinel-secret", errors[0].UserMessage, StringComparison.Ordinal);
-        Assert.DoesNotContain("sentinel-secret", errors[0].TechnicalMessage, StringComparison.Ordinal);
         if (json is null)
             Assert.Empty(await configuration.ListAsync("nyssa.repository", cancellationToken));
     }
@@ -81,9 +81,9 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var protectedConfiguration = Open();
-        Assert.True((await protectedConfiguration.SetRepositoryConfigurationAsync(Settings(), storageProvider: "aesLocal", cancellationToken: cancellationToken)).IsSuccess);
+        await protectedConfiguration.SetRepositoryConfigurationAsync(Settings(), storageProvider: "aesLocal", cancellationToken: cancellationToken);
         var configuration = _configurationHost.Open(_directory, differentKey: true);
-        var expected = await configuration.GetRepositoryConfigurationAsync(cancellationToken: cancellationToken);
+        var expected = await Assert.ThrowsAsync<ResultException>(() => configuration.GetRepositoryConfigurationAsync(cancellationToken: cancellationToken));
         var services = new ServiceCollection();
 
         var added = await Assert.ThrowsAsync<ResultException>(() => services.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellationToken));
@@ -99,9 +99,8 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
     {
         var services = new ServiceCollection();
 
-        var added = await Assert.ThrowsAsync<ResultException>(() => services.AddNyssaRepositoryAsync(Open(), key, cancellationToken: TestContext.Current.CancellationToken));
+        var added = await Assert.ThrowsAsync<ArgumentException>(() => services.AddNyssaRepositoryAsync(Open(), key, cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(added.Errors).Category);
         Assert.Empty(services);
     }
 
@@ -115,12 +114,11 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
         var services = new ServiceCollection();
 
         var configuration = Open();
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(Settings(), storageProvider: ConfigurationStore.Plain, cancellationToken: cancellationToken)).IsSuccess);
-        var noServices = await Assert.ThrowsAsync<ResultException>(() => missingServices.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellationToken));
-        var noConfiguration = await Assert.ThrowsAsync<ResultException>(() => services.AddNyssaRepositoryAsync(missingConfiguration, cancellationToken: cancellationToken));
+        await configuration.SetRepositoryConfigurationAsync(Settings(), cancellationToken: cancellationToken);
+        var noServices = await Assert.ThrowsAsync<ArgumentNullException>(() => missingServices.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellationToken));
+        var noConfiguration = await Assert.ThrowsAsync<ArgumentNullException>(() => services.AddNyssaRepositoryAsync(missingConfiguration, cancellationToken: cancellationToken));
 
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(noServices.Errors).Category);
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(noConfiguration.Errors).Category);
+
         Assert.Empty(services);
     }
 
@@ -128,29 +126,31 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
     public async Task AddNyssaRepositoryAsync_AlreadyRegistered_ThrowsConflictAfterLoading()
     {
         var configuration = Open();
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(Settings(), storageProvider: ConfigurationStore.Plain, cancellationToken: TestContext.Current.CancellationToken)).IsSuccess);
+        await configuration.SetRepositoryConfigurationAsync(Settings(), cancellationToken: TestContext.Current.CancellationToken);
         var services = new ServiceCollection();
-        Assert.True(services.AddNyssaRepository(Settings()).IsSuccess);
+        _ = services.AddNyssaRepository(Settings());
         var original = services.ToArray();
 
-        var added = await Assert.ThrowsAsync<ResultException>(() => services.AddNyssaRepositoryAsync(configuration, cancellationToken: TestContext.Current.CancellationToken));
+        var added = await Assert.ThrowsAsync<InvalidOperationException>(() => services.AddNyssaRepositoryAsync(configuration, cancellationToken: TestContext.Current.CancellationToken));
 
         // Loaded settings reach the same duplicate-registration check as the DTO overload.
-        Assert.Equal(ErrorCategory.Conflict, Assert.Single(added.Errors).Category);
+
         Assert.Equal(original, services.ToArray());
     }
 
     [Fact]
     public async Task AddNyssaRepositoryAsync_PreCanceled_ThrowsCanceledWithoutRegistration()
     {
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-        var services = new ServiceCollection();
+        using (var cancellation = new CancellationTokenSource())
+        {
+            cancellation.Cancel();
+            var services = new ServiceCollection();
 
-        var added = await Assert.ThrowsAsync<ResultException>(() => services.AddNyssaRepositoryAsync(Open(), cancellationToken: cancellation.Token));
+            var added = await Assert.ThrowsAsync<OperationCanceledException>(() => services.AddNyssaRepositoryAsync(Open(), cancellationToken: cancellation.Token));
 
-        Assert.Equal(ErrorCategory.Canceled, Assert.Single(added.Errors).Category);
-        Assert.Empty(services);
+            Assert.Equal(cancellation.Token, added.CancellationToken);
+            Assert.Empty(services);
+        }
     }
 
     [Theory]
@@ -158,32 +158,34 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
     [InlineData(true)]
     public async Task AddNyssaRepositoryAsync_CancellationDuringRead_DoesNotRegister(bool throwOnCancellation)
     {
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        var readStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var readFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var storage = new ConfigurationProviderReadControlled(async (value, token) =>
+        using (var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken))
         {
-            Assert.Equal(cancellation.Token, token);
-            readStarted.SetResult();
-            await readFinished.Task.WaitAsync(TestContext.Current.CancellationToken);
-            if (throwOnCancellation)
-                token.ThrowIfCancellationRequested();
-            return Result<string>.Success(value);
-        });
-        var configuration = _configurationHost.Open(_directory, vault: storage);
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(Settings(), storageProvider: storage.Name, cancellationToken: cancellation.Token)).IsSuccess);
-        var services = new ServiceCollection();
+            var readStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var readFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var storage = new ConfigurationProviderReadControlled(async (value, token) =>
+            {
+                Assert.Equal(cancellation.Token, token);
+                readStarted.SetResult();
+                await readFinished.Task.WaitAsync(TestContext.Current.CancellationToken);
+                if (throwOnCancellation)
+                    token.ThrowIfCancellationRequested();
+                return Result<string>.Success(value);
+            });
+            var configuration = _configurationHost.Open(_directory, vault: storage);
+            await configuration.SetRepositoryConfigurationAsync(Settings(), storageProvider: storage.Name, cancellationToken: cancellation.Token);
+            var services = new ServiceCollection();
 
-        var pending = services.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellation.Token);
-        await readStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
-        Assert.False(pending.IsCompleted);
-        Assert.Empty(services);
-        cancellation.Cancel();
-        readFinished.SetResult();
-        var added = await Assert.ThrowsAsync<ResultException>(() => pending);
+            var pending = services.AddNyssaRepositoryAsync(configuration, cancellationToken: cancellation.Token);
+            await readStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+            Assert.False(pending.IsCompleted);
+            Assert.Empty(services);
+            cancellation.Cancel();
+            readFinished.SetResult();
+            var added = await Assert.ThrowsAsync<OperationCanceledException>(() => pending);
 
-        Assert.Equal(ErrorCategory.Canceled, Assert.Single(added.Errors).Category);
-        Assert.Empty(services);
+            Assert.Equal(cancellation.Token, added.CancellationToken);
+            Assert.Empty(services);
+        }
     }
 
     [Fact]
@@ -192,7 +194,7 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
         var cancellationToken = TestContext.Current.CancellationToken;
         var configuration = Open();
         var settings = Settings() with { DatabaseProvider = "custom" };
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(settings, storageProvider: ConfigurationStore.Plain, cancellationToken: cancellationToken)).IsSuccess);
+        await configuration.SetRepositoryConfigurationAsync(settings, cancellationToken: cancellationToken);
         var prepared = 0;
         var constructed = 0;
         var registration = new RepositoryProviderRegistration
@@ -202,23 +204,24 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
             {
                 prepared++;
                 Assert.Equal(settings, loaded);
-                return Result<Func<IRepositoryProvider>>.Success(() =>
+                return () =>
                 {
                     constructed++;
-                    return RepositoryProviderSqlite.Prepare(Settings()).Value();
-                });
+                    return RepositoryProviderSqlite.Prepare(Settings())();
+                };
             }
         };
         var services = new ServiceCollection();
 
         var added = await services.AddNyssaRepositoryAsync(configuration, providers: [registration], cancellationToken: cancellationToken);
 
-        Assert.True(added.IsSuccess, added.ToString());
         Assert.Equal(1, prepared);
         Assert.Equal(0, constructed);
-        await using var container = services.BuildServiceProvider();
-        _ = container.GetRequiredService<IRepositoryProvider>();
-        Assert.Equal(1, constructed);
+        await using (var container = services.BuildServiceProvider())
+        {
+            _ = container.GetRequiredService<IRepositoryProvider>();
+            Assert.Equal(1, constructed);
+        }
     }
 
     [Fact]
@@ -227,8 +230,8 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton<IRepository>(_ => null!);
         var original = services.ToArray();
-        var failure = Assert.Throws<ResultException>(() => services.AddNyssaRepository(Settings()));
-        Assert.Equal(ErrorCategory.Conflict, Assert.Single(failure.Errors).Category);
+        var failure = Assert.Throws<InvalidOperationException>(() => services.AddNyssaRepository(Settings()));
+
         Assert.Equal(original, services.ToArray());
     }
 
@@ -237,11 +240,8 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
     {
         // Deliberately exercise runtime validation despite the non-nullable signature.
         IServiceCollection services = null!;
-        var exception = Assert.Throws<ResultException>(() => services.AddNyssaRepository(Settings()));
-        var error = Assert.Single(exception.Errors);
-        Assert.Equal(ErrorCategory.Validation, error.Category);
-        Assert.Equal("Unable to register the data repository", error.UserMessage);
-        Assert.Equal("The collection cannot be null.", error.TechnicalMessage);
+        var exception = Assert.Throws<ArgumentNullException>(() => services.AddNyssaRepository(Settings()));
+        Assert.Equal("services", exception.ParamName);
     }
 
     [Fact]
@@ -258,11 +258,11 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
             {
                 prepared++;
                 Assert.Equal("custom", settings.DatabaseProvider);
-                return Result<Func<IRepositoryProvider>>.Success(() =>
+                return () =>
                 {
                     constructed++;
-                    return RepositoryProviderSqlite.Prepare(Settings()).Value();
-                });
+                    return RepositoryProviderSqlite.Prepare(Settings())();
+                };
             }
         };
 
@@ -272,13 +272,14 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
             return Settings() with { DatabaseProvider = "custom" };
         }, [registration]);
 
-        Assert.True(result.IsSuccess);
         Assert.Equal(1, calls);
         Assert.Equal(1, prepared);
         Assert.Equal(0, constructed);
-        await using var container = services.BuildServiceProvider();
-        Assert.Same(container.GetRequiredService<IRepositoryProvider>(), container.GetRequiredService<IRepositoryProvider>());
-        Assert.Equal(1, constructed);
+        await using (var container = services.BuildServiceProvider())
+        {
+            Assert.Same(container.GetRequiredService<IRepositoryProvider>(), container.GetRequiredService<IRepositoryProvider>());
+            Assert.Equal(1, constructed);
+        }
     }
 
     [Theory]
@@ -289,15 +290,18 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
     public void AddNyssaRepository_InvalidConfigurationFactory_ThrowsWithoutRegistration(string scenario)
     {
         var services = new ServiceCollection();
+        var expected = new InvalidOperationException("configuration callback failed");
         Func<RepositoryConfiguration> configure = scenario switch
         {
             "null" => null!,
             "result" => () => null!,
             "invalid" => () => Settings() with { DatabaseProvider = " " },
-            _ => () => throw new InvalidOperationException("sentinel-secret")
+            _ => () => throw expected
         };
 
-        var exception = Assert.Throws<ResultException>(() => services.AddNyssaRepository(configure));
+        var exceptionType = scenario == "null" ? typeof(ArgumentNullException) : scenario == "invalid" ? typeof(ArgumentException) : typeof(InvalidOperationException);
+        var exception = Assert.Throws(exceptionType, () => services.AddNyssaRepository(configure));
+        if (scenario == "throws") Assert.Same(expected, exception);
 
         Assert.DoesNotContain("sentinel-secret", exception.Message);
         Assert.Empty(services);
@@ -334,7 +338,7 @@ public sealed class RepositoryServiceCollectionExtensionsTests : IDisposable
             _value = value;
             return ValueTask.FromResult(ConfigurationPointer.Parse(Name, $"{@namespace}/{key}"));
         }
-        public ValueTask<Result> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Result.Failure("This test vault does not support withdrawal."));
+        public ValueTask<Result<ConfigurationRemoval>> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result<ConfigurationRemoval>.Failure("This test vault does not support withdrawal."));
     }
 }

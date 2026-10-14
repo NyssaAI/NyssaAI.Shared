@@ -9,7 +9,7 @@
          Directory.Build.props, any AOT-incompatible API use fails the build. -->
     <IsAotCompatible>true</IsAotCompatible>
     <Description>Railway-oriented programming (ROP) Result pattern for functional error handling</Description>
-    <Version>0.6.1</Version>
+    <Version>0.7.0</Version>
     <Authors>jamaynor</Authors>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/NyssaAI/NyssaAI.Shared/tree/main/NyssaAI.Result</PackageProjectUrl>

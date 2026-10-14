@@ -1,6 +1,5 @@
 using NyssaAI.Repository.Commands;
 using NyssaAI.Repository.Sessions;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.CommandPipelines;
 
@@ -16,10 +15,9 @@ public sealed class CommandPipeline<TResult> : ICommandPipelines<TResult>
 {
     private readonly IRepositorySession _session;
     private readonly IRepository _repository;
-    private readonly Func<CancellationToken, Task<Result<TResult>>> _execute;
+    private readonly Func<CancellationToken, Task<TResult>> _execute;
 
-    internal CommandPipeline(IRepositorySession session, IRepository repository,
-        Func<CancellationToken, Task<Result<TResult>>> execute)
+    internal CommandPipeline(IRepositorySession session, IRepository repository, Func<CancellationToken, Task<TResult>> execute)
     {
         _session = session;
         _repository = repository;
@@ -27,103 +25,58 @@ public sealed class CommandPipeline<TResult> : ICommandPipelines<TResult>
     }
 
     /// <summary>Adds a command whose parameters depend on the preceding successful result.</summary>
-    /// <typeparam name="TNextParameters">The next command's parameter contract.</typeparam>
-    /// <typeparam name="TNextResult">The next command's complete successful result.</typeparam>
-    /// <param name="key">The next typed operation.</param>
-    /// <param name="parameters">Creates values only after preceding steps succeed.</param>
-    /// <returns>A deferred pipeline returning the next command's complete result.</returns>
+    /// <typeparam name="TNextParameters">The next command's input contract.</typeparam>
+    /// <typeparam name="TNextResult">The next command's complete result.</typeparam>
+    /// <param name="key">The next logical operation.</param>
+    /// <param name="parameters">Creates its input, or throws to stop execution.</param>
+    /// <returns>A deferred pipeline with the next command's result type.</returns>
     public CommandPipeline<TNextResult> Then<TNextParameters, TNextResult>(
-        RepoCommandKey<TNextParameters, TNextResult> key, Func<TResult, TNextParameters>? parameters)
-    {
-        Func<TResult, Result<TNextParameters>>? validatedParameters = parameters is null
-            ? null : value => Result<TNextParameters>.Success(parameters(value));
-        return Then(key, validatedParameters);
-    }
-
-    /// <summary>Adds a dependent command with parameter validation that can stop the pipeline.</summary>
-    /// <typeparam name="TNextParameters">The next command's parameter contract.</typeparam>
-    /// <typeparam name="TNextResult">The next command's complete successful result.</typeparam>
-    /// <param name="key">The next typed operation.</param>
-    /// <param name="parameters">Returns typed values or a failure without running subsequent commands.</param>
-    /// <returns>A deferred pipeline; parameter, resolution, execution, and cancellation failures stop dependent work.</returns>
-    public CommandPipeline<TNextResult> Then<TNextParameters, TNextResult>(
-        RepoCommandKey<TNextParameters, TNextResult> key, Func<TResult, Result<TNextParameters>>? parameters)
-    {
-        ICommandPipelines<TResult> preceding = this;
-        return new CommandPipeline<TNextResult>(_session, _repository, async cancellationToken =>
+        RepoCommandKey<TNextParameters, TNextResult> key, Func<TResult, TNextParameters>? parameters) =>
+        new(_session, _repository, async cancellationToken =>
         {
-            if (parameters is null)
-                return Result<TNextResult>.Failure(Error.FromMessage("A dependent parameter factory is required.", ErrorCategory.Validation));
-            var previous = await preceding.ExecuteAsync(cancellationToken).ConfigureAwait(false);
-            if (previous.IsFailure) return Result<TNextResult>.Failure(previous.Errors);
-            var ready = CheckReady(_session, _repository, cancellationToken);
-            if (ready.IsFailure) return Result<TNextResult>.Failure(ready.Errors);
-            var next = parameters(previous.Value);
-            if (next is null)
-                return Result<TNextResult>.Failure(Error.FromMessage("The parameter factory returned no outcome.", ErrorCategory.Validation));
-            if (next.IsFailure) return Result<TNextResult>.Failure(next.Errors);
+            ArgumentNullException.ThrowIfNull(parameters);
+            var previous = await ExecuteAsync(cancellationToken).ConfigureAwait(false);
+            CheckReady(_session, _repository, cancellationToken);
+            var next = parameters!(previous);
             return await CommandPipeline<TNextResult>.ResolveAndExecuteAsync(
-                _session, _repository, key, next.Value, cancellationToken).ConfigureAwait(false);
+                _session, _repository, key, next, cancellationToken).ConfigureAwait(false);
         });
-    }
 
-    /// <summary>Runs every step sequentially and returns the final result or the first failure.</summary>
-    /// <param name="cancellationToken">Stops dependent work and is forwarded to each command.</param>
-    /// <returns>The final command result, or a scope, parameter, resolution, execution, or cancellation failure.</returns>
-    /// <remarks>
-    /// Command hooks execute only through the scope. Unexpected author exceptions leave a transaction
-    /// uncommittable; cancellation from a parameter factory becomes a Canceled failure.
-    /// </remarks>
-    public async Task<Result<TResult>> ExecuteAsync(CancellationToken cancellationToken = default)
+    /// <summary>Runs each step sequentially and returns the final value. Any failure throws and stops dependent work.</summary>
+    /// <param name="cancellationToken">Cancels execution and dependent work.</param>
+    /// <returns>The final command's value.</returns>
+    /// <remarks>A failed pipeline leaves its transaction unable to commit, even if the caller catches the exception.</remarks>
+    public async Task<TResult> ExecuteAsync(CancellationToken cancellationToken = default)
     {
-        var didFinish = false;
         try
         {
-            var ready = CheckReady(_session, _repository, cancellationToken);
-            var result = ready.IsFailure ? Result<TResult>.Failure(ready.Errors)
-                : await _execute(cancellationToken).ConfigureAwait(false);
-            if (result is null)
-                result = Result<TResult>.Failure(Error.FromMessage("The command pipeline returned no outcome.", ErrorCategory.Unexpected));
-            if (result.IsFailure) RecordFailure(Result.Failure(result.Errors));
-            didFinish = true;
-            return result;
+            CheckReady(_session, _repository, cancellationToken);
+            return await _execute(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (Exception exception)
         {
-            var failure = Result.Failure(Error.FromMessage("Repository execution was canceled.", ErrorCategory.Canceled));
-            RecordFailure(failure);
-            didFinish = true;
-            return Result<TResult>.Failure(failure.Errors);
-        }
-        finally
-        {
-            // A factory defect after an earlier write must not leave that transaction committable.
-            if (!didFinish)
-                RecordFailure(Result.Failure(Error.FromMessage("Command pipeline execution did not complete successfully.", ErrorCategory.Unexpected)));
+            RecordFailure(exception);
+            throw;
         }
     }
 
-    internal static async Task<Result<TResult>> ResolveAndExecuteAsync<TParameters>(IRepositorySession session,
+    internal static async Task<TResult> ResolveAndExecuteAsync<TParameters>(IRepositorySession session,
         IRepository repository, RepoCommandKey<TParameters, TResult> key, TParameters parameters, CancellationToken cancellationToken)
     {
-        var ready = CheckReady(session, repository, cancellationToken);
-        if (ready.IsFailure) return Result<TResult>.Failure(ready.Errors);
+        CheckReady(session, repository, cancellationToken);
         var command = repository.CommandRegistry(key, parameters);
-        if (command.IsFailure) return Result<TResult>.Failure(command.Errors);
-        return await session.ExecuteAsync(command.Value, cancellationToken).ConfigureAwait(false);
+        return await session.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    private static Result CheckReady(IRepositorySession session, IRepository repository, CancellationToken cancellationToken)
+    private static void CheckReady(IRepositorySession session, IRepository repository, CancellationToken cancellationToken)
     {
-        if (session is null || repository is null)
-            return Result.Failure(Error.FromMessage("A repository and caller-owned scope are required.", ErrorCategory.Validation));
-        if (session is IRepositoryScopeFailure scope) return scope.CheckReady(cancellationToken);
-        return cancellationToken.IsCancellationRequested
-            ? Result.Failure(Error.FromMessage("Repository execution was canceled.", ErrorCategory.Canceled))
-            : Result.Success();
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(repository);
+        if (session is IRepositoryScopeFailure scope) scope.CheckReady(cancellationToken);
+        else cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private void RecordFailure(Result failure)
+    private void RecordFailure(Exception failure)
     {
         if (_session is IRepositoryScopeFailure scope) scope.RecordFailure(failure);
     }

@@ -11,9 +11,10 @@ Reusable .NET libraries maintained as independently versioned packages. Each lib
 
 ## Build and test
 
-Install a stable .NET 10 SDK. From the repository root:
+Install the .NET SDK version pinned in `global.json`. From the repository root:
 
 ```powershell
+dotnet restore NyssaAI.Shared.slnx --locked-mode
 dotnet build NyssaAI.Shared.slnx --configuration Release
 ./run-tests.ps1
 ```
@@ -45,12 +46,12 @@ dotnet run --project test/NyssaAI.Result.UseCaseTests
 
 Each package owns its source, unit tests, and documentation. Root `test/` contains public API tutorials and tests that span packages. Shared build settings and dependency versions live at the root. Package names and versions remain independent of the repository name.
 
+`Directory.Packages.props` specifies direct dependency versions. Committed `packages.lock.json` files pin the resolved dependency graph and package hashes; CI checks them with a locked restore. After an intentional dependency update, run `dotnet restore NyssaAI.Shared.slnx --force-evaluate` and review the lock-file changes alongside the version changes. Native publishes also resolve runtime-specific dependencies for their target platform.
+
 Library directories, projects, assemblies, and package IDs use `NyssaAI.*`. Result's public namespace is `NyssaAI.Results`; the other libraries use their package names. Consumers of the earlier names must update package references, `using` directives, and fully qualified type names. Repository exposes `IRepository`, implemented by `RepositoryClient`. Logging uses Microsoft's existing logging interfaces.
 
-Only prepared libraries are included. See the [library import process](docs/library-imports.md) before adding another package.
-
-The [Logging and Repository decision notes](docs/logging-repository-decisions.md) record import choices, compatibility limits, and verification results.
+Release versions are pinned in each library project: Result `0.7.0`, Configuration `7.1.0`, Logging `2.1.0`, and Repository `7.1.0`. Package-specific Git tags use `NyssaAI.<Package>/v<version>` and identify the release commit.
 
 ## Licensing
 
-These libraries are source-available under the unmodified [PolyForm Small Business License 1.0.0](LICENSE.txt). Businesses outside its eligibility limits need a separate paid commercial license. See the [licensing policy](docs/licensing-policy.md) for the thresholds and commercial licensing route. Each NuGet package includes the license; the build workflow does not publish packages.
+These libraries are source-available under the unmodified [PolyForm Small Business License 1.0.0](LICENSE.txt). Businesses outside its eligibility limits need a separate paid commercial license. Each NuGet package includes the license; the build workflow does not publish packages.

@@ -8,6 +8,8 @@ Publish from the monorepo root on a machine with the toolchain for the selected 
 dotnet publish test/NyssaAI.Repository.AotSmoke/NyssaAI.Repository.AotSmoke.csproj -c Release -r linux-x64 -o .temp/repository-native
 ```
 
+On Windows, use `-r win-x64` and run `NyssaAI.Repository.AotSmoke.exe` from the output directory. Publishing requires the C++ build tools and Windows SDK libraries; a managed build does not establish native linking or runtime success.
+
 Use an isolated database. The smoke application creates and drops its own test tables and migration history.
 
 ```sh
@@ -20,3 +22,5 @@ The process exits nonzero on failure. PostgreSQL verifies cancellation of in-fli
 The additional `setup <directory> <provider>`, `run <directory>`, and `switch <directory>` commands exercise persisted encrypted settings across process runs. They require `NYSSAAI_REPOSITORY_KEY` containing a base64-encoded 32-byte test key. Setup reads the connection from `NYSSAAI_REPOSITORY_POSTGRES` for PostgreSQL or `NYSSAAI_REPOSITORY_CONNECTION` for SQLite. Switch uses `NYSSAAI_REPOSITORY_POSTGRES` for its PostgreSQL target. These commands use a test keyring, so they do not depend on the machine's credential store.
 
 Published results establish support for the exercised commands and target runtime. They do not establish AOT compatibility for every driver feature, custom command, operating system, or architecture.
+
+Failure checks inspect .NET and provider exception types, including SQLite error codes and PostgreSQL SQLSTATE, and verify rollback through independent connections. Configuration failures retain their dependency contract.

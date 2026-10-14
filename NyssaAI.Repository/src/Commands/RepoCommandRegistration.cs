@@ -1,4 +1,3 @@
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.Commands;
 
@@ -26,12 +25,23 @@ public sealed record RepoCommandRegistration
     /// <param name="databaseProvider">The matching provider identity.</param>
     /// <param name="key">The typed logical operation.</param>
     /// <param name="create">Validates values and creates a fresh command for each resolution.</param>
-    /// <returns>A registration, or validation failure for missing inputs.</returns>
-    public static Result<RepoCommandRegistration> Create<TParameters, TResult>(string databaseProvider,
-        RepoCommandKey<TParameters, TResult> key, Func<TParameters, Result<IRepoCommand<TParameters, TResult>>> create)
+    /// <returns>The registration. Invalid inputs throw argument exceptions.</returns>
+    public static RepoCommandRegistration Create<TParameters, TResult>(string databaseProvider,
+        RepoCommandKey<TParameters, TResult> key, Func<TParameters, IRepoCommand<TParameters, TResult>> create)
     {
-        if (string.IsNullOrWhiteSpace(databaseProvider) || key is null || string.IsNullOrWhiteSpace(key.Name) || create is null)
-            return Result<RepoCommandRegistration>.Failure(Error.FromMessage("Command registration requires a provider, key, and factory.", ErrorCategory.Validation));
-        return Result<RepoCommandRegistration>.Success(new(databaseProvider.Trim().ToLowerInvariant(), key.Name, create));
+        ArgumentException.ThrowIfNullOrWhiteSpace(databaseProvider);
+        return CreateDefault(key, create).ForProvider(databaseProvider.Trim().ToLowerInvariant());
     }
+
+    internal static RepoCommandRegistration CreateDefault<TParameters, TResult>(
+        RepoCommandKey<TParameters, TResult> key, Func<TParameters, IRepoCommand<TParameters, TResult>> create)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key.Name);
+        ArgumentNullException.ThrowIfNull(create);
+        return new RepoCommandRegistration(string.Empty, key!.Name, create!);
+    }
+
+    internal RepoCommandRegistration ForProvider(string provider) =>
+        DatabaseProvider.Length == 0 ? new(provider, Name, Factory) : this;
 }

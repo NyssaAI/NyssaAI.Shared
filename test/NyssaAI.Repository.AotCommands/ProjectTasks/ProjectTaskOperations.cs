@@ -1,5 +1,4 @@
 using NyssaAI.Repository.Commands;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.AotCommands.ProjectTasks;
 
@@ -37,22 +36,22 @@ public static class ProjectTaskOperations
     public static IReadOnlyList<RepoCommandRegistration> Register(string provider) =>
     [
         RepoCommandRegistration.Create(provider, Create, parameters =>
-            Result<IRepoCommand<TaskCreateParameters, TaskDetails>>.Success(new TaskInsert(parameters))).ThrowIfError(),
+            new TaskInsert(parameters)),
         RepoCommandRegistration.Create(provider, Get, parameters =>
-            Result<IRepoCommand<TaskIdParameters, TaskDetails>>.Success(new TaskGet(parameters))).ThrowIfError(),
+            new TaskGet(parameters)),
         RepoCommandRegistration.Create(provider, Rename, parameters =>
-            Result<IRepoCommand<TaskRenameParameters, TaskDetails>>.Success(new TaskRename(parameters))).ThrowIfError(),
+            new TaskRename(parameters)),
         RepoCommandRegistration.Create(provider, Complete, parameters =>
-            Result<IRepoCommand<TaskIdParameters, TaskDetails>>.Success(new TaskComplete(parameters))).ThrowIfError(),
+            new TaskComplete(parameters)),
         RepoCommandRegistration.Create(provider, ListOpen, parameters =>
-            Result<IRepoCommand<ProjectTaskParameters, IReadOnlyList<TaskSummary>>>.Success(new TaskListOpen(parameters))).ThrowIfError(),
+            new TaskListOpen(parameters)),
         RepoCommandRegistration.Create(provider, CountOpen, parameters =>
-            Result<IRepoCommand<ProjectTaskParameters, long>>.Success(new TaskCountOpen(parameters))).ThrowIfError(),
+            new TaskCountOpen(parameters)),
         RepoCommandRegistration.Create(provider, Progress, parameters =>
-            Result<IRepoCommand<ProjectTaskParameters, ProjectProgress>>.Success(new ProjectProgressGet(parameters))).ThrowIfError(),
+            new ProjectProgressGet(parameters)),
         RepoCommandRegistration.Create(provider, MoveOpen, parameters =>
-            Result<IRepoCommand<TaskTransferParameters, TaskTransferSummary>>.Success(new TaskMoveOpen(parameters))).ThrowIfError(),
+            new TaskMoveOpen(parameters)),
         RepoCommandRegistration.Create(provider, RecordTransfer, parameters =>
-            Result<IRepoCommand<TaskTransferSummary, TaskTransferSummary>>.Success(new TaskTransferRecord(parameters))).ThrowIfError(),
+            new TaskTransferRecord(parameters)),
     ];
 }

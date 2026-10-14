@@ -1,7 +1,6 @@
 using System.Data.Common;
 using Dapper;
 using NyssaAI.Repository.Commands;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.AotCommands.ProjectTasks;
 
@@ -17,34 +16,26 @@ public sealed class TaskMoveOpen : IRepoCommand<TaskTransferParameters, TaskTran
     /// <inheritdoc />
     public TaskTransferParameters Parameters { get; }
 
-    async Task<Result<TaskTransferSummary>> IRepoCommand<TaskTransferParameters, TaskTransferSummary>.ExecuteCoreAsync(
+    async Task<TaskTransferSummary> IRepoCommand<TaskTransferParameters, TaskTransferSummary>.ExecuteCoreAsync(
         DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
     {
-        try
+        var binding = new Binding
         {
-            var binding = new Binding
-            {
-                SourceProjectId = Parameters.SourceProjectId,
-                DestinationProjectId = Parameters.DestinationProjectId,
-                CancellationToken = cancellationToken
-            };
-            var moved = await connection.ExecuteAsync(
-                "UPDATE tutorial_tasks SET project_id = @DestinationProjectId WHERE project_id = @SourceProjectId AND is_completed = FALSE",
-                binding, transaction: transaction, commandTimeout: 30).ConfigureAwait(false);
-            return Result<TaskTransferSummary>.Success(new TaskTransferSummary
-            {
-                TransferId = Parameters.TransferId,
-                SourceProjectId = Parameters.SourceProjectId,
-                DestinationProjectId = Parameters.DestinationProjectId,
-                TasksMoved = moved
-            });
-        }
-        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
+            SourceProjectId = Parameters.SourceProjectId,
+            DestinationProjectId = Parameters.DestinationProjectId,
+            CancellationToken = cancellationToken
+        };
+        var moved = await connection.ExecuteAsync(
+            "UPDATE tutorial_tasks SET project_id = @DestinationProjectId WHERE project_id = @SourceProjectId AND is_completed = FALSE",
+            binding, transaction: transaction, commandTimeout: 30).ConfigureAwait(false);
+        return new TaskTransferSummary
         {
-            return Result<TaskTransferSummary>.Failure(Error.FromMessage("The database returned an invalid value.", ErrorCategory.Validation));
-        }
+            TransferId = Parameters.TransferId,
+            SourceProjectId = Parameters.SourceProjectId,
+            DestinationProjectId = Parameters.DestinationProjectId,
+            TasksMoved = moved
+        };
     }
-
     // CancellationToken is execution metadata; the generated factory does not bind it as SQL data.
     internal sealed record Binding
     {

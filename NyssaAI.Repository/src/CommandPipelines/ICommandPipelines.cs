@@ -1,8 +1,7 @@
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.CommandPipelines;
 
 internal interface ICommandPipelines<TResult>
 {
-    public Task<Result<TResult>> ExecuteAsync(CancellationToken cancellationToken);
+    public Task<TResult> ExecuteAsync(CancellationToken cancellationToken);
 }

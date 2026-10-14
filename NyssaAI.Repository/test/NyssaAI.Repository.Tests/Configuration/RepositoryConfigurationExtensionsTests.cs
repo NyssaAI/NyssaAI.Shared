@@ -15,31 +15,25 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
     private readonly string _directory = Path.Combine(Directory.GetCurrentDirectory(), ".temp", "f001-config-tests", Guid.NewGuid().ToString("N"));
 
     [Theory]
-    [InlineData("null")]
-    [InlineData("{}")]
-    [InlineData("{\"DatabaseProvider\":\"sqlite\",\"ConnectionString\":null}")]
-    [InlineData("{\"DatabaseProvider\":\" \",\"ConnectionString\":\"sentinel-secret\"}")]
-    [InlineData("{\"sentinel-secret\":")]
-    public async Task GetRepositoryConfigurationAsync_InvalidPayload_ReturnsSanitizedValidation(string json)
+    [InlineData("null", typeof(ResultException))]
+    [InlineData("{}", typeof(ResultException))]
+    [InlineData("{\"DatabaseProvider\":\"sqlite\",\"ConnectionString\":null}", typeof(ArgumentNullException))]
+    [InlineData("{\"DatabaseProvider\":\" \",\"ConnectionString\":\"sentinel-secret\"}", typeof(ArgumentException))]
+    [InlineData("{\"sentinel-secret\":", typeof(ResultException))]
+    public async Task GetRepositoryConfigurationAsync_InvalidPayload_ThrowsOwnedOrConfigurationException(string json, Type exceptionType)
     {
         var configuration = Open();
-        await configuration.SetAsync("nyssa.repository", "default", json, ConfigurationStore.Plain);
-        var loaded = await configuration.GetRepositoryConfigurationAsync();
-        Assert.True(loaded.IsFailure);
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(loaded.Errors).Category);
-        Assert.All(loaded.Errors, error =>
-        {
-            Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
-        });
+        await configuration.SetAsync("nyssa.repository", "default", json);
+        var loaded = await Assert.ThrowsAsync(exceptionType, () => configuration.GetRepositoryConfigurationAsync());
+
     }
 
     [Fact]
     public async Task GetRepositoryConfigurationAsync_MissingEntry_ReturnsNotFoundWithoutProvisioning()
     {
         var configuration = Open();
-        var loaded = await configuration.GetRepositoryConfigurationAsync();
-        Assert.True(loaded.IsFailure);
+        var loaded = await Assert.ThrowsAsync<ResultException>(() => configuration.GetRepositoryConfigurationAsync());
+
         Assert.Equal(ErrorCategory.NotFound, Assert.Single(loaded.Errors).Category);
         var entries = await configuration.ListAsync("nyssa.repository");
         Assert.Empty(entries);
@@ -51,24 +45,24 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
         var configuration = Open();
         var first = Settings("sqlite", "Data Source=first.db");
         var second = Settings("postgresql", "Host=localhost;Password=sentinel-secret");
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(first, "first", ConfigurationStore.Plain)).IsSuccess);
-        Assert.True((await configuration.SetRepositoryConfigurationAsync(second, "second", ConfigurationStore.Plain)).IsSuccess);
+        await configuration.SetRepositoryConfigurationAsync(first, "first");
+        await configuration.SetRepositoryConfigurationAsync(second, "second");
         var reopened = Open();
         var loadedFirst = await reopened.GetRepositoryConfigurationAsync("first");
         var loadedSecond = await reopened.GetRepositoryConfigurationAsync("second");
-        Assert.True(loadedFirst.IsSuccess);
-        Assert.True(loadedSecond.IsSuccess);
-        Assert.Equal(first, loadedFirst.Value);
-        Assert.Equal(second, loadedSecond.Value);
+
+        Assert.Equal(first, loadedFirst);
+        Assert.Equal(second, loadedSecond);
     }
 
     [Fact]
-    public async Task SetRepositoryConfigurationAsync_NewEntryWithoutDestination_FailsWithoutWriting()
+    public async Task SetRepositoryConfigurationAsync_NewEntryWithoutDestination_UsesDefaultStorage()
     {
         var configuration = Open();
-        var saved = await configuration.SetRepositoryConfigurationAsync(Settings("sqlite", "Data Source=test.db"));
-        Assert.True(saved.IsFailure);
-        Assert.True((await configuration.GetRepositoryConfigurationAsync()).IsFailure);
+        await configuration.SetRepositoryConfigurationAsync(Settings("sqlite", "Data Source=test.db"));
+        var loaded = await configuration.GetRepositoryConfigurationAsync();
+
+        Assert.Equal(Settings("sqlite", "Data Source=test.db"), loaded);
     }
 
     [Theory]
@@ -77,9 +71,7 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
     public async Task SetRepositoryConfigurationAsync_InvalidFields_FailsBeforeWriting(string provider, string connection)
     {
         var configuration = Open();
-        var saved = await configuration.SetRepositoryConfigurationAsync(Settings(provider, connection), storageProvider: ConfigurationStore.Plain);
-        Assert.True(saved.IsFailure);
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(saved.Errors).Category);
+        var saved = await Assert.ThrowsAsync<ArgumentException>(() => configuration.SetRepositoryConfigurationAsync(Settings(provider, connection)));
         Assert.Empty(await configuration.ListAsync("nyssa.repository"));
     }
 
@@ -87,13 +79,15 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
     public async Task GetAndSetRepositoryConfigurationAsync_Canceled_ReturnCanceledWithoutWriting()
     {
         var configuration = Open();
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-        var loaded = await configuration.GetRepositoryConfigurationAsync(cancellationToken: cancellation.Token);
-        var saved = await configuration.SetRepositoryConfigurationAsync(Settings("sqlite", "Data Source=test.db"), storageProvider: ConfigurationStore.Plain, cancellationToken: cancellation.Token);
-        Assert.Equal(ErrorCategory.Canceled, Assert.Single(loaded.Errors).Category);
-        Assert.Equal(ErrorCategory.Canceled, Assert.Single(saved.Errors).Category);
-        Assert.Empty(await configuration.ListAsync("nyssa.repository"));
+        using (var cancellation = new CancellationTokenSource())
+        {
+            cancellation.Cancel();
+            var loaded = await Assert.ThrowsAsync<OperationCanceledException>(() => configuration.GetRepositoryConfigurationAsync(cancellationToken: cancellation.Token));
+            var saved = await Assert.ThrowsAsync<OperationCanceledException>(() => configuration.SetRepositoryConfigurationAsync(Settings("sqlite", "Data Source=test.db"), cancellationToken: cancellation.Token));
+            Assert.Equal(cancellation.Token, loaded.CancellationToken);
+            Assert.Equal(cancellation.Token, saved.CancellationToken);
+            Assert.Empty(await configuration.ListAsync("nyssa.repository"));
+        }
     }
 
     [Theory]
@@ -102,8 +96,8 @@ public sealed class RepositoryConfigurationExtensionsTests : IDisposable
     public async Task GetAndSetRepositoryConfigurationAsync_InvalidKey_ReturnValidation(string key)
     {
         var configuration = Open();
-        Assert.Equal(ErrorCategory.Validation, Assert.Single((await configuration.GetRepositoryConfigurationAsync(key)).Errors).Category);
-        Assert.Equal(ErrorCategory.Validation, Assert.Single((await configuration.SetRepositoryConfigurationAsync(Settings("sqlite", "Data Source=test.db"), key)).Errors).Category);
+        await Assert.ThrowsAsync<ArgumentException>(() => configuration.GetRepositoryConfigurationAsync(key));
+        await Assert.ThrowsAsync<ArgumentException>(() => configuration.SetRepositoryConfigurationAsync(Settings("sqlite", "Data Source=test.db"), key));
     }
 
     private ConfigurationStore Open() => _configurationHost.Open(_directory);

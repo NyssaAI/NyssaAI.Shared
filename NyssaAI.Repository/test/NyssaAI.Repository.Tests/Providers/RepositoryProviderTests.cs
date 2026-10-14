@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NyssaAI.Repository.Configuration;
 using NyssaAI.Repository.Providers;
-using NyssaAI.Results;
 using Xunit;
 
 namespace NyssaAI.Repository.Tests.Providers;
@@ -22,29 +21,35 @@ public sealed class RepositoryProviderTests
         Assert.False(string.IsNullOrWhiteSpace(connectionString), "Set NYSSAAI_REPOSITORY_POSTGRES to the isolated test database; PostgreSQL is not silently skipped.");
         var settings = new RepositoryConfiguration { DatabaseProvider = provider, ConnectionString = connectionString };
         var created = provider == "sqlite" ? RepositoryProviderSqlite.Prepare(settings) : RepositoryProviderPostgres.Prepare(settings);
-        Assert.True(created.IsSuccess, created.ToString());
-        await using var selected = created.Value();
-        var cancellation = TestContext.Current.CancellationToken;
-        var first = await selected.OpenConnectionAsync(cancellation);
-        Assert.True(first.IsSuccess, first.ToString());
-        await using var firstConnection = first.Value;
-        var second = await selected.OpenConnectionAsync(cancellation);
-        Assert.True(second.IsSuccess, second.ToString());
-        await using var secondConnection = second.Value;
-        Assert.NotSame(first.Value, second.Value);
-        Assert.Equal(ConnectionState.Open, first.Value.State);
-        await first.Value.DisposeAsync();
-        Assert.Equal(ConnectionState.Open, second.Value.State);
-        await using (var command = second.Value.CreateCommand())
+
+        await using (var selected = created())
         {
-            command.CommandText = "SELECT 1";
-            Assert.Equal(1L, Convert.ToInt64(await command.ExecuteScalarAsync(cancellation)));
+            var cancellation = TestContext.Current.CancellationToken;
+            var first = await selected.OpenConnectionAsync(cancellation);
+
+            await using (var firstConnection = first)
+            {
+                var second = await selected.OpenConnectionAsync(cancellation);
+
+                await using (var secondConnection = second)
+                {
+                    Assert.NotSame(first, second);
+                    Assert.Equal(ConnectionState.Open, first.State);
+                    await first.DisposeAsync();
+                    Assert.Equal(ConnectionState.Open, second.State);
+                    await using (var command = second.CreateCommand())
+                    {
+                        command.CommandText = "SELECT 1";
+                        Assert.Equal(1L, Convert.ToInt64(await command.ExecuteScalarAsync(cancellation)));
+                    }
+                    await second.DisposeAsync();
+                    await selected.DisposeAsync();
+                    await selected.DisposeAsync();
+                    var afterDisposal = await Assert.ThrowsAsync<ObjectDisposedException>(() => selected.OpenConnectionAsync(cancellation));
+
+                }
+            }
         }
-        await second.Value.DisposeAsync();
-        await selected.DisposeAsync();
-        await selected.DisposeAsync();
-        var afterDisposal = await selected.OpenConnectionAsync(cancellation);
-        Assert.Equal(ErrorCategory.Conflict, Assert.Single(afterDisposal.Errors).Category);
     }
 
     [Theory]
@@ -55,13 +60,9 @@ public sealed class RepositoryProviderTests
     public void Create_InvalidConnection_FailsWithoutExposingSettings(string provider, string connection)
     {
         var settings = new RepositoryConfiguration { DatabaseProvider = provider, ConnectionString = connection };
-        var result = provider == "sqlite" ? RepositoryProviderSqlite.Prepare(settings) : RepositoryProviderPostgres.Prepare(settings);
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(result.Errors).Category);
-        Assert.All(result.Errors, error =>
-        {
-            Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
-        });
+        var result = Assert.Throws<ArgumentException>(() => provider == "sqlite" ? RepositoryProviderSqlite.Prepare(settings) : RepositoryProviderPostgres.Prepare(settings));
+
+        Assert.DoesNotContain("sentinel-secret", result.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -71,16 +72,20 @@ public sealed class RepositoryProviderTests
     {
         var settings = new RepositoryConfiguration { DatabaseProvider = provider, ConnectionString = connection };
         var created = provider == "sqlite" ? RepositoryProviderSqlite.Prepare(settings) : RepositoryProviderPostgres.Prepare(settings);
-        Assert.True(created.IsSuccess);
-        await using var selected = created.Value();
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-        var result = await selected.OpenConnectionAsync(cancellation.Token);
-        Assert.Equal(ErrorCategory.Canceled, Assert.Single(result.Errors).Category);
+
+        await using (var selected = created())
+        {
+            using (var cancellation = new CancellationTokenSource())
+            {
+                cancellation.Cancel();
+                var result = await Assert.ThrowsAsync<OperationCanceledException>(() => selected.OpenConnectionAsync(cancellation.Token));
+                Assert.Equal(cancellation.Token, result.CancellationToken);
+            }
+        }
     }
 
     [Fact]
-    public async Task OpenConnectionAsync_SqliteReadWriteMissingFile_ReturnsSanitizedUnavailableWithoutCreatingFile()
+    public async Task OpenConnectionAsync_SqliteReadWriteMissingFile_ThrowsSqliteExceptionWithoutCreatingFile()
     {
         var directory = Path.Combine(Path.GetTempPath(), "f001-missing-file-" + Guid.NewGuid().ToString("N"));
         var file = Path.Combine(directory, "sentinel-secret.db");
@@ -92,26 +97,18 @@ public sealed class RepositoryProviderTests
                 DatabaseProvider = "sqlite",
                 ConnectionString = $"Data Source={file};Mode=ReadWrite"
             });
-            Assert.True(created.IsSuccess);
-            await using var provider = created.Value();
-            Assert.True(Directory.Exists(directory));
-            Assert.False(File.Exists(file));
 
-            var result = await provider.OpenConnectionAsync(TestContext.Current.CancellationToken);
-            if (result.IsSuccess)
-                await result.Value.DisposeAsync();
-
-            Assert.True(result.IsFailure);
-            Assert.Equal(ErrorCategory.Unavailable, Assert.Single(result.Errors).Category);
-            Assert.All(result.Errors, error =>
+            await using (var provider = created())
             {
-                Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-                Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
-                Assert.DoesNotContain(file, error.UserMessage, StringComparison.Ordinal);
-                Assert.DoesNotContain(file, error.TechnicalMessage, StringComparison.Ordinal);
-            });
-            Assert.False(File.Exists(file));
-            Assert.Empty(Directory.EnumerateFileSystemEntries(directory));
+                Assert.True(Directory.Exists(directory));
+                Assert.False(File.Exists(file));
+
+                var result = await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => provider.OpenConnectionAsync(TestContext.Current.CancellationToken));
+
+                Assert.DoesNotContain("sentinel-secret", result.Message, StringComparison.Ordinal);
+                Assert.False(File.Exists(file));
+                Assert.Empty(Directory.EnumerateFileSystemEntries(directory));
+            }
         }
         finally
         {
@@ -121,26 +118,24 @@ public sealed class RepositoryProviderTests
     }
 
     [Fact]
-    public async Task OpenConnectionAsync_PostgresUnavailable_SanitizesFailure()
+    public async Task OpenConnectionAsync_PostgresUnavailable_PreservesNpgsqlException()
     {
         var created = RepositoryProviderPostgres.Prepare(new RepositoryConfiguration
         {
             DatabaseProvider = "postgresql",
             ConnectionString = "Host=127.0.0.1;Port=1;Username=f001;Password=sentinel-secret;Timeout=1"
         });
-        Assert.True(created.IsSuccess);
-        await using var provider = created.Value();
-        var result = await provider.OpenConnectionAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(ErrorCategory.Unavailable, Assert.Single(result.Errors).Category);
-        Assert.All(result.Errors, error =>
+
+        await using (var provider = created())
         {
-            Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
-        });
+            var result = await Assert.ThrowsAsync<NpgsqlException>(() => provider.OpenConnectionAsync(TestContext.Current.CancellationToken));
+
+            Assert.DoesNotContain("sentinel-secret", result.Message, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
-    public async Task OpenConnectionAsync_PostgresAuthenticationRefused_SanitizesFailure()
+    public async Task OpenConnectionAsync_PostgresAuthenticationRefused_PreservesSqlState()
     {
         var connectionString = Environment.GetEnvironmentVariable("NYSSAAI_REPOSITORY_POSTGRES");
         Assert.False(string.IsNullOrWhiteSpace(connectionString), "Set NYSSAAI_REPOSITORY_POSTGRES to the isolated test database.");
@@ -149,49 +144,83 @@ public sealed class RepositoryProviderTests
         {
             DatabaseProvider = "postgresql", ConnectionString = settings.ConnectionString
         });
-        Assert.True(created.IsSuccess);
-        await using var provider = created.Value();
-        var result = await provider.OpenConnectionAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(ErrorCategory.Forbidden, Assert.Single(result.Errors).Category);
-        Assert.All(result.Errors, error =>
+
+        await using (var provider = created())
         {
-            Assert.DoesNotContain("sentinel-wrong-password", error.UserMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain("sentinel-wrong-password", error.TechnicalMessage, StringComparison.Ordinal);
-        });
+            var result = await Assert.ThrowsAsync<PostgresException>(() => provider.OpenConnectionAsync(TestContext.Current.CancellationToken));
+
+            Assert.Equal(PostgresErrorCodes.InvalidPassword, result.SqlState);
+        }
     }
 
     [Fact]
-    public async Task OpenConnectionAsync_CanceledDuringHandshake_ClosesSocketAndReleasesPoolSlot()
+    public async Task OpenConnectionAsync_StartupTimeoutAfterCallerCancellation_PreservesTimeoutAndReleasesPoolSlot()
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(15));
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var created = RepositoryProviderPostgres.Prepare(new RepositoryConfiguration
+        using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken))
         {
-            DatabaseProvider = "postgresql",
-            ConnectionString = $"Host=127.0.0.1;Port={port};Username=f001;Password=sentinel-secret;Maximum Pool Size=1;Timeout=1"
-        });
-        Assert.True(created.IsSuccess);
-        await using var provider = created.Value();
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-            var opening = provider.OpenConnectionAsync(cancellation.Token);
-            using var accepted = await listener.AcceptTcpClientAsync(timeout.Token);
-            await cancellation.CancelAsync();
-            var result = await opening;
-            Assert.Equal(ErrorCategory.Canceled, Assert.Single(result.Errors).Category);
-            Assert.All(result.Errors, error =>
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            using (var listener = new TcpListener(IPAddress.Loopback, 0))
             {
-                Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-                Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
+                listener.Start();
+                var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                var created = RepositoryProviderPostgres.Prepare(new RepositoryConfiguration
+                {
+                    DatabaseProvider = "postgresql",
+                    ConnectionString = $"Host=127.0.0.1;Port={port};Username=f001;Password=sentinel-secret;Maximum Pool Size=1;Timeout=1;SSL Mode=Disable;GSS Encryption Mode=Disable"
+                });
+
+                await using (var provider = created())
+                {
+                    for (var attempt = 0; attempt < 3; attempt++)
+                    {
+                        using (var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token))
+                        {
+                            var opening = provider.OpenConnectionAsync(cancellation.Token);
+                            using (var accepted = await listener.AcceptTcpClientAsync(timeout.Token))
+                            {
+                                var startup = new byte[1024];
+                                Assert.True(await accepted.GetStream().ReadAsync(startup, timeout.Token) > 0);
+                                await cancellation.CancelAsync();
+                                var result = await Assert.ThrowsAsync<NpgsqlException>(() => opening);
+                                Assert.IsType<TimeoutException>(result.InnerException);
+                                Assert.True(cancellation.IsCancellationRequested);
+                                Assert.DoesNotContain("sentinel-secret", result.Message);
+                                var buffer = new byte[1024];
+                                while (await accepted.GetStream().ReadAsync(buffer, timeout.Token) != 0)
+                                {
+                                    // Drain the startup packet; EOF proves the canceled connection did not retain its socket.
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task OpenConnectionAsync_HandshakeTimeout_PreservesDriverTimeout()
+    {
+        using (var listener = new TcpListener(IPAddress.Loopback, 0))
+        using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken))
+        {
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var create = RepositoryProviderPostgres.Prepare(new RepositoryConfiguration
+            {
+                DatabaseProvider = "postgresql",
+                ConnectionString = $"Host=127.0.0.1;Port={port};Username=test;Timeout=1;SSL Mode=Disable;GSS Encryption Mode=Disable"
             });
-            var buffer = new byte[1024];
-            while (await accepted.GetStream().ReadAsync(buffer, timeout.Token) != 0)
+            await using (var provider = create())
             {
-                // Drain the startup packet; EOF proves the canceled connection did not retain its socket.
+                var opening = provider.OpenConnectionAsync(timeout.Token);
+                using (var accepted = await listener.AcceptTcpClientAsync(timeout.Token))
+                {
+                    var failure = await Assert.ThrowsAsync<NpgsqlException>(() => opening);
+                    Assert.IsType<TimeoutException>(failure.InnerException);
+                    Assert.False(timeout.IsCancellationRequested);
+                }
             }
         }
     }
@@ -207,15 +236,19 @@ public sealed class RepositoryProviderTests
             var settings = new RepositoryConfiguration { DatabaseProvider = "sqlite", ConnectionString = $"Data Source={file}" };
             var builder = Host.CreateApplicationBuilder();
             var services = builder.Services;
-            Assert.True(services.AddNyssaRepository(settings).IsSuccess);
-            using var host = builder.Build();
-            var container = host.Services;
-            var provider = container.GetRequiredService<IRepositoryProvider>();
-            Assert.False(File.Exists(file));
-            var opened = await provider.OpenConnectionAsync(TestContext.Current.CancellationToken);
-            Assert.True(opened.IsSuccess);
-            await using var connection = opened.Value;
-            Assert.True(File.Exists(file));
+            _ = services.AddNyssaRepository(settings);
+            using (var host = builder.Build())
+            {
+                var container = host.Services;
+                var provider = container.GetRequiredService<IRepositoryProvider>();
+                Assert.False(File.Exists(file));
+                var opened = await provider.OpenConnectionAsync(TestContext.Current.CancellationToken);
+
+                await using (var connection = opened)
+                {
+                    Assert.True(File.Exists(file));
+                }
+            }
         }
         finally
         {

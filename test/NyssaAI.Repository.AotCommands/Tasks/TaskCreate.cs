@@ -1,7 +1,6 @@
 using System.Data.Common;
 using Dapper;
 using NyssaAI.Repository.Commands;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.AotCommands.Tasks;
 
@@ -17,20 +16,13 @@ public sealed class TaskCreate : IRepoCommand<TaskParameters, TaskRow>
     /// <inheritdoc />
     public TaskParameters Parameters { get; }
 
-    async Task<Result<TaskRow>> IRepoCommand<TaskParameters, TaskRow>.ExecuteCoreAsync(
+    async Task<TaskRow> IRepoCommand<TaskParameters, TaskRow>.ExecuteCoreAsync(
         DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
     {
-        try
-        {
-            var binding = TaskBinding.From(Parameters, cancellationToken);
-            var task = await connection.QuerySingleAsync<TaskRow>(
-                "INSERT INTO f002_tasks (id, title, note) VALUES (@Id, @Title, @Note) RETURNING id, title, note",
-                binding, transaction: transaction, commandTimeout: 30);
-            return Result<TaskRow>.Success(task);
-        }
-        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
-        {
-            return Result<TaskRow>.Failure(Error.FromMessage("The database returned an invalid value.", ErrorCategory.Validation));
-        }
+        var binding = TaskBinding.From(Parameters, cancellationToken);
+        var task = await connection.QuerySingleAsync<TaskRow>(
+            "INSERT INTO f002_tasks (id, title, note) VALUES (@Id, @Title, @Note) RETURNING id, title, note",
+            binding, transaction: transaction, commandTimeout: 30);
+        return task;
     }
 }

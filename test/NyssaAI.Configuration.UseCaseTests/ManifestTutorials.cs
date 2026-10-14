@@ -1,5 +1,5 @@
-using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using NyssaAI.Configuration.Client;
 using NyssaAI.Configuration.UseCaseTests.domain;
 using NyssaAI.Configuration.UseCaseTests.fixtures;
@@ -55,43 +55,54 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
     public async Task AddNyssaConfiguration_BlankWorkstation_CreatesManifestAndEncryptedSettingsAsync()
     {
         // Arrange
-        using var workstation = _hostFactory.CreateBlankWorkstation();
-        var cancellationToken = TestContext.Current.CancellationToken;
+        using (var workstation = _hostFactory.CreateBlankWorkstation())
+        {
+            var cancellationToken = TestContext.Current.CancellationToken;
 
-        // Act
-        // Program.cs, in full — the generic host an application really builds. The default
-        // registration will generate ~/.nyssa-ai/config-manifest.json, load the AES crypto provider
-        // for secrets and use the OsKeychain to hold the crypt key it creates
-        workstation.AddNyssaConfiguration(options =>
-            // The only line a live application would not write. A test may not create, edit, or
-            // delete the developer's own ~/.nyssa-ai/config-manifest.json, so the user's manifest is
-            // stood in for by one of the same shape under the repository's .temp — which is why
-            // the library still treats it as the user's and creates it here.
-            options.Bootstrap.ConfigManifest = _hostFactory.UserManifestPath);
+            // Act
+            // Program.cs, in full — the generic host an application really builds. The default
+            // registration will generate ~/.nyssa-ai/config-manifest.json, load the AES crypto provider
+            // for secrets and use the OsKeychain to hold the crypt key it creates
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(options =>
+            {
+                workstation.Locate(options);
+                options.Bootstrap.ConfigManifest = _hostFactory.UserManifestPath;
+            });
+            workstation.StartApplication(services);
+            IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
+            NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
+            // a secret, and an object
+            await configManager.SetAsync(
+                "mail",
+                "password",
+                "fictional-password",
+                provider: "aesLocal",
+                cancellationToken: cancellationToken
+            );
+            await configManager.SetAsAsync(
+                "mail",
+                "preferences",
+                new ExportPreferences { Format = "csv", IncludeHistory = true },
+                "aesLocal",
+                cancellationToken
+            );
+            // the one file this application's values were written into
+            var mailFile = ConfigurationFile(options, "mail");
 
-        IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
-        NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
-
-        // a secret, and an object
-        await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
-        await configManager.SetAsAsync(
-            "mail", "preferences", new ExportPreferences { Format = "csv", IncludeHistory = true }, "aesLocal", cancellationToken);
-
-        // the one file this application's values were written into
-        var mailFile = ConfigurationFile(options, "mail");
-
-        // Assert
-        Assert.Equal(Workstation.ApplicationName, options.ApplicationName); // <AssemblyTitle> in this .csproj; the assembly name is only the fallback
-        Assert.True(Path.Exists(options.Bootstrap.ConfigManifest));         // the manifest was created
-        Assert.Equal(_hostFactory.UserManifestPath, options.Bootstrap.ConfigManifest);              // the manifest is in this location: the stand-in for ~/.nyssa-ai/config-manifest.json
-        Assert.NotEqual(BootstrapOptions.DefaultConfigManifest, options.Bootstrap.ConfigManifest);  // and never the developer's real one
-        Assert.Equal(options.ConfigDirectory, DirectoryNamedInManifest(options));                   // the manifest names the directory the options supplied
-        Assert.True(Directory.Exists(options.ConfigDirectory));                                     // the configuration directory it supplied exists
-        Assert.Equal(Path.Combine(options.ConfigDirectory, "mail.json"), mailFile);                 // the test configuration file is where it is supposed to be
-        Assert.True(File.Exists(mailFile));                                                         // and it is there
-        Assert.True(IsSealed(mailFile, "password"));                                                // the test configuration has an encrypted value
-        Assert.DoesNotContain("fictional-password", StoredText(mailFile, "password"), StringComparison.Ordinal);   // sealed means sealed: no plaintext on disk
-        Assert.Equal("aesLocal", SealedBy(mailFile, "password"));           // the expected clear value beside it: which provider sealed the entry
+            // Assert
+            Assert.Equal(Workstation.ApplicationName, options.ApplicationName); // <AssemblyTitle> in this .csproj; the assembly name is only the fallback
+            Assert.True(Path.Exists(options.Bootstrap.ConfigManifest)); // the manifest was created
+            Assert.Equal(_hostFactory.UserManifestPath, options.Bootstrap.ConfigManifest); // the manifest is in this location: the stand-in for ~/.nyssa-ai/config-manifest.json
+            Assert.NotEqual(BootstrapOptions.DefaultConfigManifest, options.Bootstrap.ConfigManifest); // and never the developer's real one
+            Assert.Equal(options.ConfigDirectory, DirectoryNamedInManifest(options)); // the manifest names the directory the options supplied
+            Assert.True(Directory.Exists(options.ConfigDirectory)); // the configuration directory it supplied exists
+            Assert.Equal(Path.Combine(options.ConfigDirectory, "mail.json"), mailFile); // the test configuration file is where it is supposed to be
+            Assert.True(File.Exists(mailFile)); // and it is there
+            Assert.True(IsSealed(mailFile, "password")); // the test configuration has an encrypted value
+            Assert.DoesNotContain("fictional-password", StoredText(mailFile, "password"), StringComparison.Ordinal); // sealed means sealed: no plaintext on disk
+            Assert.Equal("aesLocal", SealedBy(mailFile, "password")); // the expected clear value beside it: which provider sealed the entry
+        }
     }
 
     /// <summary>
@@ -103,34 +114,42 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
     public async Task AddNyssaConfiguration_ChosenManifest_CreatesEncryptedSettingsAsync()
     {
         // Arrange
-        using var workstation = _hostFactory.CreateBlankWorkstation();
-        var cancellationToken = TestContext.Current.CancellationToken;
-
-        // Act
-        // Program.cs: the two paths this deployment owns, and nothing else
-        workstation.AddNyssaConfiguration(options =>
+        using (var workstation = _hostFactory.CreateBlankWorkstation())
         {
-            options.Bootstrap.ConfigManifest = workstation.ManifestPath;
-            options.ConfigDirectory = workstation.ConfigurationDirectory;
-        });
+            var cancellationToken = TestContext.Current.CancellationToken;
 
-        IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
-        NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
+            // Act
+            // Program.cs: the two paths this deployment owns, and nothing else
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(options =>
+            {
+                workstation.Locate(options);
+                options.Bootstrap.ConfigManifest = workstation.ManifestPath;
+                options.ConfigDirectory = workstation.ConfigurationDirectory;
+            });
+            workstation.StartApplication(services);
+            IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
+            NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
+            await configManager.SetAsync(
+                "mail",
+                "password",
+                "fictional-password",
+                provider: "aesLocal",
+                cancellationToken: cancellationToken
+            );
+            // the one file this application's values were written into
+            var mailFile = ConfigurationFile(options, "mail");
 
-        await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
-
-        // the one file this application's values were written into
-        var mailFile = ConfigurationFile(options, "mail");
-
-        // Assert
-        Assert.Equal(workstation.ManifestPath, options.Bootstrap.ConfigManifest);                   // the manifest is where the application said
-        Assert.NotEqual(BootstrapOptions.DefaultConfigManifest, options.Bootstrap.ConfigManifest);  // and not at the user's default
-        Assert.True(File.Exists(options.Bootstrap.ConfigManifest));                                 // there was no manifest; the library created it
-        Assert.Equal(options.ConfigDirectory, DirectoryNamedInManifest(options));                   // the section it wrote names the directory the options supplied
-        Assert.True(Directory.Exists(options.ConfigDirectory));                                     // the configuration directory exists
-        Assert.True(File.Exists(mailFile));                                                         // the test configuration file is where it is supposed to be
-        Assert.True(IsSealed(mailFile, "password"));                                                // the test configuration has an encrypted value
-        Assert.Equal("aesLocal", SealedBy(mailFile, "password"));                                   // the expected clear value beside it: which provider sealed the entry
+            // Assert
+            Assert.Equal(workstation.ManifestPath, options.Bootstrap.ConfigManifest); // the manifest is where the application said
+            Assert.NotEqual(BootstrapOptions.DefaultConfigManifest, options.Bootstrap.ConfigManifest); // and not at the user's default
+            Assert.True(File.Exists(options.Bootstrap.ConfigManifest)); // there was no manifest; the library created it
+            Assert.Equal(options.ConfigDirectory, DirectoryNamedInManifest(options)); // the section it wrote names the directory the options supplied
+            Assert.True(Directory.Exists(options.ConfigDirectory)); // the configuration directory exists
+            Assert.True(File.Exists(mailFile)); // the test configuration file is where it is supposed to be
+            Assert.True(IsSealed(mailFile, "password")); // the test configuration has an encrypted value
+            Assert.Equal("aesLocal", SealedBy(mailFile, "password")); // the expected clear value beside it: which provider sealed the entry
+        }
     }
 
     /// <summary>
@@ -142,38 +161,46 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
     public async Task AddNyssaConfiguration_ExistingManifest_OverridesDirectoryDefaultAsync()
     {
         // Arrange
-        using var workstation = _hostFactory.CreateBlankWorkstation();
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var operatorDirectory = Path.Combine(workstation.Home, "from-operator");
-        var developerDirectory = Path.Combine(workstation.Home, "from-code");
-        Workstation.WriteManifest(workstation.ManifestPath, ManifestNaming(operatorDirectory));
-
-        // Act
-        // Program.cs: the developer's own idea of where configuration goes, which the manifest overrides
-        workstation.AddNyssaConfiguration(options =>
+        using (var workstation = _hostFactory.CreateBlankWorkstation())
         {
-            options.Bootstrap.ConfigManifest = workstation.ManifestPath;
-            options.ConfigDirectory = developerDirectory;
-        });
+            var cancellationToken = TestContext.Current.CancellationToken;
+            var operatorDirectory = Path.Combine(workstation.Home, "from-operator");
+            var developerDirectory = Path.Combine(workstation.Home, "from-code");
+            Workstation.WriteManifest(workstation.ManifestPath, ManifestNaming(operatorDirectory));
 
-        IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
-        NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
+            // Act
+            // Program.cs: the developer's own idea of where configuration goes, which the manifest overrides
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(options =>
+            {
+                workstation.Locate(options);
+                options.Bootstrap.ConfigManifest = workstation.ManifestPath;
+                options.ConfigDirectory = developerDirectory;
+            });
+            workstation.StartApplication(services);
+            IConfiguration configManager = workstation.Host.GetRequiredService<IConfiguration>();
+            NyssaConfigurationOptions options = workstation.Host.GetRequiredService<NyssaConfigurationOptions>();
+            await configManager.SetAsync(
+                "mail",
+                "password",
+                "fictional-password",
+                provider: "aesLocal",
+                cancellationToken: cancellationToken
+            );
+            // the file the operator's directory should hold, and the one the developer's should not
+            var operatorFile = ConfigurationFile(operatorDirectory, "mail");
+            var developerFile = ConfigurationFile(developerDirectory, "mail");
 
-        await configManager.SetAsync("mail", "password", "fictional-password", provider: "aesLocal", cancellationToken: cancellationToken);
-
-        // the file the operator's directory should hold, and the one the developer's should not
-        var operatorFile = ConfigurationFile(operatorDirectory, "mail");
-        var developerFile = ConfigurationFile(developerDirectory, "mail");
-
-        // Assert
-        Assert.NotEqual(operatorDirectory, developerDirectory);                     // the two answers really are different
-        Assert.Equal(operatorDirectory, DirectoryNamedInManifest(options));         // the manifest still names what the operator wrote
-        Assert.Equal(developerDirectory, options.ConfigDirectory);                  // the options still carry what the developer wrote
-        Assert.True(File.Exists(operatorFile));                                     // the store opened in the manifest's directory
-        Assert.False(Directory.Exists(developerDirectory));                         // the developer's directory was never created
-        Assert.False(File.Exists(developerFile));                                   // and nothing was written into it
-        Assert.True(IsSealed(operatorFile, "password"));                            // the test configuration has an encrypted value
-        Assert.Equal("aesLocal", SealedBy(operatorFile, "password"));               // the expected clear value beside it: which provider sealed the entry
+            // Assert
+            Assert.NotEqual(operatorDirectory, developerDirectory); // the two answers really are different
+            Assert.Equal(operatorDirectory, DirectoryNamedInManifest(options)); // the manifest still names what the operator wrote
+            Assert.Equal(developerDirectory, options.ConfigDirectory); // the options still carry what the developer wrote
+            Assert.True(File.Exists(operatorFile)); // the store opened in the manifest's directory
+            Assert.False(Directory.Exists(developerDirectory)); // the developer's directory was never created
+            Assert.False(File.Exists(developerFile)); // and nothing was written into it
+            Assert.True(IsSealed(operatorFile, "password")); // the test configuration has an encrypted value
+            Assert.Equal("aesLocal", SealedBy(operatorFile, "password")); // the expected clear value beside it: which provider sealed the entry
+        }
     }
 
     /// <summary>The caller chooses an isolated home and plugin settings directory using the options callback.</summary>
@@ -181,48 +208,56 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
     public async Task AddNyssaConfiguration_CustomHomeAndPluginDirectory_PersistsSettingsAtChosenPathsAsync()
     {
         // Arrange
-        using var workstation = _hostFactory.CreateBlankWorkstation();
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var chosenHome = Path.Join(workstation.Home, "plugin-user");
-        var pluginDirectory = Path.Join(chosenHome, "plugins", "report-export", "settings");
-
-        // Act
-        // ConfigDirectory supplies the directory for a newly created manifest section.
-        // ConfigManifest anchors that section in the chosen home rather than the real user's profile.
-        workstation.AddNyssaConfiguration(options =>
+        using (var workstation = _hostFactory.CreateBlankWorkstation())
         {
-            options.ConfigDirectory = pluginDirectory;
-            options.Bootstrap.ConfigManifest = Path.Join(chosenHome, ".nyssa-ai", "config-manifest.json");
-        });
-        IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
+            var cancellationToken = TestContext.Current.CancellationToken;
+            var chosenHome = Path.Join(workstation.Home, "plugin-user");
+            var pluginDirectory = Path.Join(chosenHome, "plugins", "report-export", "settings");
 
-        // "plugin" is the namespace file; "name" is the entry. Plain storage is chosen for this nonsecret label.
-        await configuration.SetAsync("plugin", "name", "report-export", IConfiguration.Plain, cancellationToken);
+            // Act
+            // ConfigDirectory supplies the directory for a newly created manifest section.
+            // ConfigManifest anchors that section in the chosen home rather than the real user's profile.
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(options =>
+            {
+                workstation.Locate(options);
+                options.ConfigDirectory = pluginDirectory;
+                options.Bootstrap.ConfigManifest = Path.Join(chosenHome, ".nyssa-ai", "config-manifest.json");
+            });
+            workstation.StartApplication(services);
+            IConfiguration configuration = workstation.Host.GetRequiredService<IConfiguration>();
+            // "plugin" is the namespace file; "name" is the entry. Plain storage is chosen for this nonsecret label.
+            await configuration.SetAsync("plugin", "name", "report-export", cancellationToken: cancellationToken);
+            var name = await configuration.GetAsync("plugin", "name", cancellationToken);
 
-        var name = await configuration.GetAsync("plugin", "name", cancellationToken);
-
-        // Assert
-        Assert.Equal("report-export", name);
-        Assert.True(File.Exists(Path.Join(chosenHome, ".nyssa-ai", "config-manifest.json")));
-        Assert.True(File.Exists(Path.Join(pluginDirectory, "plugin.json")));
-        Assert.Contains("report-export", File.ReadAllText(Path.Join(pluginDirectory, "plugin.json")), StringComparison.Ordinal);
-        Assert.False(File.Exists(workstation.ManifestPath));
-        Assert.False(Directory.Exists(workstation.ConfigurationDirectory));
+            // Assert
+            Assert.Equal("report-export", name);
+            Assert.True(File.Exists(Path.Join(chosenHome, ".nyssa-ai", "config-manifest.json")));
+            Assert.True(File.Exists(Path.Join(pluginDirectory, "plugin.json")));
+            Assert.Contains(
+                "report-export",
+                File.ReadAllText(Path.Join(pluginDirectory, "plugin.json")),
+                StringComparison.Ordinal
+            );
+            Assert.False(File.Exists(workstation.ManifestPath));
+            Assert.False(Directory.Exists(workstation.ConfigurationDirectory));
+        }
     }
 
     #region static test helpers
-
     /// <summary>A manifest with one section for this application, naming one directory.</summary>
     /// <param name="configurationDirectory">The directory the section names.</param>
     private static string ManifestNaming(string configurationDirectory) =>
         $$"""
-        {
-          "version": 1,
-          "applications": {
-            "{{Workstation.ApplicationName}}": { "configurationDirectory": {{JsonSerializer.Serialize(configurationDirectory)}} }
-          }
-        }
-        """;
+            {
+              "version": 1,
+              "applications": {
+                "{{Workstation.ApplicationName}}": { "configurationDirectory": {{JsonSerializer.Serialize(
+                configurationDirectory
+            )}} }
+              }
+            }
+            """;
 
     /// <summary>Where a namespace's values are kept: one file per namespace, in the configuration directory.</summary>
     /// <param name="options">The startup options the host resolved.</param>
@@ -240,12 +275,14 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
     /// <param name="options">The startup options the host resolved.</param>
     private static string DirectoryNamedInManifest(NyssaConfigurationOptions options)
     {
-        using var manifest = JsonDocument.Parse(File.ReadAllText(options.Bootstrap.ConfigManifest));
-        return manifest.RootElement
-            .GetProperty("applications")
-            .GetProperty(options.ApplicationName)
-            .GetProperty("configurationDirectory")
-            .GetString()!;
+        using (var manifest = JsonDocument.Parse(File.ReadAllText(options.Bootstrap.ConfigManifest)))
+        {
+            return manifest
+                .RootElement.GetProperty("applications")
+                .GetProperty(options.ApplicationName)
+                .GetProperty("configurationDirectory")
+                .GetString()!;
+        }
     }
 
     /// <summary>Whether the entry on disk is sealed.</summary>
@@ -269,10 +306,10 @@ public sealed class ManifestTutorials : IClassFixture<WorkstationFactory>
     // One entry out of a namespace file. Cloned, so it outlives the document it was read from.
     private static JsonElement Entry(string configurationFile, string key)
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(configurationFile));
-        return document.RootElement.GetProperty(key).Clone();
+        using (var document = JsonDocument.Parse(File.ReadAllText(configurationFile)))
+        {
+            return document.RootElement.GetProperty(key).Clone();
+        }
     }
-
     #endregion
-
 }

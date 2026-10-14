@@ -10,8 +10,9 @@ a caller names it to construct the package, and inside its feature otherwise. `s
 states the whole test.
 
 The two root contracts are the exception the architecture tests enforce: `IConfiguration`
-and `IConfigurationExtensions` belong at the source root. `PackageStructureTests` asserts that no other public interface lives
-outside this folder. `PublicTypeInventoryTests` pins the exact exported set.
+and `IConfigurationExtensions` belong at the source root. `PackageStructureTests` preserves the legacy ports here and permits the feature-owned
+`CloudKeyVaults/ICloudKeyVaultRecovery` capability. Recovery receipts, handles, and exceptions belong to
+`Recovery/`. `PublicTypeInventoryTests` pins the exact exported set.
 
 ## Public — implemented or named outside the package
 
@@ -25,6 +26,8 @@ outside this folder. `PublicTypeInventoryTests` pins the exact exported set.
   the library away from the real one.
 - `IBrowserLauncher` — what opens the authorize URI. A test registers one that calls the loopback
   listener itself.
+- `ConfigurationRemoval` - returned by `IConfiguration.RemoveAsync` and vault deletion; its
+  `RemoteValueRemains` flag includes retained soft-deleted copies.
 - `ConfigurationMove` — returned by `IConfiguration.MoveAsync`.
 
 ## Internal — the package's own ports

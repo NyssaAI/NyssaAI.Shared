@@ -9,7 +9,7 @@ var result = await transaction
     .ExecuteAsync(cancellationToken);
 ```
 
-Each `Then` receives the preceding successful result. Its parameter factory returns either parameters directly or `Result<TParameters>` for validation. A failure stops subsequent commands. On a transaction, failure also prevents commit.
+Each `Then` receives the preceding successful result. Its parameter factory returns parameters directly and throws to reject invalid input. A failure stops subsequent commands. On a transaction, failure also prevents commit.
 
 The caller owns the scope and decides when to commit or dispose it. A pipeline on a session is not atomic. Executing a pipeline again repeats its commands, including writes.
 

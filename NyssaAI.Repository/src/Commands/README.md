@@ -4,15 +4,14 @@ A `RepoCommandKey<TParameters, TResult>` names an operation and fixes its input 
 
 ```csharp
 var registration = RepoCommandRegistration.Create("sqlite", ProjectTaskOperations.Get,
-    parameters => Result<IRepoCommand<TaskIdParameters, TaskDetails>>.Success(new TaskGet(parameters)))
-    .ThrowIfError();
+    parameters => new TaskGet(parameters));
 ```
 
-Pass registrations to `AddNyssaRepository(..., commands: registrations)`. Use the same key for provider-specific implementations when the caller's input and output remain the same. Names are case-sensitive. Duplicate registrations fail when the operation is resolved.
+Pass registrations to `AddNyssaRepository(..., commands: registrations)`. Use the same key for provider-specific implementations when the caller's input and output remain the same. Names are case-sensitive. Duplicate provider/operation pairs throw during registration, before services change. The [shared declaration syntax](../../README.md#registering-commands) also supports omitting the default provider and registering separately from repository setup.
 
-A command supplies `Key`, `Parameters`, and `ExecuteCoreAsync`. That method receives a borrowed `DbConnection`, an optional `DbTransaction`, and a cancellation token. It returns a complete `Result<TResult>`. It must honor the supplied transaction and must not close, retain, or commit the borrowed resources.
+A command supplies `Key`, `Parameters`, and `ExecuteCoreAsync`. That method receives a borrowed `DbConnection`, an optional `DbTransaction`, and a cancellation token. It returns `Task<TResult>` with the complete value, and throws on failure. It must honor the supplied transaction and must not close, retain, or commit the borrowed resources.
 
-The complete [TaskGet command](../../../test/NyssaAI.Repository.AotCommands/ProjectTasks/TaskGet.cs) shows a parameterized query, a buffered DTO, and a `NotFound` result. [ProjectTaskOperations](../../../test/NyssaAI.Repository.AotCommands/ProjectTasks/ProjectTaskOperations.cs) shows the typed keys and factories.
+The complete [TaskGet command](../../../test/NyssaAI.Repository.AotCommands/ProjectTasks/TaskGet.cs) shows a parameterized query, a buffered DTO, and a `KeyNotFoundException`. [ProjectTaskOperations](../../../test/NyssaAI.Repository.AotCommands/ProjectTasks/ProjectTaskOperations.cs) shows the typed keys and factories.
 
 The examples use Dapper and Dapper.AOT. The project containing concrete Dapper calls enables generated interceptors and adds `[module: Dapper.DapperAot]`; enabling it only in the application entry assembly is insufficient when commands live elsewhere. Cancellation is carried in the generated parameter binding. See the [command project](../../../test/NyssaAI.Repository.AotCommands/NyssaAI.Repository.AotCommands.csproj) and [binding example](../../../test/NyssaAI.Repository.AotCommands/Tasks/TaskBinding.cs).
 

@@ -13,7 +13,7 @@ public static class CommandPipelineExtensions
     /// <param name="repository">The repository selecting commands for the scope's provider.</param>
     /// <param name="key">The first typed operation.</param>
     /// <param name="parameters">The values supplied when execution starts.</param>
-    /// <returns>A deferred pipeline; invalid arguments are reported by its execution Result.</returns>
+    /// <returns>A deferred pipeline; invalid arguments throw during execution.</returns>
     public static CommandPipeline<TResult> Pipeline<TParameters, TResult>(this IRepositorySession session,
         IRepository repository, RepoCommandKey<TParameters, TResult> key, TParameters parameters) =>
         new(session, repository, cancellationToken =>

@@ -40,6 +40,8 @@ namespace NyssaAI.Configuration.OAuth.Infrastructure;
 /// </remarks>
 internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizableProvider
 {
+    public bool IsLocalOnly => true;
+
     private const int PersistAttempts = 3;
 
     private readonly IConfigurationCipher _cipher;
@@ -173,19 +175,19 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The sealed grant is the entry's own value, so the store overwriting the entry is the
+    /// The sealed grant is the entry's own value, so the store removing or overwriting the entry is the
     /// withdrawal. What this does own is the grant held in memory for that address after a publish
     /// failure; dropping it here stops a later read from re-publishing a grant the caller has moved
-    /// somewhere else.
+    /// somewhere else or removed. This does not revoke credentials at the authorization server.
     /// </remarks>
-    public ValueTask<Result> EraseAsync(
+    public ValueTask<Result<ConfigurationRemoval>> EraseAsync(
         ConfigurationValue entry,
         string @namespace,
         string key,
         CancellationToken cancellationToken = default)
     {
         _held.TryRemove($"{@namespace}/{key}", out _);
-        return ValueTask.FromResult(Result.Success());
+        return ValueTask.FromResult(Result<ConfigurationRemoval>.Success(new ConfigurationRemoval { RemoteValueRemains = false }));
     }
 
     /// <summary>The failure returned when the stored grant needs the user to authorize again.</summary>

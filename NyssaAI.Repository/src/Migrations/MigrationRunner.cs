@@ -1,7 +1,6 @@
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using NyssaAI.Repository.Providers;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.Migrations;
 
@@ -16,14 +15,12 @@ internal sealed class MigrationRunner : IMigrationRunner
         _catalog = catalog;
     }
 
-    public async Task<Result<MigrationReport>> MigrateAsync(string release, CancellationToken cancellationToken = default)
+    public async Task<MigrationReport> MigrateAsync(string release, CancellationToken cancellationToken = default)
     {
-        if (_catalog is null) return Failure("No migration catalog is registered for this provider.", ErrorCategory.NotFound);
-        var targetResult = ((IMigrations)_catalog).Resolve(release);
-        if (!targetResult.TryGetValue(out var target)) return Result<MigrationReport>.Failure(targetResult.Errors);
-        if (cancellationToken.IsCancellationRequested) return Failure(Error.CanceledUserMessage, ErrorCategory.Canceled);
-        var opened = await _provider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        if (!opened.TryGetValue(out var connection)) return Result<MigrationReport>.Failure(opened.Errors);
+        if (_catalog is null) throw new InvalidOperationException("No migration catalog is registered for this provider.");
+        var target = ((IMigrations)_catalog).Resolve(release);
+        cancellationToken.ThrowIfCancellationRequested();
+        var connection = await _provider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
         {
             DbTransaction? transaction = null;
@@ -36,29 +33,33 @@ internal sealed class MigrationRunner : IMigrationRunner
                     // Bypass SqliteCommand's busy retry only for lock acquisition. A competing process must fail immediately.
                     SQLitePCL.raw.sqlite3_busy_timeout(sqlite.Handle, 0);
                     var acquired = SQLitePCL.raw.sqlite3_exec(sqlite.Handle, "BEGIN IMMEDIATE");
-                    if (acquired != SQLitePCL.raw.SQLITE_OK)
-                        return Failure("The migration write lock could not be acquired.", ErrorCategory.Conflict);
+                    if (acquired is SQLitePCL.raw.SQLITE_BUSY or SQLitePCL.raw.SQLITE_LOCKED)
+                        throw new InvalidOperationException("The migration write lock could not be acquired.");
+                    SqliteException.ThrowExceptionForRC(acquired, sqlite.Handle);
                     sqliteActive = true;
                 }
                 else if (_provider.DatabaseProvider == "postgresql" && connection is Npgsql.NpgsqlConnection)
                 {
                     transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-                    await using var acquire = Command(connection, transaction, "SELECT pg_try_advisory_xact_lock(564535375002)");
-                    if (await acquire.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
-                        return Failure("Another migration runner owns this database.", ErrorCategory.Conflict);
-                    await using var quoting = Command(connection, transaction, "SHOW standard_conforming_strings");
-                    if (await quoting.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not string setting || setting != "on")
-                        return Failure("Migrations require PostgreSQL standard_conforming_strings=on.", ErrorCategory.Validation);
+                    await using (var acquire = Command(connection, transaction, "SELECT pg_try_advisory_xact_lock(564535375002)"))
+                    {
+                        if (await acquire.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
+                            throw new InvalidOperationException("Another migration runner owns this database.");
+                        await using (var quoting = Command(connection, transaction, "SHOW standard_conforming_strings"))
+                        {
+                            if (await quoting.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not string setting || setting != "on")
+                                throw new InvalidOperationException("Migrations require PostgreSQL standard_conforming_strings=on.");
+                        }
+                    }
                 }
-                else return Failure("This provider does not support verified transactional migrations.", ErrorCategory.Validation);
+                else throw new NotSupportedException("This provider does not support verified transactional migrations.");
 
                 cancellationToken.ThrowIfCancellationRequested();
                 await ExecuteAsync(connection, transaction, "CREATE TABLE IF NOT EXISTS nyssa_repository_migrations (number BIGINT PRIMARY KEY, fingerprint TEXT NOT NULL)", cancellationToken).ConfigureAwait(false);
-                var history = await ReadHistoryAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
-                if (!history.TryGetValue(out var current)) return Result<MigrationReport>.Failure(history.Errors);
+                var current = await ReadHistoryAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
                 // Preflight the entire downgrade before executing any schema change.
                 if (current > target && _catalog.Definitions.Skip((int)target).Take((int)(current - target)).Any(step => step.DownSql is null))
-                    return Failure("The requested downgrade includes an irreversible migration.", ErrorCategory.Conflict);
+                    throw new InvalidOperationException("The requested downgrade includes an irreversible migration.");
 
                 var applied = 0;
                 if (current < target)
@@ -67,11 +68,13 @@ internal sealed class MigrationRunner : IMigrationRunner
                     {
                         var definition = _catalog.Definitions[(int)number - 1];
                         await ExecuteAsync(connection, transaction, definition.UpSql, cancellationToken).ConfigureAwait(false);
-                        await using var insert = Command(connection, transaction, "INSERT INTO nyssa_repository_migrations (number, fingerprint) VALUES (@number, @fingerprint)");
-                        AddParameter(insert, "number", number);
-                        AddParameter(insert, "fingerprint", MigrationCatalog.Fingerprint(definition));
-                        await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                        applied++;
+                        await using (var insert = Command(connection, transaction, "INSERT INTO nyssa_repository_migrations (number, fingerprint) VALUES (@number, @fingerprint)"))
+                        {
+                            AddParameter(insert, "number", number);
+                            AddParameter(insert, "fingerprint", MigrationCatalog.Fingerprint(definition));
+                            await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                            applied++;
+                        }
                     }
                 }
                 else
@@ -80,28 +83,26 @@ internal sealed class MigrationRunner : IMigrationRunner
                     {
                         // The complete range was checked above; SQL is immutable in the catalog snapshot.
                         await ExecuteAsync(connection, transaction, _catalog.Definitions[(int)number - 1].DownSql!, cancellationToken).ConfigureAwait(false);
-                        await using var delete = Command(connection, transaction, "DELETE FROM nyssa_repository_migrations WHERE number = @number");
-                        AddParameter(delete, "number", number);
-                        await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                        applied++;
+                        await using (var delete = Command(connection, transaction, "DELETE FROM nyssa_repository_migrations WHERE number = @number"))
+                        {
+                            AddParameter(delete, "number", number);
+                            await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                            applied++;
+                        }
                     }
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 if (sqlite is not null)
                 {
                     if (SQLitePCL.raw.sqlite3_get_autocommit(sqlite.Handle) != 0)
-                        return Failure("Migration SQL ended the runner's transaction.", ErrorCategory.Conflict);
+                        throw new InvalidOperationException("Migration SQL ended the runner's transaction.");
                     var committed = SQLitePCL.raw.sqlite3_exec(sqlite.Handle, "COMMIT");
-                    if (committed != SQLitePCL.raw.SQLITE_OK) return Failure("The migration transaction could not be committed.", ErrorCategory.Unavailable);
+                    SqliteException.ThrowExceptionForRC(committed, sqlite.Handle);
                     sqliteActive = false;
                 }
                 else await transaction!.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return Result<MigrationReport>.Success(new() { FromNumber = current, ToNumber = target, AppliedCount = applied });
+                return new() { FromNumber = current, ToNumber = target, AppliedCount = applied };
             }
-            catch (OperationCanceledException) { return Failure(Error.CanceledUserMessage, ErrorCategory.Canceled); }
-            catch (DbException) { return Failure("The migration operation failed.", ErrorCategory.Unavailable); }
-            catch (Exception exception) when (exception is InvalidCastException or FormatException or OverflowException)
-            { return Failure("Migration history is invalid.", ErrorCategory.Conflict); }
             finally
             {
                 if (sqliteActive && sqlite is not null) SQLitePCL.raw.sqlite3_exec(sqlite.Handle, "ROLLBACK");
@@ -110,21 +111,25 @@ internal sealed class MigrationRunner : IMigrationRunner
         }
     }
 
-    private async Task<Result<long>> ReadHistoryAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
+    private async Task<long> ReadHistoryAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
     {
-        await using var command = Command(connection, transaction, "SELECT number, fingerprint FROM nyssa_repository_migrations ORDER BY number");
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        long current = 0;
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using (var command = Command(connection, transaction, "SELECT number, fingerprint FROM nyssa_repository_migrations ORDER BY number"))
         {
-            // SQLite's typed getters can coerce corrupt REAL values; require the stored contract before comparing history.
-            if (reader.GetValue(0) is not long number || reader.GetValue(1) is not string fingerprint ||
-                number != current + 1 || number > _catalog!.Definitions.Count ||
-                !string.Equals(fingerprint, MigrationCatalog.Fingerprint(_catalog.Definitions[(int)number - 1]), StringComparison.Ordinal))
-                return Result<long>.Failure(Error.FromMessage("Migration history does not match the compiled catalog prefix.", ErrorCategory.Conflict));
-            current = number;
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            {
+                long current = 0;
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    // SQLite's typed getters can coerce corrupt REAL values; require the stored contract before comparing history.
+                    if (reader.GetValue(0) is not long number || reader.GetValue(1) is not string fingerprint ||
+                        number != current + 1 || number > _catalog!.Definitions.Count ||
+                        !string.Equals(fingerprint, MigrationCatalog.Fingerprint(_catalog.Definitions[(int)number - 1]), StringComparison.Ordinal))
+                        throw new InvalidOperationException("Migration history does not match the compiled catalog prefix.");
+                    current = number;
+                }
+                return current;
+            }
         }
-        return Result<long>.Success(current);
     }
 
     private static DbCommand Command(DbConnection connection, DbTransaction? transaction, string sql)
@@ -138,8 +143,10 @@ internal sealed class MigrationRunner : IMigrationRunner
 
     private static async Task ExecuteAsync(DbConnection connection, DbTransaction? transaction, string sql, CancellationToken cancellationToken)
     {
-        await using var command = Command(connection, transaction, sql);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await using (var command = Command(connection, transaction, sql))
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static void AddParameter(DbCommand command, string name, object value)
@@ -150,5 +157,4 @@ internal sealed class MigrationRunner : IMigrationRunner
         command.Parameters.Add(parameter);
     }
 
-    private static Result<MigrationReport> Failure(string message, ErrorCategory category) => Result<MigrationReport>.Failure(Error.FromMessage(message, category));
 }

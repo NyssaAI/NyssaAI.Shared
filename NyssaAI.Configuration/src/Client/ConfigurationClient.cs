@@ -1,3 +1,5 @@
+using NyssaAI.Configuration.Recovery;
+using NyssaAI.Configuration.Values;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization.Metadata;
 using NyssaAI.Results;
@@ -37,7 +39,7 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
         return UnwrapAsync(_entries.SetAsync(@namespace, key, value, provider, cancellationToken), cancellationToken);
     }
 
-    public ValueTask RemoveAsync(
+    public ValueTask<ConfigurationRemoval> RemoveAsync(
         string @namespace,
         string key,
         CancellationToken cancellationToken = default)
@@ -55,6 +57,28 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
     }
 
     /// <inheritdoc/>
+    [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
+    public ValueTask MergeSettingsAsync<TValue>(
+        string @namespace,
+        TValue value,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return UnwrapAsync(_entries.MergeSettingsAsync(@namespace, value, cancellationToken), cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public ValueTask MergeSettingsAsync<TValue>(
+        string @namespace,
+        JsonTypeInfo<TValue> typeInfo,
+        TValue value,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return UnwrapAsync(_entries.MergeSettingsAsync(@namespace, typeInfo, value, cancellationToken), cancellationToken);
+    }
+
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     [RequiresDynamicCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
     public ValueTask<TValue> GetAsAsync<TValue>(
@@ -84,7 +108,7 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return UnwrapAsync(_entries.SetAsAsync(@namespace, null, value, IConfiguration.Plain, cancellationToken), cancellationToken);
+        return UnwrapAsync(_entries.SetAsAsync(@namespace, null, value, cancellationToken: cancellationToken), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -95,7 +119,7 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return UnwrapAsync(_entries.SetAsAsync(@namespace, null, value, typeInfo, IConfiguration.Plain, cancellationToken), cancellationToken);
+        return UnwrapAsync(_entries.SetAsAsync(@namespace, null, value, typeInfo, cancellationToken: cancellationToken), cancellationToken);
     }
 
     [RequiresUnreferencedCode("TValue is caller-supplied; Native AOT callers use the JsonTypeInfo overload.")]
@@ -147,11 +171,43 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
     public ValueTask<ConfigurationMove> MoveAsync(
         string @namespace,
         string key,
-        string toProvider,
+        string? toProvider = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return UnwrapAsync(_entries.MoveAsync(@namespace, key, toProvider, cancellationToken), cancellationToken);
+    }
+
+
+    public ValueTask<ConfigurationRecoveryOutcome> RecoverAsync(ConfigurationRecoveryHandle handle, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        cancellationToken.ThrowIfCancellationRequested();
+        return UnwrapAsync(_entries.RecoverAsync(handle, cancellationToken), cancellationToken);
+    }
+
+    private static async ValueTask UnwrapAsync(ValueTask<ConfigurationAttempt> operation, CancellationToken token)
+    {
+        var attempt = await operation.ConfigureAwait(false);
+        ThrowPartial(attempt.Errors, attempt.Progress, attempt.RecoveryHandle, token);
+        ThrowIfCanceled(attempt.Errors, token);
+        attempt.Result.ThrowIfError();
+    }
+
+    private static async ValueTask<TValue> UnwrapAsync<TValue>(ValueTask<ConfigurationAttempt<TValue>> operation, CancellationToken token)
+    {
+        var attempt = await operation.ConfigureAwait(false);
+        ThrowPartial(attempt.Errors, attempt.Progress, attempt.RecoveryHandle, token);
+        ThrowIfCanceled(attempt.Errors, token);
+        return attempt.Result.ThrowIfError();
+    }
+
+    private static void ThrowPartial(IReadOnlyList<Error> errors, ConfigurationOperationProgress? progress, ConfigurationRecoveryHandle? handle, CancellationToken token)
+    {
+        if (errors.Count == 0 || progress is null) return;
+        if (errors.Any(error => error.Category == ErrorCategory.Canceled))
+            throw new ConfigurationOperationCanceledException(progress, handle, token);
+        throw new ConfigurationOperationException(errors, progress, handle);
     }
 
     private static async ValueTask<TValue> UnwrapAsync<TValue>(ValueTask<Result<TValue>> operation, CancellationToken cancellationToken)

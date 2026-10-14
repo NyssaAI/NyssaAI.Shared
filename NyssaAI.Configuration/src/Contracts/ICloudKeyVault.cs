@@ -13,7 +13,7 @@ namespace NyssaAI.Configuration.Contracts;
 /// and knows about namespaces, sensitivity, and provider names; this one only moves a secret to and
 /// from a store. A single adapter turns any implementation of this into a provider, the same way
 /// <see cref="IConfigurationCipher"/> becomes one through the local-encryption provider, so a new vault is
-/// written once against these two members rather than against the entry model.
+/// written once against this contract rather than against the entry model.
 /// </para>
 /// <para>
 /// Reads distinguish three outcomes, as every store in this package does: a secret, a success
@@ -21,10 +21,9 @@ namespace NyssaAI.Configuration.Contracts;
 /// answer at all. Collapsing the last two would let an outage read as a deleted secret.
 /// </para>
 /// <para>
-/// Removal happens only on instruction. The package never drops a vault secret because a local
-/// entry went away -- that would delete someone else's data on a local decision. It does withdraw
-/// one when a caller explicitly moves the value elsewhere, because then the decision is the
-/// caller's and leaving the old copy behind is the worse outcome.
+/// Explicit configuration removal and moves request deletion through this contract. Namespace
+/// replacement only prunes local entries. The vault reports retained remote copies, including
+/// recoverable soft-deleted secrets, instead of claiming that deletion always destroys the value.
 /// </para>
 /// </remarks>
 public interface ICloudKeyVault
@@ -50,13 +49,15 @@ public interface ICloudKeyVault
         string value,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Withdraws the secret filed at one address.</summary>
+    /// <summary>Requests deletion of the secret filed at one address and reports remote retention.</summary>
     /// <param name="pointer">The address the stored entry references.</param>
     /// <param name="cancellationToken">Token used to cancel the withdrawal.</param>
     /// <returns>
-    /// Success once the store no longer serves the address, including when it soft-deletes or
-    /// disables rather than destroying. Success when nothing was filed there, so a retried move is
-    /// not a failure.
+    /// Success with <see cref="ConfigurationRemoval.RemoteValueRemains"/> set to true if a copy is
+    /// retained, including recoverable soft-deleted secrets or stores that do not support deletion.
+    /// False when no copy remains. An already absent secret succeeds so removal can be retried;
+    /// a soft-deleted copy still requires true on retry. Permission, connectivity, and other
+    /// operational failures return failure rather than a retention flag.
     /// </returns>
-    ValueTask<Result> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default);
+    ValueTask<Result<ConfigurationRemoval>> RemoveAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default);
 }

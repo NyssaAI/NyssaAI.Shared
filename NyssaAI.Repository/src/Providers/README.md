@@ -8,7 +8,7 @@ To add another provider, implement `IRepositoryProvider` and pass a registration
 services.AddNyssaRepository(settings, providers: [providerRegistration], commands: commands);
 ```
 
-`RepositoryProviderRegistration.Prepare` validates settings without I/O and returns a factory capturing those settings. The factory creates a fresh provider without fallible initialization. `OpenConnectionAsync` performs resource acquisition and returns either an open connection or a sanitized failure, cleaning up any partially opened resources.
+`RepositoryProviderRegistration.Prepare` validates settings without I/O and returns a factory capturing those settings. The factory creates a fresh provider without fallible initialization. `OpenConnectionAsync` performs resource acquisition and returns an open connection or throws the original driver exception, cleaning up any partially opened resources.
 
 Provider names are normalized to lowercase. Registration rejects missing and duplicate names, including attempts to replace the built-in providers. Custom providers retain the library's command resolution, sessions, and transactions. Built-in migrations support SQLite and PostgreSQL only.
 

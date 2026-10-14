@@ -2,7 +2,6 @@ using System.Data.Common;
 using Microsoft.Extensions.DependencyInjection;
 using NyssaAI.Repository.Configuration;
 using NyssaAI.Repository.Providers;
-using NyssaAI.Results;
 using Xunit;
 
 namespace NyssaAI.Repository.Tests.Providers;
@@ -22,12 +21,13 @@ public sealed class RepositoryProviderRegistryTests
             Registration("unused", () => { Assert.Fail("Unselected provider must not be prepared."); return () => new ProviderRecording("unused"); })
         };
         var result = RepositoryProviderRegistry.RegisterDatabaseProviders(Settings(name), registrations);
-        Assert.True(result.IsSuccess);
         Assert.Equal(0, created);
-        await using var provider = result.Value();
-        Assert.Equal("custom", provider.DatabaseProvider);
-        Assert.Equal(1, prepared);
-        Assert.Equal(1, created);
+        await using (var provider = result())
+        {
+            Assert.Equal("custom", provider.DatabaseProvider);
+            Assert.Equal(1, prepared);
+            Assert.Equal(1, created);
+        }
     }
 
     [Theory]
@@ -38,8 +38,8 @@ public sealed class RepositoryProviderRegistryTests
     {
         var calls = 0;
         Func<Func<IRepositoryProvider>> factory = () => { calls++; return () => new ProviderRecording("custom"); };
-        var result = RepositoryProviderRegistry.RegisterDatabaseProviders(Settings(selection), [Registration("custom", factory), Registration(secondName, factory)]);
-        Assert.True(result.IsFailure);
+        Assert.Throws(secondName == " " ? typeof(ArgumentException) : typeof(InvalidOperationException),
+            () => RepositoryProviderRegistry.RegisterDatabaseProviders(Settings(selection), [Registration("custom", factory), Registration(secondName, factory)]));
         Assert.Equal(0, calls);
     }
 
@@ -54,7 +54,7 @@ public sealed class RepositoryProviderRegistryTests
             instances.Add(provider);
             return provider;
         })]);
-        Assert.True(added.IsSuccess);
+
         Assert.Empty(instances);
         await using (var unusedContainer = services.BuildServiceProvider()) { }
         Assert.Empty(instances);
@@ -76,28 +76,26 @@ public sealed class RepositoryProviderRegistryTests
     {
         var services = new ServiceCollection();
         var registrations = new[] { Registration("custom", () => () => new ProviderRecording("custom")) };
-        Assert.True(services.AddNyssaRepository(Settings("custom"), registrations).IsSuccess);
+        _ = services.AddNyssaRepository(Settings("custom"), registrations);
         var count = services.Count;
-        var repeated = Assert.Throws<ResultException>(() => services.AddNyssaRepository(Settings("custom"), registrations));
-        Assert.Equal(ErrorCategory.Conflict, Assert.Single(repeated.Errors).Category);
+        var repeated = Assert.Throws<InvalidOperationException>(() => services.AddNyssaRepository(Settings("custom"), registrations));
+
         Assert.Equal(count, services.Count);
     }
 
     [Fact]
-    public void RegisterDatabaseProviders_PreparationFailure_PreservesCategoryWithoutSecrets()
+    public void RegisterDatabaseProviders_PreparationFailure_PreservesExceptionInstance()
     {
+        var expected = new InvalidOperationException("preparation failure");
         var registration = new RepositoryProviderRegistration
         {
             DatabaseProvider = "custom",
-            Prepare = _ => Result<Func<IRepositoryProvider>>.Failure(Error.FromMessage("sentinel-secret", ErrorCategory.Validation))
+            Prepare = _ => throw expected
         };
-        var result = RepositoryProviderRegistry.RegisterDatabaseProviders(Settings("custom"), [registration]);
-        Assert.Equal(ErrorCategory.Validation, Assert.Single(result.Errors).Category);
-        Assert.All(result.Errors, error =>
-        {
-            Assert.DoesNotContain("sentinel-secret", error.UserMessage, StringComparison.Ordinal);
-            Assert.DoesNotContain("sentinel-secret", error.TechnicalMessage, StringComparison.Ordinal);
-        });
+        var result = Assert.Throws<InvalidOperationException>(() => RepositoryProviderRegistry.RegisterDatabaseProviders(Settings("custom"), [registration]));
+        Assert.Same(expected, result);
+
+        Assert.DoesNotContain("sentinel-secret", result.Message, StringComparison.Ordinal);
     }
 
     private static RepositoryConfiguration Settings(string provider) => new() { DatabaseProvider = provider, ConnectionString = "sentinel-secret" };
@@ -105,7 +103,7 @@ public sealed class RepositoryProviderRegistryTests
     private static RepositoryProviderRegistration Registration(string name, Func<Func<IRepositoryProvider>> factory) => new()
     {
         DatabaseProvider = name,
-        Prepare = _ => Result<Func<IRepositoryProvider>>.Success(factory())
+        Prepare = _ => factory()
     };
 
     private sealed class ProviderRecording : IRepositoryProvider
@@ -113,8 +111,8 @@ public sealed class RepositoryProviderRegistryTests
         public ProviderRecording(string databaseProvider) => DatabaseProvider = databaseProvider;
         public string DatabaseProvider { get; }
         public int Disposals { get; private set; }
-        public Task<Result<DbConnection>> OpenConnectionAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Result<DbConnection>.Failure("This recording provider does not open connections."));
+        public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("This recording provider does not open connections.");
         public ValueTask DisposeAsync() { Disposals++; return ValueTask.CompletedTask; }
     }
 }

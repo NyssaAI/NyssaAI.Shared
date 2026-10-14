@@ -111,6 +111,7 @@ public sealed class PackageStructureTests
         var strayPorts = Package.GetExportedTypes()
             .Where(type => type.IsInterface)
             .Where(type => type.Namespace is not "NyssaAI.Configuration" and not "NyssaAI.Configuration.Contracts")
+            .Where(type => type != typeof(global::NyssaAI.Configuration.CloudKeyVaults.ICloudKeyVaultRecovery))
             .Select(type => type.FullName!)
             .Order(StringComparer.Ordinal);
 

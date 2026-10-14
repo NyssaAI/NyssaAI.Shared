@@ -1,7 +1,6 @@
 using System.Data.Common;
 using Dapper;
 using NyssaAI.Repository.Commands;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.AotCommands.Tasks;
 
@@ -17,10 +16,10 @@ public sealed class TaskOutboxWrite : IRepoCommand<TaskParameters, int>
     /// <inheritdoc />
     public TaskParameters Parameters { get; }
 
-    async Task<Result<int>> IRepoCommand<TaskParameters, int>.ExecuteCoreAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
+    async Task<int> IRepoCommand<TaskParameters, int>.ExecuteCoreAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
     {
         var binding = TaskBinding.From(Parameters, cancellationToken);
         var count = await connection.ExecuteAsync("INSERT INTO f002_outbox (task_id, title) VALUES (@Id, @Title)", binding, transaction: transaction, commandTimeout: 30);
-        return Result<int>.Success(count);
+        return count;
     }
 }

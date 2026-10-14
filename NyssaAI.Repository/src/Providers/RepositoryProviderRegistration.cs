@@ -1,5 +1,4 @@
 using NyssaAI.Repository.Configuration;
-using NyssaAI.Results;
 
 namespace NyssaAI.Repository.Providers;
 
@@ -16,7 +15,7 @@ public sealed record RepositoryProviderRegistration
     /// initialization belong to OpenConnectionAsync. Preparation failures must not contain credentials.
     /// This split permits validation before DI registration without creating an unowned disposable instance.
     /// </remarks>
-    public required Func<RepositoryConfiguration, Result<Func<IRepositoryProvider>>> Prepare { get; init; }
+    public required Func<RepositoryConfiguration, Func<IRepositoryProvider>> Prepare { get; init; }
 
     /// <summary>Returns the type name without displaying custom registration details.</summary>
     public override string ToString() => nameof(RepositoryProviderRegistration);

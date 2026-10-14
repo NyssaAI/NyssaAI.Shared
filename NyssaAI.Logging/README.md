@@ -6,7 +6,7 @@ The package targets .NET 10 and enables Native AOT compatibility checks. It requ
 
 ## Simple setup, ordinary logging
 
-Register logging once during startup, then inject `ILogger<T>` into the classes that need it. The default setup writes `Information` and higher levels to standard error:
+Register logging once during startup, then inject `ILogger<T>` into the classes that need it. `AddNyssaLogging()` always registers standard error output, with `Information` and higher levels enabled by default:
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -15,11 +15,10 @@ using NyssaAI.Logging.Configuration;
 
 services.AddNyssaLogging()
         .WithRotatingJsonLog("application-log.json") // creates yyyy.MM.dd-application-log.json
-        .WithStdErr()
         .WithConsole();
 ```
 
-This writes to the dated JSON file, standard error, and standard output. `WithStdErr()` keeps the default standard error destination; calling it again does not duplicate the output. `WithConsole()` adds standard output. Each destination receives the same accepted records.
+This writes to the dated JSON file, standard error, and standard output. Adding a file or calling `WithConsole()` adds a destination without replacing standard error. You do not need to call `WithStdErr()` after `AddNyssaLogging()`; calling it again does not duplicate the output. Each destination receives the same accepted records.
 
 The earlier one-call setup still works. Supply a path to write to that exact file alongside standard error:
 
@@ -61,7 +60,17 @@ If the application already configures logging, add just the file destination:
 services.AddLogging(logging => logging.AddNyssaJsonFile("logs/service.log"));
 ```
 
-`AddNyssaJsonFile` adds no console output. You can combine it with other Microsoft logging providers, including OpenTelemetry or a remote log service.
+`AddNyssaJsonFile` adds no console logging provider. You can combine it with other Microsoft logging providers, including OpenTelemetry or a remote log service.
+
+To register a dated file destination without adding standard error or standard output logging, use `AddLogging` directly:
+
+```csharp
+services.AddLogging(logging => logging
+    .SetMinimumLevel(LogLevel.Information)
+    .WithRotatingJsonLog("application-log.json"));
+```
+
+This preserves any providers already registered by the application or host. The file logger's own failure diagnostics, such as an inaccessible file, a rotation failure, or a permission failure, still write directly to standard error. Those diagnostics are independent of the configured logging destinations and log-level filters.
 
 ### Add OpenTelemetry
 

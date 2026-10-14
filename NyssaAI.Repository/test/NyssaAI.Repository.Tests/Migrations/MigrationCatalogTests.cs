@@ -17,8 +17,10 @@ public sealed class MigrationCatalogTests
     [InlineData("v1.0.0", false)]
     public void Create_ReleaseSyntax_ValidatesSemVer(string release, bool valid)
     {
-        var created = MigrationCatalog.Create("sqlite", [], [new MigrationReleasePin { Release = release, Number = 0 }]);
-        Assert.Equal(valid, created.IsSuccess);
+        if (valid)
+            Assert.NotNull(MigrationCatalog.Create("sqlite", [], [new MigrationReleasePin { Release = release, Number = 0 }]));
+        else
+            Assert.Throws<ArgumentException>(() => MigrationCatalog.Create("sqlite", [], [new MigrationReleasePin { Release = release, Number = 0 }]));
     }
 
     [Theory]
@@ -38,8 +40,8 @@ public sealed class MigrationCatalogTests
     [InlineData("RESET ALL")]
     public void Create_TransactionControl_RejectsBeforeDatabaseChanges(string sql)
     {
-        var result = MigrationCatalog.Create("sqlite", [new() { Number = 1, UpSql = sql }], [new() { Release = "1.0.0", Number = 1 }]);
-        Assert.True(result.IsFailure);
+        var result = Assert.Throws<ArgumentException>(() => MigrationCatalog.Create("sqlite", [new() { Number = 1, UpSql = sql }], [new() { Release = "1.0.0", Number = 1 }]));
+
     }
 
     [Theory]
@@ -47,8 +49,8 @@ public sealed class MigrationCatalogTests
     [InlineData(2)]
     public void Create_NoncontiguousStep_RejectsCatalog(long number)
     {
-        var result = MigrationCatalog.Create("sqlite", [new() { Number = number, UpSql = "CREATE TABLE sample(id INT)" }], [new() { Release = "1.0.0", Number = 0 }]);
-        Assert.True(result.IsFailure);
+        var result = Assert.Throws<ArgumentException>(() => MigrationCatalog.Create("sqlite", [new() { Number = number, UpSql = "CREATE TABLE sample(id INT)" }], [new() { Release = "1.0.0", Number = 0 }]));
+
     }
 
     [Theory]
@@ -56,8 +58,8 @@ public sealed class MigrationCatalogTests
     [InlineData("postgresql")]
     public void Create_DuplicateOrUnreachablePin_RejectsCatalog(string provider)
     {
-        Assert.True(MigrationCatalog.Create(provider, [], [new() { Release = "1.0.0", Number = 1 }]).IsFailure);
-        Assert.True(MigrationCatalog.Create(provider, [], [new() { Release = "1.0.0", Number = 0 }, new() { Release = "1.0.0", Number = 0 }]).IsFailure);
-        Assert.True(MigrationCatalog.Create(provider, [new() { Number = 1, UpSql = "SELECT 1" }, new() { Number = 1, UpSql = "SELECT 2" }], [new() { Release = "1.0.0", Number = 1 }]).IsFailure);
+        Assert.Throws<ArgumentException>(() => MigrationCatalog.Create(provider, [], [new() { Release = "1.0.0", Number = 1 }]));
+        Assert.Throws<ArgumentException>(() => MigrationCatalog.Create(provider, [], [new() { Release = "1.0.0", Number = 0 }, new() { Release = "1.0.0", Number = 0 }]));
+        Assert.Throws<ArgumentException>(() => MigrationCatalog.Create(provider, [new() { Number = 1, UpSql = "SELECT 1" }, new() { Number = 1, UpSql = "SELECT 2" }], [new() { Release = "1.0.0", Number = 1 }]));
     }
 }
