@@ -356,6 +356,70 @@ public sealed class LogFileTests
     }
 
     [Fact]
+    public void WriteRecord_WhenRotationAndReopenFail_ResumesAfterAccessIsRestored()
+    {
+        var clock = new FixedClock(DateTimeOffset.UtcNow);
+        using var scope = new TempLog(rotationTriggerBytes: 64, timeProvider: clock);
+        using var stderr = new StderrCapture();
+        Assert.Null(scope.Log.Initialize());
+        scope.Log.WriteRecord(Record("before outage"));
+
+        // Delete sharing lets us rename the open file on Windows as well as Unix. A
+        // directory at its former path then blocks both rotation and the append reopen.
+        var displacedPath = $"{scope.FilePath}.displaced";
+        File.Move(scope.FilePath, displacedPath);
+        Directory.CreateDirectory(scope.FilePath);
+        scope.Log.WriteRecord(Record("during outage"));
+        Assert.Equal(1, CountRotationFailures(stderr));
+        Assert.Equal(1, CountReopenFailures(stderr));
+
+        for (var index = 0; index < 10; index++)
+        {
+            scope.Log.WriteRecord(Record("still unavailable"));
+        }
+
+        Assert.Equal(1, CountReopenFailures(stderr));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        scope.Log.WriteRecord(Record("retry while unavailable"));
+        Assert.Equal(2, CountReopenFailures(stderr));
+
+        Directory.Delete(scope.FilePath);
+        File.Move(displacedPath, scope.FilePath);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        scope.Log.WriteRecord(Record("after recovery"));
+        scope.Log.Dispose();
+
+        var content = File.ReadAllText(scope.FilePath);
+        Assert.Contains("before outage", content, StringComparison.Ordinal);
+        Assert.Contains("after recovery", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("during outage", content, StringComparison.Ordinal);
+        Assert.Equal(2, CountReopenFailures(stderr));
+    }
+
+    [Fact]
+    public void WriteRecord_WhenDisposedAfterRotationAndReopenFail_DoesNotReopen()
+    {
+        var clock = new FixedClock(DateTimeOffset.UtcNow);
+        using var scope = new TempLog(rotationTriggerBytes: 64, timeProvider: clock);
+        using var stderr = new StderrCapture();
+        Assert.Null(scope.Log.Initialize());
+        scope.Log.WriteRecord(Record("before outage"));
+
+        File.Move(scope.FilePath, $"{scope.FilePath}.displaced");
+        Directory.CreateDirectory(scope.FilePath);
+        scope.Log.WriteRecord(Record("during outage"));
+        Assert.Equal(1, CountReopenFailures(stderr));
+        scope.Log.Dispose();
+
+        Directory.Delete(scope.FilePath);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        scope.Log.WriteRecord(Record("after disposal"));
+
+        Assert.False(File.Exists(scope.FilePath));
+        Assert.Equal(1, CountReopenFailures(stderr));
+    }
+
+    [Fact]
     public void WriteRecord_AfterDispose_IsIgnoredRatherThanThrowing()
     {
         var scope = new TempLog();
@@ -418,6 +482,10 @@ public sealed class LogFileTests
 
         return count;
     }
+
+    private static int CountReopenFailures(StderrCapture stderr) => stderr.Text
+        .Split('\n')
+        .Count(line => line.Contains("failed to reopen log file", StringComparison.Ordinal));
 
     [Fact]
     public void Initialize_WhenTheClockPassesTheRetentionWindow_DeletesTheBackup()

@@ -20,6 +20,7 @@ internal sealed class LogFile : IDisposable
     public const int RetentionDays = 30;
 
     private const long BytesPerMegabyte = 1024L * 1024L;
+    private static readonly TimeSpan ReopenRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly string _logPath;
     private readonly long _rotationTriggerBytes;
@@ -28,6 +29,7 @@ internal sealed class LogFile : IDisposable
     private FileStream? _fileStream;
     private long _bytesWritten;
     private long _rotationRetryAtBytes;
+    private DateTimeOffset? _reopenRetryAt;
     private bool _disposed;
 
     /// <summary>Open a log file at the path the application supplied.</summary>
@@ -97,15 +99,30 @@ internal sealed class LogFile : IDisposable
     {
         lock (_lock)
         {
-            // Checked inside the lock: Dispose clears the stream under this same lock, so a
-            // check outside it can pass and then race a concurrent disposal.
-            if (_fileStream is null)
+            // Checked inside the lock so a pending recovery cannot reopen after disposal.
+            if (_disposed)
             {
                 return;
             }
 
             try
             {
+                if (_fileStream is null)
+                {
+                    // Only a failed rotation schedules recovery; writing before Initialize
+                    // still does nothing. Back off while access remains unavailable.
+                    if (_reopenRetryAt is null || _timeProvider.GetUtcNow() < _reopenRetryAt.Value)
+                    {
+                        return;
+                    }
+
+                    TryReopenAfterFailedRotation();
+                    if (_fileStream is null)
+                    {
+                        return;
+                    }
+                }
+
                 if (_bytesWritten > _rotationTriggerBytes && _bytesWritten >= _rotationRetryAtBytes)
                 {
                     Rotate();
@@ -314,7 +331,8 @@ internal sealed class LogFile : IDisposable
     /// <summary>
     /// Reopen after a failed rotation and back off: the file is still over the trigger, so
     /// without a retry threshold every following record would attempt the rotation again
-    /// and print the same failure to stderr.
+    /// and print the same failure to stderr. If reopening also fails, later writes retry
+    /// after a short delay so a temporary outage does not disable logging permanently.
     /// </summary>
     private void TryReopenAfterFailedRotation()
     {
@@ -328,9 +346,11 @@ internal sealed class LogFile : IDisposable
             _fileStream = OpenAppend(_logPath);
             _bytesWritten = _fileStream.Length;
             _rotationRetryAtBytes = _bytesWritten + _rotationTriggerBytes;
+            _reopenRetryAt = null;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            _reopenRetryAt = _timeProvider.GetUtcNow() + ReopenRetryDelay;
             StderrDiagnostics.Error(_logPath, $"failed to reopen log file: {ex.Message}");
         }
     }

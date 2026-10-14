@@ -341,6 +341,34 @@ public sealed class ResultFromExceptionTests
         Assert.NotNull(error.StackTrace);
     }
 
+    [Fact]
+    public void Try_WhenDerivedResultExceptionHasNoErrors_ReturnsFailure()
+    {
+        var exception = new EmptyResultException();
+
+        var result = Result.Try(() => throw exception);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal(Error.DefaultUserMessage, error.UserMessage);
+        Assert.Equal(error.UserMessage, exception.Message);
+    }
+
+    [Fact]
+    public void TryGeneric_WhenDerivedResultExceptionHasNoErrors_ReturnsFailure()
+    {
+        var exception = new EmptyResultException();
+
+        var result = Result.Try<int>(() => throw exception);
+
+        Assert.True(result.IsFailure);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal(Error.DefaultUserMessage, error.UserMessage);
+        Assert.Equal(error.UserMessage, exception.Message);
+    }
+
+    private sealed class EmptyResultException() : ResultException(Array.Empty<Error>());
+
     private static Exception Caught(Action throwing)
     {
         try

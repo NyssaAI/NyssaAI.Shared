@@ -19,10 +19,10 @@ public sealed class ConfigurationPublicationRecoveryTests
         var documents = new FailingPublicationFactory(new ConfigurationDocumentFactoryLocalFile(directory.Path));
         var key = RandomNumberGenerator.GetBytes(32);
         var recovery = new ConfigurationRecovery(key, "app", directory.Path);
-        var cipher = ConfigurationCipherAesGcm.Create(key).ThrowIfError();
+        var cipher = new CountingCipher(ConfigurationCipherAesGcm.Create(key).ThrowIfError());
         var store = ConfigurationStore.Create(documents, [new ConfigurationProviderLocalEncryption(cipher)], [], recovery: recovery).ThrowIfError();
         var token = TestContext.Current.CancellationToken;
-        (await store.SetAsync("mail", "A", "original", cancellationToken: token)).ThrowIfError();
+        (await store.SetAsync("mail", "A", "original", move ? null : "aesLocal", token)).ThrowIfError();
         documents.FailNext = true;
         ConfigurationRecoveryHandle? handle;
         ConfigurationOperationProgress? progress;
@@ -43,41 +43,27 @@ public sealed class ConfigurationPublicationRecoveryTests
         Assert.NotNull(handle);
         Assert.Equal(ConfigurationPublicationState.Failed, progress!.Publication);
         Assert.Equal("original", (await store.GetAsync("mail", "A", token)).ThrowIfError());
+        var sealsBeforeRecovery = cipher.Seals;
+        Assert.Equal(move ? 1 : 2, sealsBeforeRecovery);
         var result = (await store.RecoverAsync(handle, token)).ThrowIfError();
         Assert.Equal(ConfigurationRecoveryStatus.Completed, result.Status);
+        Assert.Equal(sealsBeforeRecovery, cipher.Seals);
+        var published = (await documents.Create("mail").ThrowIfError().ReadAsync(token)).ThrowIfError();
+        Assert.Equal(documents.FailedEntries!["A"], published["A"]);
         Assert.Equal(move ? "original" : "updated", (await store.GetAsync("mail", "A", token)).ThrowIfError());
         if (!move) Assert.Equal("new", (await store.GetAsync("mail", "B", token)).ThrowIfError());
     }
 
-    private sealed class FailingPublicationFactory : IConfigurationDocumentFactory
+    private sealed class CountingCipher(IConfigurationCipher inner) : IConfigurationCipher
     {
-        private readonly IConfigurationDocumentFactory _inner;
-        public bool FailNext { get; set; }
-        public FailingPublicationFactory(IConfigurationDocumentFactory inner) => _inner = inner;
-        public Result<IConfigurationDocument> Create(string @namespace)
+        public int Seals { get; private set; }
+
+        public Result<string> Seal(string value, string @namespace, string key)
         {
-            var opened = _inner.Create(@namespace);
-            return opened.IsFailure ? Result<IConfigurationDocument>.Failure(opened.Errors)
-                : Result<IConfigurationDocument>.Success(new FailingPublication(this, opened.Value));
+            Seals++;
+            return inner.Seal(value, @namespace, key);
         }
-        private sealed class FailingPublication : IConfigurationDocument
-        {
-            private readonly FailingPublicationFactory _owner;
-            private readonly IConfigurationDocument _inner;
-            public FailingPublication(FailingPublicationFactory owner, IConfigurationDocument inner) { _owner = owner; _inner = inner; }
-            public ValueTask<Result<IReadOnlyDictionary<string, ConfigurationValue>>> ReadAsync(CancellationToken cancellationToken = default) =>
-                _inner.ReadAsync(cancellationToken);
-            public ValueTask<Result> ModifyAsync(Func<IDictionary<string, ConfigurationValue>, ValueTask<Result>> change, CancellationToken cancellationToken = default) =>
-                _inner.ModifyAsync(async entries =>
-                {
-                    var changed = await change(entries);
-                    if (changed.IsSuccess && _owner.FailNext)
-                    {
-                        _owner.FailNext = false;
-                        return Result.Failure(Error.FromMessage("Publication failed", ErrorCategory.Unavailable));
-                    }
-                    return changed;
-                }, cancellationToken);
-        }
+
+        public Result<string> Open(string value, string @namespace, string key) => inner.Open(value, @namespace, key);
     }
 }

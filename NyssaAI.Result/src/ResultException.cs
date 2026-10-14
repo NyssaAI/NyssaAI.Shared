@@ -6,9 +6,14 @@ public class ResultException : Exception
 {
     /// <summary>Creates a specialized Result exception while preserving an immutable snapshot of its errors.</summary>
     protected internal ResultException(IReadOnlyList<Error> errors)
+        : this(Error.AtLeastOne(errors).ToArray())
+    {
+    }
+
+    private ResultException(Error[] errors)
         : base(string.Join(Environment.NewLine, errors.Select(error => error.UserMessage)))
     {
-        Errors = Array.AsReadOnly(errors.ToArray());
+        Errors = Array.AsReadOnly(errors);
     }
 
     /// <summary>Gets an immutable snapshot of every original error, preserving order, messages, categories, and captured stack text.</summary>

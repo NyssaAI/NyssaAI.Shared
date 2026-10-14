@@ -9,7 +9,7 @@
     <RootNamespace>NyssaAI.Configuration</RootNamespace>
     <ClientContractFile>IConfiguration.cs</ClientContractFile>
     <ExtensionContractFile>IConfigurationExtensions.cs</ExtensionContractFile>
-    <Version>7.1.0</Version>
+    <Version>7.1.1</Version>
     <Authors>jamaynor</Authors>
     <Description>Manifest-based configuration, typed settings, local encryption, OAuth, and vault provider contracts.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>

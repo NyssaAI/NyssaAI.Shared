@@ -31,6 +31,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     private readonly IReadOnlyDictionary<string, ProviderCredential> _credentials;
     private readonly ILogger? _logger;
     private readonly IRecovery? _recovery;
+    private readonly AsyncLocal<(string Provider, string Token)?> _removalCredential = new();
 
     /// <summary>Creates a store over one document factory with no providers; every entry is a literal.</summary>
     /// <param name="documents">The factory that opens a namespace's document.</param>
@@ -119,6 +120,13 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     /// </returns>
     public async ValueTask<Result<string>> ResolveCredentialAsync(string provider, CancellationToken cancellationToken = default)
     {
+        // Removal prepares its token before taking the document lock. Only that async operation
+        // may reuse it; asking the document again here would acquire the same lock recursively.
+        if (_removalCredential.Value is { } prepared && prepared.Provider == provider)
+            return cancellationToken.IsCancellationRequested
+                ? Result<string>.Failure(Error.Canceled(new OperationCanceledException(cancellationToken)))
+                : Result<string>.Success(prepared.Token);
+
         if (!_credentials.TryGetValue(provider, out var credential))
             return Result<string>.Failure(ProviderHasNoCredential(provider));
 
@@ -442,27 +450,55 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         var removal = new ConfigurationRemoval { RemoteValueRemains = false };
         try
         {
+            var read = await document.Value.ReadAsync(cancellationToken).ConfigureAwait(false);
+            if (read.IsFailure)
+                return Result<ConfigurationRemoval>.Failure(read.Errors);
+            if (!read.Value.TryGetValue(key, out var expected))
+                return Result<ConfigurationRemoval>.Success(removal);
+
+            var circular = CheckCircular(expected.Provider, @namespace, key);
+            if (circular.IsFailure)
+                return Result<ConfigurationRemoval>.Failure(circular.Errors);
+
+            // A colocated OAuth credential may need its own locked refresh and publication.
+            // Finish that first, then keep remote deletion and pointer removal under exclusion.
+            (string Provider, string Token)? preparedCredential = null;
+            if (_credentials.ContainsKey(expected.Provider))
+            {
+                var credential = await ResolveCredentialAsync(expected.Provider, cancellationToken).ConfigureAwait(false);
+                if (credential.IsFailure)
+                    return Result<ConfigurationRemoval>.Failure(credential.Errors);
+                preparedCredential = (expected.Provider, credential.Value);
+            }
+
             var modified = await document.Value.ModifyAsync(
                 async entries =>
                 {
                     if (!entries.TryGetValue(key, out var entry))
                         return Result.Success();
+                    if (entry != expected)
+                        return Result.Failure(RemovalEntryChanged(@namespace, key));
 
                     if (!entry.IsLiteral)
                     {
-                        var circular = CheckCircular(entry.Provider, @namespace, key);
-                        if (circular.IsFailure)
-                            return circular;
-
                         var provider = GetProvider(entry.Provider);
                         if (provider.IsFailure)
                             return Result.Failure(provider.Errors);
 
-                        var erased = await provider.Value.EraseAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
-                        if (erased.IsFailure)
-                            return Result.Failure(erased.Errors);
-
-                        removal = erased.Value;
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var previousCredential = _removalCredential.Value;
+                        _removalCredential.Value = preparedCredential;
+                        try
+                        {
+                            var erased = await provider.Value.EraseAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
+                            if (erased.IsFailure)
+                                return Result.Failure(erased.Errors);
+                            removal = erased.Value;
+                        }
+                        finally
+                        {
+                            _removalCredential.Value = previousCredential;
+                        }
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
@@ -651,6 +687,11 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         "The configuration entry was not found.",
         $"No configuration entry exists at '{@namespace}/{key}'.",
         ErrorCategory.NotFound);
+
+    private static Error RemovalEntryChanged(string @namespace, string key) => Error.FromMessages(
+        "The configuration entry changed before it could be removed. Try again.",
+        $"Configuration entry '{@namespace}/{key}' changed while preparing removal.",
+        ErrorCategory.Conflict);
 
     /// <summary>The failure returned when a write names a provider other than the entry's own.</summary>
     /// <param name="namespace">The namespace holding the value.</param>
