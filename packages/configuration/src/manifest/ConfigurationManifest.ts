@@ -23,9 +23,9 @@ export interface VaultOptions {
 }
 
 export interface ApplicationManifestEntry {
-  readonly configurationDirectory?: string;
-  readonly lockTimeout?: string;
-  readonly keyVault?: VaultOptions;
+  readonly configurationDirectory?: string | undefined;
+  readonly lockTimeout?: string | undefined;
+  readonly keyVault?: VaultOptions | undefined;
 }
 
 export interface ConfigurationManifest {

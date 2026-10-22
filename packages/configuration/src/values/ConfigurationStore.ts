@@ -17,12 +17,12 @@ import type { IConfigurationCipher } from "../encryption/IConfigurationCipher.js
 export class ConfigurationStore {
   private readonly _configurationDirectory: string;
   private readonly _lockTimeoutMs: number;
-  private readonly _cipher?: IConfigurationCipher;
+  private readonly _cipher?: IConfigurationCipher | undefined;
 
   public constructor(
     configurationDirectory: string,
     lockTimeoutMs: number = 10000,
-    cipher?: IConfigurationCipher
+    cipher?: IConfigurationCipher | undefined
   ) {
     this._configurationDirectory = path.resolve(configurationDirectory);
     this._lockTimeoutMs = lockTimeoutMs;
