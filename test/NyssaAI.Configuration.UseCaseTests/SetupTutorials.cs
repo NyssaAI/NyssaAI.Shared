@@ -717,4 +717,61 @@ public sealed class SetupTutorials
             Assert.Empty(workstation.VaultPackage.Created);
         }
     }
+
+    /// <summary>UC-018, Windows failure case. A manifest that carries secrets and grants read access to
+    /// Everyone is refused at startup — naming the ACL remediation command and never the secret itself.
+    /// </summary>
+    [Fact(Skip = "Windows ACLs are unavailable on non-Windows platforms.", SkipUnless = nameof(IsWindows))]
+    public void AddNyssaConfiguration_EveryoneReadableSecrets_ThrowsWithoutExposingSecret()
+    {
+        // Arrange
+        using (var workstation = new Workstation())
+        {
+            workstation.VaultPackage = new FakeVaultFactory();
+            workstation.WriteManifest(
+                """
+                {
+                  "version": 1,
+                  "applications": {
+                    "SomeApp-cli": {
+                      "configurationDirectory": "SomeApp-cli",
+                      "keyVault": { "name": "contoso", "kind": "fake", "secrets": { "clientSecret": "fictional-client-secret" } }
+                    }
+                  }
+                }
+                """
+            );
+            if (OperatingSystem.IsWindows())
+            {
+                var info = new FileInfo(workstation.ManifestPath);
+                var security = info.GetAccessControl();
+                security.AddAccessRule(
+                    new System.Security.AccessControl.FileSystemAccessRule(
+                        new System.Security.Principal.SecurityIdentifier(
+                            System.Security.Principal.WellKnownSidType.WorldSid,
+                            null
+                        ),
+                        System.Security.AccessControl.FileSystemRights.Read,
+                        System.Security.AccessControl.AccessControlType.Allow
+                    )
+                );
+                info.SetAccessControl(security);
+            }
+
+            // Act
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(workstation.Locate);
+            workstation.StartApplication(services);
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+                workstation.Host.GetRequiredService<IConfiguration>()
+            );
+
+            // Assert
+            Assert.Contains("readable", failure.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("icacls", failure.Message, StringComparison.Ordinal);
+            Assert.Contains(workstation.ManifestPath, failure.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("fictional-client-secret", failure.Message, StringComparison.Ordinal);
+            Assert.Empty(workstation.VaultPackage.Created);
+        }
+    }
 }

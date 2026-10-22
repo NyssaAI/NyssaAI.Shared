@@ -97,6 +97,38 @@ public sealed class DirectorySafetyTests
         Assert.Equal(ErrorCategory.Forbidden, Assert.Single(created.Errors).Category);
     }
 
+    [Fact]
+    public void VerifyPrivateFile_WhenEveryoneCanRead_IsRefusedNamingTheFix()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Grants a Windows ACL; the Unix path is mode-based.");
+        if (!OperatingSystem.IsWindows()) { return; }
+
+        using var directory = new TemporaryDirectory();
+        var filePath = Path.Combine(directory.Path, "config-manifest.json");
+        File.WriteAllText(filePath, "{}");
+        GrantEveryoneRead(filePath);
+
+        var verified = DirectorySafety.VerifyPrivateFile(filePath);
+
+        Assert.True(verified.IsFailure);
+        var error = Assert.Single(verified.Errors);
+        Assert.Equal(ErrorCategory.Forbidden, error.Category);
+        Assert.Contains("is readable by", error.TechnicalMessage, StringComparison.Ordinal);
+        Assert.Contains("icacls", error.TechnicalMessage, StringComparison.Ordinal);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void GrantEveryoneRead(string path)
+    {
+        var info = new FileInfo(path);
+        var security = FileSystemAclExtensions.GetAccessControl(info);
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+            FileSystemRights.ReadData,
+            AccessControlType.Allow));
+        FileSystemAclExtensions.SetAccessControl(info, security);
+    }
+
     [SupportedOSPlatform("windows")]
     private static void GrantEveryoneWrite(string path)
     {
