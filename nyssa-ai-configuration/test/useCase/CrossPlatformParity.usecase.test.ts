@@ -4,6 +4,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
 import { ConfigurationCipherAesGcm } from "../../src/encryption/ConfigurationCipherAesGcm.js";
+import { ProtectedFileSystem } from "../../src/fileSecurity/ProtectedFileSystem.js";
+import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
 
 describe("CrossPlatformParity", () => {
   let tempDir: string;
@@ -47,7 +49,7 @@ describe("CrossPlatformParity", () => {
 
   it("crossPlatformParity_dotNetManifestAndNamespaceLayout_readsCorrectly", async () => {
     // Simulate a manifest and namespace file written by .NET
-    fs.mkdirSync(configDir, { recursive: true });
+    expect(ProtectedFileSystem.createDirectory(configDir).ok).toBe(true);
 
     const dotNetManifest = {
       version: 1,
@@ -58,7 +60,7 @@ describe("CrossPlatformParity", () => {
         }
       }
     };
-    fs.writeFileSync(manifestPath, JSON.stringify(dotNetManifest, null, 2), "utf8");
+    expect(ProtectedFileSystem.createFile(manifestPath, JSON.stringify(dotNetManifest, null, 2)).ok).toBe(true);
 
     // Raw .NET namespace JSON with polymorphic values
     const dotNetNamespace = {
@@ -72,16 +74,18 @@ describe("CrossPlatformParity", () => {
         value: true
       }
     };
-    fs.writeFileSync(
-      path.join(configDir, "settings.json"),
-      JSON.stringify(dotNetNamespace, null, 2),
-      "utf8"
-    );
+    expect(
+      ProtectedFileSystem.createFile(
+        path.join(configDir, "settings.json"),
+        JSON.stringify(dotNetNamespace, null, 2)
+      ).ok
+    ).toBe(true);
 
     // Initialize Node client pointing to the existing .NET store
     const clientRes = await ConfigurationClient.initialize({
       applicationName: "DotNetApp",
-      configManifest: manifestPath
+      configManifest: manifestPath,
+      keyring: new InMemoryKeyring()
     });
 
     expect(clientRes.ok).toBe(true);

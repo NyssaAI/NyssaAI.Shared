@@ -1,9 +1,15 @@
 // Responsibility: Seal and open configuration values using AES-256-GCM matching .NET ConfigurationCipherAesGcm.
 // Public interface:
-// +-- ConfigurationCipherAesGcm
-// |   +-- create(key)
-// |   +-- open(value, namespace, key)
-// |   `-- seal(value, namespace, key)
+// `-- ConfigurationCipherAesGcm
+//     +-- FORMAT_VERSION
+//     +-- HEADER_LENGTH
+//     +-- KEY_LENGTH
+//     +-- NONCE_LENGTH
+//     +-- TAG_LENGTH
+//     +-- buildAssociatedData(namespace, key)
+//     +-- create(key)
+//     +-- open(value, namespace, key)
+//     `-- seal(value, namespace, key)
 
 import * as crypto from "node:crypto";
 import { ok, fail, type Result } from "../results/Result.js";
@@ -15,7 +21,7 @@ import type { IConfigurationCipher } from "./IConfigurationCipher.js";
  * AAD: [0x02, int32BE(nsLen), nsBytes, int32BE(keyLen), keyBytes].
  * Serialized output: Base64URL( [0x02, nonce(12), tag(16), ciphertext] ).
  */
-export class ConfigurationCipherAesGcm implements IConfigurationCipher {
+export class ConfigurationCipherAesGcm {
   public static readonly FORMAT_VERSION = 2;
   public static readonly NONCE_LENGTH = 12;
   public static readonly TAG_LENGTH = 16;
@@ -33,7 +39,7 @@ export class ConfigurationCipherAesGcm implements IConfigurationCipher {
    */
   public static create(key: Buffer | Uint8Array): Result<ConfigurationCipherAesGcm> {
     if (!key || key.length !== this.KEY_LENGTH) {
-      return fail(`AES-256 requires a 32-byte key; ${key ? key.length : 0} bytes supplied.`);
+      return fail(`AES-256 requires a 32-byte key; ${key ? key.length : 0} bytes supplied.`, "Validation");
     }
 
     return ok(new ConfigurationCipherAesGcm(Buffer.from(key)));
@@ -88,7 +94,7 @@ export class ConfigurationCipherAesGcm implements IConfigurationCipher {
       return ok(base64url);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to seal configuration value: ${message}`);
+      return fail(`Failed to seal configuration value: ${message}`, "Unexpected");
     }
   }
 
@@ -104,7 +110,7 @@ export class ConfigurationCipherAesGcm implements IConfigurationCipher {
         payload.length < ConfigurationCipherAesGcm.HEADER_LENGTH ||
         payload[0] !== ConfigurationCipherAesGcm.FORMAT_VERSION
       ) {
-        return fail("The sealed value is not a well-formed version 2 AES-256-GCM payload.");
+        return fail("The sealed value is not a well-formed version 2 AES-256-GCM payload.", "Validation");
       }
 
       const nonce = payload.subarray(1, 1 + ConfigurationCipherAesGcm.NONCE_LENGTH);
@@ -123,8 +129,12 @@ export class ConfigurationCipherAesGcm implements IConfigurationCipher {
       return ok(plaintext.toString("utf8"));
     } catch {
       return fail(
-        "The sealed value failed authentication: it was altered, or sealed against a different namespace and key."
+        "The sealed value failed authentication: it was altered, or sealed against a different namespace and key.",
+        "Validation"
       );
     }
   }
 }
+
+const _typeCheck: IConfigurationCipher = null as unknown as ConfigurationCipherAesGcm;
+void _typeCheck;

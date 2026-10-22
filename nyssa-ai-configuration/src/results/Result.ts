@@ -1,11 +1,15 @@
 // Responsibility: Represent success or a caller-actionable failure without exception control flow.
 // Public interface:
 // +-- Result
+// |   +-- category
 // |   +-- error
 // |   +-- ok
+// |   +-- recoveryHandle
 // |   `-- value
-// +-- fail(error)
+// +-- fail(error, category, recoveryHandle)
 // `-- ok(value)
+
+import type { ConfigurationWriteRecoveryHandle } from "../recovery/ConfigurationWriteRecoveryHandle.js";
 
 /**
  * Result holds exactly one outcome; narrow ok before accessing value or error.
@@ -22,6 +26,17 @@ export type Result<T> =
       readonly ok: false;
       /** error is this sample's stable caller-actionable validation code or message. */
       readonly error: string;
+      /** category classifies the failure for structured caller handling. */
+      readonly category?:
+        | "NotFound"
+        | "Validation"
+        | "Conflict"
+        | "Unauthorized"
+        | "Forbidden"
+        | "Unavailable"
+        | "Unexpected";
+      /** recoveryHandle is attached when a multi-step write failed after recording a recovery journal. */
+      readonly recoveryHandle?: ConfigurationWriteRecoveryHandle;
     };
 
 /**
@@ -34,6 +49,22 @@ export function ok<T>(value: T): Result<T> {
 /**
  * fail carries a stable failure message or code in a Result.
  */
-export function fail<T = never>(error: string): Result<T> {
-  return { ok: false, error };
+export function fail<T = never>(
+  error: string,
+  category?:
+    | "NotFound"
+    | "Validation"
+    | "Conflict"
+    | "Unauthorized"
+    | "Forbidden"
+    | "Unavailable"
+    | "Unexpected",
+  recoveryHandle?: ConfigurationWriteRecoveryHandle
+): Result<T> {
+  return {
+    ok: false,
+    error,
+    ...(category !== undefined ? { category } : {}),
+    ...(recoveryHandle !== undefined ? { recoveryHandle } : {})
+  };
 }

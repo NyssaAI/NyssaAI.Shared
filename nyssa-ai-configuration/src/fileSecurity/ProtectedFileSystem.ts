@@ -1,8 +1,8 @@
 // Responsibility: Create directories and files protected to the current user account across POSIX and Windows.
 // Public interface:
-// +-- ProtectedFileSystem
-// |   +-- createFile(filePath, content)
-// |   `-- createDirectory(directoryPath)
+// `-- ProtectedFileSystem
+//     +-- createDirectory(directoryPath)
+//     `-- createFile(filePath, content)
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -22,7 +22,7 @@ export class ProtectedFileSystem {
    */
   public static createDirectory(directoryPath: string): Result<string> {
     if (!directoryPath || directoryPath.trim().length === 0) {
-      return fail("Directory path cannot be blank.");
+      return fail("Directory path cannot be blank.", "Validation");
     }
 
     try {
@@ -31,7 +31,7 @@ export class ProtectedFileSystem {
         fs.mkdirSync(resolved, { recursive: true, mode: this.DIRECTORY_MODE_POSIX });
 
         if (process.platform === "win32") {
-          this.protectWindowsDirectory(resolved);
+          this.protectWindowsPath(resolved, true);
         } else {
           try {
             fs.chmodSync(resolved, this.DIRECTORY_MODE_POSIX);
@@ -44,7 +44,7 @@ export class ProtectedFileSystem {
       return ok(resolved);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to create protected directory '${directoryPath}': ${message}`);
+      return fail(`Failed to create protected directory '${directoryPath}': ${message}`, "Forbidden");
     }
   }
 
@@ -53,7 +53,7 @@ export class ProtectedFileSystem {
    */
   public static createFile(filePath: string, content: string): Result<string> {
     if (!filePath || filePath.trim().length === 0) {
-      return fail("File path cannot be blank.");
+      return fail("File path cannot be blank.", "Validation");
     }
 
     try {
@@ -70,7 +70,9 @@ export class ProtectedFileSystem {
         flag: "w"
       });
 
-      if (process.platform !== "win32") {
+      if (process.platform === "win32") {
+        this.protectWindowsPath(resolved, false);
+      } else {
         try {
           fs.chmodSync(resolved, this.FILE_MODE_POSIX);
         } catch {
@@ -81,26 +83,30 @@ export class ProtectedFileSystem {
       return ok(resolved);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to create protected file '${filePath}': ${message}`);
+      return fail(`Failed to write '${filePath}': ${message}`, "Forbidden");
     }
   }
 
-  private static protectWindowsDirectory(dirPath: string): void {
+  private static protectWindowsPath(targetPath: string, isDirectory: boolean): void {
     try {
       const username = process.env["USERNAME"] || process.env["USER"];
       if (!username) return;
 
-      // icacls: strip inheritance (/inheritance:r) and grant current user Full Control
-      execFileSync("icacls.exe", [
-        dirPath,
-        "/inheritance:r",
-        "/grant:r",
-        `${username}:(OI)(CI)F`,
-        "/grant:r",
-        "SYSTEM:(OI)(CI)F",
-        "/grant:r",
-        "Administrators:(OI)(CI)F"
-      ], { stdio: "ignore" });
+      const grantFlag = isDirectory ? "(OI)(CI)F" : "F";
+      execFileSync(
+        "icacls.exe",
+        [
+          targetPath,
+          "/inheritance:r",
+          "/grant:r",
+          `${username}:${grantFlag}`,
+          "/grant:r",
+          `SYSTEM:${grantFlag}`,
+          "/grant:r",
+          `Administrators:${grantFlag}`
+        ],
+        { stdio: "ignore" }
+      );
     } catch {
       // Best-effort ACL stripping on Windows if icacls fails or in non-admin context
     }

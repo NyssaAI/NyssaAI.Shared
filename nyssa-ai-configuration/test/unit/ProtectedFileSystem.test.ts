@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { execFileSync } from "node:child_process";
 import { ProtectedFileSystem } from "../../src/fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "../../src/fileSecurity/DirectorySafety.js";
 
@@ -54,5 +55,58 @@ describe("ProtectedFileSystem and DirectorySafety", () => {
 
     const verifyRes = DirectorySafety.verify(targetDir);
     expect(verifyRes.ok).toBe(true);
+  });
+
+  it("directorySafety_absentOrBlankDirectory_verifiesSuccessfully", () => {
+    const absentDir = path.join(tempDir, "absent-dir");
+    expect(DirectorySafety.verify(absentDir).ok).toBe(true);
+    expect(DirectorySafety.verify("").ok).toBe(true);
+    expect(DirectorySafety.verify("   ").ok).toBe(true);
+  });
+
+  it("directorySafety_worldWritableDirectory_failsWithRemediation", () => {
+    const targetDir = path.join(tempDir, "unsafe-dir");
+    ProtectedFileSystem.createDirectory(targetDir);
+
+    if (process.platform === "win32") {
+      execFileSync("icacls.exe", [targetDir, "/grant", "*S-1-1-0:(W)"], { stdio: "ignore" });
+    } else {
+      fs.chmodSync(targetDir, 0o777);
+    }
+
+    const verifyRes = DirectorySafety.verify(targetDir);
+    expect(verifyRes.ok).toBe(false);
+    if (!verifyRes.ok) {
+      expect(verifyRes.category).toBe("Forbidden");
+      expect(verifyRes.error).toContain("writable by");
+      if (process.platform === "win32") {
+        expect(verifyRes.error).toContain("icacls");
+      } else {
+        expect(verifyRes.error).toContain("chmod");
+      }
+    }
+  });
+
+  it("directorySafety_privateFileReadableByOthers_failsWithRemediation", () => {
+    const filePath = path.join(tempDir, "config-manifest.json");
+    ProtectedFileSystem.createFile(filePath, "{}");
+
+    if (process.platform === "win32") {
+      execFileSync("icacls.exe", [filePath, "/grant", "*S-1-1-0:(R)"], { stdio: "ignore" });
+    } else {
+      fs.chmodSync(filePath, 0o644);
+    }
+
+    const verifyRes = DirectorySafety.verifyPrivateFile(filePath);
+    expect(verifyRes.ok).toBe(false);
+    if (!verifyRes.ok) {
+      expect(verifyRes.category).toBe("Forbidden");
+      expect(verifyRes.error).toContain("is readable by");
+      if (process.platform === "win32") {
+        expect(verifyRes.error).toContain("icacls");
+      } else {
+        expect(verifyRes.error).toContain("chmod 600");
+      }
+    }
   });
 });

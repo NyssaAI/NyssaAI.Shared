@@ -58,4 +58,24 @@ describe("ConfigurationCipherAesGcm", () => {
     const openRes = cipher.value.open(tampered, "ns", "k");
     expect(openRes.ok).toBe(false);
   });
+
+  it("cipherAesGcm_differentUserKey_failsAuthentication", () => {
+    const userAKey = crypto.randomBytes(32);
+    const userBKey = crypto.randomBytes(32);
+
+    const cipherA = ConfigurationCipherAesGcm.create(userAKey);
+    const cipherB = ConfigurationCipherAesGcm.create(userBKey);
+    expect(cipherA.ok && cipherB.ok).toBe(true);
+    if (!cipherA.ok || !cipherB.ok) return;
+
+    const sealedByA = cipherA.value.seal("user-a-private-secret", "mail", "password");
+    expect(sealedByA.ok).toBe(true);
+    if (!sealedByA.ok) return;
+
+    const openedByB = cipherB.value.open(sealedByA.value, "mail", "password");
+    expect(openedByB.ok).toBe(false);
+    if (!openedByB.ok) {
+      expect(openedByB.error).not.toContain("user-a-private-secret");
+    }
+  });
 });

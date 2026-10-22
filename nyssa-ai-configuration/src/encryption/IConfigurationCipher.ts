@@ -1,8 +1,8 @@
 // Responsibility: Define the contract for ciphers sealing and opening configuration values.
 // Public interface:
-// +-- IConfigurationCipher
-// |   +-- open(value, namespace, key)
-// |   `-- seal(value, namespace, key)
+// `-- IConfigurationCipher
+//     +-- open(value, namespace, key)
+//     `-- seal(value, namespace, key)
 
 import { type Result } from "../results/Result.js";
 

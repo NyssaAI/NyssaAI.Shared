@@ -1,33 +1,13 @@
 // Responsibility: Contract for operational boundary logging complying with TS-LOG.
 // Public interface:
-// +-- IConfigurationLogger
-// |   `-- log(record)
-// `-- LogRecord
-//     +-- correlationId
-//     +-- durationMs
-//     +-- error
-//     +-- event
-//     +-- level
-//     +-- operation
-//     +-- service
-//     +-- timestamp
-//     `-- version
+// `-- IConfigurationLogger
+//     `-- log(record)
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
+import type { LogRecord } from "./LogRecord.js";
 
-export interface LogRecord {
-  readonly timestamp: string;
-  readonly level: LogLevel;
-  readonly event: string;
-  readonly service: string;
-  readonly version: string;
-  readonly operation: string;
-  readonly correlationId: string;
-  readonly durationMs?: number;
-  readonly error?: string;
-  readonly [key: string]: unknown;
-}
-
+/**
+ * IConfigurationLogger receives structured operational log records from ConfigurationClient.
+ */
 export interface IConfigurationLogger {
   /**
    * Emits a structured log record. Must never throw or interrupt domain flow.

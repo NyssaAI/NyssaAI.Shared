@@ -3,7 +3,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
-import type { IConfigurationLogger, LogRecord } from "../../src/logging/IConfigurationLogger.js";
+import type { IConfigurationLogger } from "../../src/logging/IConfigurationLogger.js";
+import type { LogRecord } from "../../src/logging/LogRecord.js";
+import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
 
 describe("ConfigurationClient Public Use-Case Workflow", () => {
   let tempDir: string;
@@ -33,11 +35,14 @@ describe("ConfigurationClient Public Use-Case Workflow", () => {
   });
 
   it("configurationClient_endToEndWorkflow_persistsAndRetrievesSettings", async () => {
+    const keyring = new InMemoryKeyring();
+
     // Arrange: Initialize client with custom manifest and config directories
     const clientRes = await ConfigurationClient.initialize({
       applicationName: "Cool-CLI",
       configManifest: manifestPath,
       configDirectory: configDir,
+      keyring,
       logger: testLogger
     });
 
@@ -71,6 +76,7 @@ describe("ConfigurationClient Public Use-Case Workflow", () => {
     const freshClientRes = await ConfigurationClient.initialize({
       applicationName: "Cool-CLI",
       configManifest: manifestPath,
+      keyring,
       logger: testLogger
     });
     expect(freshClientRes.ok).toBe(true);

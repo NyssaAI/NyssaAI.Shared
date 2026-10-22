@@ -3,12 +3,16 @@
   "version": "0.2.0",
   "description": "Secure, cross-process locked, AES-256-GCM encrypted configuration storage matching NyssaAI.Configuration",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/ConfigurationClient.js",
+  "types": "./dist/ConfigurationClient.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/ConfigurationClient.js",
+      "types": "./dist/ConfigurationClient.d.ts"
+    },
+    "./*": {
+      "import": "./dist/*.js",
+      "types": "./dist/*.d.ts"
     }
   },
   "scripts": {

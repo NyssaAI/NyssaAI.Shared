@@ -1,34 +1,15 @@
-// Responsibility: Data contracts representing the on-disk shape of ~/.nyssa-ai/config-manifest.json.
+// Responsibility: Data contract representing the on-disk shape of ~/.nyssa-ai/config-manifest.json.
 // Public interface:
-// +-- ApplicationManifestEntry
-// |   +-- configurationDirectory
-// |   +-- keyVault
-// |   `-- lockTimeout
-// +-- ConfigurationManifest
-// |   +-- applications
-// |   `-- version
-// `-- VaultOptions
-//     +-- endpoint
-//     +-- kind
-//     +-- name
-//     +-- secrets
-//     `-- settings
+// `-- ConfigurationManifest
+//     +-- applications
+//     `-- version
 
-export interface VaultOptions {
-  readonly name: string;
-  readonly kind: string;
-  readonly endpoint?: string;
-  readonly settings?: Readonly<Record<string, string>>;
-  readonly secrets?: Readonly<Record<string, string>>;
-}
+import type { ApplicationManifestEntry } from "./ApplicationManifestEntry.js";
 
-export interface ApplicationManifestEntry {
-  readonly configurationDirectory?: string | undefined;
-  readonly lockTimeout?: string | undefined;
-  readonly keyVault?: VaultOptions | undefined;
-}
-
+/**
+ * ConfigurationManifest models the root JSON document at ~/.nyssa-ai/config-manifest.json.
+ */
 export interface ConfigurationManifest {
   readonly version: number;
-  readonly applications?: Readonly<Record<string, ApplicationManifestEntry>>;
+  readonly applications?: Readonly<Record<string, ApplicationManifestEntry>> | undefined;
 }

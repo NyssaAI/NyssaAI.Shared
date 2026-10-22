@@ -1,11 +1,11 @@
 // Responsibility: Data contract for one stored configuration value matching .NET ConfigurationValue.
 // Public interface:
-// +-- ConfigurationValue
-// |   +-- encrypted
-// |   +-- json
-// |   +-- provider
-// |   +-- reauth_required
-// |   `-- value
+// `-- ConfigurationValue
+//     +-- encrypted
+//     +-- json
+//     +-- provider
+//     +-- reauth_required
+//     `-- value
 
 /**
  * ConfigurationValue models a single setting entry in a namespace document.
