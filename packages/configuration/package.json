@@ -1,0 +1,36 @@
+{
+  "name": "@nyssa-ai/configuration",
+  "version": "0.1.0",
+  "description": "Secure, cross-process locked, AES-256-GCM encrypted configuration storage matching NyssaAI.Configuration",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:usecase": "vitest run test/useCase",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "configuration",
+    "security",
+    "secrets",
+    "encryption",
+    "aes-gcm",
+    "keyring"
+  ],
+  "author": "NyssaAI",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}
