@@ -28,7 +28,7 @@ import type { IConfigurationLogger, LogRecord, LogLevel } from "./logging/IConfi
  * master key custody, and cross-process namespace documents.
  */
 export class ConfigurationClient implements IConfiguration {
-  private static readonly CLIENT_VERSION = "0.1.0";
+  private static readonly CLIENT_VERSION = "0.2.0";
 
   private readonly _applicationName: string;
   private readonly _configurationDirectory: string;

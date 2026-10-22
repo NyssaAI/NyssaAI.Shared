@@ -9,7 +9,7 @@
     <AssemblyName>NyssaAI.Repository</AssemblyName>
     <RootNamespace>NyssaAI.Repository</RootNamespace>
     <ClientContractFile>IRepository.cs</ClientContractFile>
-    <Version>7.1.1</Version>
+    <Version>0.2.0</Version>
     <Authors>jamaynor</Authors>
     <Description>Typed database commands, caller-owned sessions and transactions, and explicit schema migrations for SQLite and PostgreSQL.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
