@@ -344,4 +344,40 @@ public sealed class OAuthTutorials
             Assert.Equal(0, browserLaunchesAfterRecovery);
         }
     }
+
+    /// <summary>UC-006 (F-202). Removing an authorized OAuth credential withdraws the local grant and reports
+    /// RemoteValueRemains = false, causing subsequent reads to fail as NotFound.
+    /// </summary>
+    [Fact]
+    public async Task RemoveAsync_AuthorizedCredential_RemovesEntryAndReturnsRemoteValueRemainsFalseAsync()
+    {
+        // Arrange
+        using (var workstation = new Workstation())
+        {
+            var cancellationToken = TestContext.Current.CancellationToken;
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(workstation.Locate);
+            workstation.StartApplication(services);
+            var extensions = workstation.Host.GetRequiredService<IConfigurationExtensions>();
+            var configuration = workstation.Host.GetRequiredService<IConfiguration>();
+            var authorized = await extensions.AuthorizeAsync(
+                "mail",
+                "token",
+                FakeAuthorizationServer.Options("mail.read"),
+                cancellationToken
+            );
+            authorized.ThrowIfError();
+
+            // Act
+            var removal = await configuration.RemoveAsync("mail", "token", cancellationToken);
+            var missing = await Assert.ThrowsAsync<ResultException>(async () =>
+            {
+                await configuration.GetAsync("mail", "token", cancellationToken);
+            });
+
+            // Assert
+            Assert.False(removal.RemoteValueRemains);
+            Assert.Equal(ErrorCategory.NotFound, Assert.Single(missing.Errors).Category);
+        }
+    }
 }

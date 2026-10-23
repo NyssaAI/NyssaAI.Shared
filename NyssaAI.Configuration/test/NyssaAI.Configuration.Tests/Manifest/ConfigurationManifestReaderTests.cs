@@ -215,6 +215,36 @@ public sealed class ConfigurationManifestReaderTests
         Assert.DoesNotContain("fictional", read.Errors[0].UserMessage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ReadApplication_WithSecretsInAnEveryoneReadableFile_IsRefusedNamingTheFixAndNeverTheSecret()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Windows ACL check.");
+            return;
+        }
+
+        using var home = new TemporaryDirectory();
+        var path = Write(home.Path, SecretsManifest);
+        var info = new FileInfo(path);
+        var security = info.GetAccessControl();
+        security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+            new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.WorldSid, null),
+            System.Security.AccessControl.FileSystemRights.Read,
+            System.Security.AccessControl.AccessControlType.Allow));
+        info.SetAccessControl(security);
+
+        var read = ConfigurationManifestReader.ReadApplication(path, "tool");
+
+        Assert.True(read.IsFailure);
+        Assert.Equal(ErrorCategory.Forbidden, Assert.Single(read.Errors).Category);
+        Assert.Contains("readable", read.Errors[0].TechnicalMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("icacls", read.Errors[0].TechnicalMessage, StringComparison.Ordinal);
+        Assert.Contains(path, read.Errors[0].TechnicalMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("fictional", read.Errors[0].TechnicalMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("fictional", read.Errors[0].UserMessage, StringComparison.Ordinal);
+    }
+
     private const string SecretsManifest = """
         {
           "version": 1,

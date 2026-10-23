@@ -72,17 +72,14 @@ public sealed class ConfigurationManifestWriterTests
     [Fact]
     public void SetConfigurationDirectory_LeavesThePublishedFilePrivate()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Skip("Privacy is expressed as POSIX mode bits here.");
-            return;
-        }
-
         using var home = new TemporaryDirectory();
         var path = ConfigurationManifestReader.DefaultPathFor(home.Path);
 
         ConfigurationManifestWriter.SetConfigurationDirectory(path, "tool", home.Path);
 
-        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+        var privateFile = NyssaAI.Configuration.FileSecurity.DirectorySafety.VerifyPrivateFile(path);
+        Assert.True(privateFile.IsSuccess, privateFile.ToString());
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
     }
 }
