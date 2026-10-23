@@ -49,7 +49,7 @@ import type { LogRecord } from "./logging/LogRecord.js";
  * OAuth 2.0 PKCE credentials, and cross-process namespace documents.
  */
 export class ConfigurationClient {
-  private static readonly CLIENT_VERSION = "0.2.0";
+  private static readonly CLIENT_VERSION = "0.2.1";
 
   public readonly applicationName: string;
   public readonly configurationDirectory: string;

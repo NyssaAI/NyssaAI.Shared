@@ -1,6 +1,6 @@
 {
   "name": "@nyssa-ai/configuration",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Secure, cross-process locked, AES-256-GCM encrypted configuration storage matching NyssaAI.Configuration",
   "type": "module",
   "main": "./dist/ConfigurationClient.js",

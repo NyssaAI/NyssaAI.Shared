@@ -50,7 +50,7 @@ Each package owns its source, unit tests, and documentation. Root `test/` contai
 
 Library directories, projects, assemblies, and package IDs use `NyssaAI.*`. Result's public namespace is `NyssaAI.Results`; the other libraries use their package names. Consumers of the earlier names must update package references, `using` directives, and fully qualified type names. Repository exposes `IRepository`, implemented by `RepositoryClient`. Logging uses Microsoft's existing logging interfaces.
 
-Release versions are pinned in each library project: Result `0.7.1`, Configuration `7.1.1`, Logging `2.1.1`, and Repository `7.1.1`. Package-specific Git tags use `NyssaAI.<Package>/v<version>` and identify the release commit.
+Release versions are pinned in each library project: Result `0.2.1`, Configuration `0.2.1`, Logging `0.2.1`, and Repository `0.2.1`. Package-specific Git tags use `NyssaAI.<Package>/v<version>` and identify the release commit.
 
 ## Licensing
 

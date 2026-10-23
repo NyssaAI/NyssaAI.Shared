@@ -4,7 +4,7 @@ Record high-level technology context for planning. Keep this file descriptive.
 
 ## Stack Summary
 
-NyssaAI Configuration is a multi-language infrastructure component in the `NyssaAI.Shared` monorepo, shipping as both a Native-AOT-compatible .NET library (`NyssaAI.Configuration` v0.2.0) and an ESM TypeScript/Node.js package (`@nyssa-ai/configuration` v0.2.0 in `nyssa-ai-configuration/`). Both implementations share the same on-disk JSON schemas, cross-process locking protocol, OS permission model, and binary cryptographic wire formats.
+NyssaAI Configuration is a multi-language infrastructure component in the `NyssaAI.Shared` monorepo, shipping as both a Native-AOT-compatible .NET library (`NyssaAI.Configuration` v0.2.1) and an ESM TypeScript/Node.js package (`@nyssa-ai/configuration` v0.2.1 in `nyssa-ai-configuration/`). Both implementations share the same on-disk JSON schemas, cross-process locking protocol, OS permission model, and binary cryptographic wire formats.
 
 ## Languages and Runtimes
 
@@ -12,7 +12,7 @@ NyssaAI Configuration is a multi-language infrastructure component in the `Nyssa
   - Target framework: `net10.0` with `<Nullable>enable</Nullable>`, `<ImplicitUsings>enable</ImplicitUsings>`, `<AllowUnsafeBlocks>true</AllowUnsafeBlocks>`, and `<IsAotCompatible>true</IsAotCompatible>`.
   - Designed for Windows, Linux, and macOS, including Native AOT and trimmed deployments.
 - **TypeScript 5.8 / Node.js >= 22 (`nyssa-ai-configuration`):**
-  - Package name: `@nyssa-ai/configuration` (`0.2.0`), ESM (`"type": "module"`), targeting `ES2023` with `NodeNext` module resolution and strict TypeScript compiler checks (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).
+  - Package name: `@nyssa-ai/configuration` (`0.2.1`), ESM (`"type": "module"`), targeting `ES2023` with `NodeNext` module resolution and strict TypeScript compiler checks (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).
 
 ## Frameworks and Services
 
