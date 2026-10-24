@@ -28,20 +28,16 @@ public sealed class CommandPipelineTests
                 int result;
                 if (fluent)
                 {
-                    var pipeline = transaction.Pipeline(fixture.Repository, ChangeKey, new TaskChange { Id = 41 })
+                    var pipeline = transaction.Pipeline(ChangeKey, new TaskChange { Id = 41 })
                         .Then(NotifyKey, changed => new Notification { TaskId = changed.Id });
                     Assert.Equal(0, fixture.CommandCalls);
                     result = await pipeline.ExecuteAsync(TestContext.Current.CancellationToken);
                 }
                 else
                 {
-                    var command = fixture.Repository.CommandRegistry(ChangeKey, new TaskChange { Id = 41 });
+                    var changed = await transaction.ExecuteAsync(ChangeKey, new TaskChange { Id = 41 }, TestContext.Current.CancellationToken);
 
-                    var changed = await transaction.ExecuteAsync(command, TestContext.Current.CancellationToken);
-
-                    var notification = fixture.Repository.CommandRegistry(NotifyKey, new Notification { TaskId = changed.Id });
-
-                    result = await transaction.ExecuteAsync(notification, TestContext.Current.CancellationToken);
+                    result = await transaction.ExecuteAsync(NotifyKey, new Notification { TaskId = changed.Id }, TestContext.Current.CancellationToken);
                 }
 
                 Assert.Equal(1, result);

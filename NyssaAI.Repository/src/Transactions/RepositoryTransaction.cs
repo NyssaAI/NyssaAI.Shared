@@ -11,6 +11,8 @@ internal sealed class RepositoryTransaction : IRepositoryTransaction, IRepositor
 
     public Task<TResult> ExecuteAsync<TParameters, TResult>(IRepoCommand<TParameters, TResult> command, CancellationToken cancellationToken = default) =>
         _session.ExecuteAsync(command, cancellationToken);
+    public Task<TResult> ExecuteAsync<TParameters, TResult>(RepoCommandKey<TParameters, TResult> key, TParameters parameters, CancellationToken cancellationToken = default) =>
+        _session.ExecuteAsync(key, parameters, cancellationToken);
     public Task CommitAsync(CancellationToken cancellationToken = default) => _session.CompleteAsync(true, cancellationToken);
     public Task RollbackAsync(CancellationToken cancellationToken = default) => _session.CompleteAsync(false, cancellationToken);
     public ValueTask DisposeAsync() => _session.DisposeAsync();

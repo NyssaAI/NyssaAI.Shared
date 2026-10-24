@@ -14,13 +14,15 @@ namespace NyssaAI.Repository.CommandPipelines;
 public sealed class CommandPipeline<TResult> : ICommandPipelines<TResult>
 {
     private readonly IRepositorySession _session;
-    private readonly IRepository _repository;
+    private readonly IRepository? _repository;
+    private readonly bool _requireRepository;
     private readonly Func<CancellationToken, Task<TResult>> _execute;
 
-    internal CommandPipeline(IRepositorySession session, IRepository repository, Func<CancellationToken, Task<TResult>> execute)
+    internal CommandPipeline(IRepositorySession session, IRepository? repository, bool requireRepository, Func<CancellationToken, Task<TResult>> execute)
     {
         _session = session;
         _repository = repository;
+        _requireRepository = requireRepository;
         _execute = execute;
     }
 
@@ -32,14 +34,14 @@ public sealed class CommandPipeline<TResult> : ICommandPipelines<TResult>
     /// <returns>A deferred pipeline with the next command's result type.</returns>
     public CommandPipeline<TNextResult> Then<TNextParameters, TNextResult>(
         RepoCommandKey<TNextParameters, TNextResult> key, Func<TResult, TNextParameters>? parameters) =>
-        new(_session, _repository, async cancellationToken =>
+        new(_session, _repository, _requireRepository, async cancellationToken =>
         {
             ArgumentNullException.ThrowIfNull(parameters);
             var previous = await ExecuteAsync(cancellationToken).ConfigureAwait(false);
-            CheckReady(_session, _repository, cancellationToken);
+            CheckReady(_session, _repository, _requireRepository, cancellationToken);
             var next = parameters!(previous);
             return await CommandPipeline<TNextResult>.ResolveAndExecuteAsync(
-                _session, _repository, key, next, cancellationToken).ConfigureAwait(false);
+                _session, _repository, _requireRepository, key, next, cancellationToken).ConfigureAwait(false);
         });
 
     /// <summary>Runs each step sequentially and returns the final value. Any failure throws and stops dependent work.</summary>
@@ -50,7 +52,7 @@ public sealed class CommandPipeline<TResult> : ICommandPipelines<TResult>
     {
         try
         {
-            CheckReady(_session, _repository, cancellationToken);
+            CheckReady(_session, _repository, _requireRepository, cancellationToken);
             return await _execute(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
@@ -61,17 +63,19 @@ public sealed class CommandPipeline<TResult> : ICommandPipelines<TResult>
     }
 
     internal static async Task<TResult> ResolveAndExecuteAsync<TParameters>(IRepositorySession session,
-        IRepository repository, RepoCommandKey<TParameters, TResult> key, TParameters parameters, CancellationToken cancellationToken)
+        IRepository? repository, bool requireRepository, RepoCommandKey<TParameters, TResult> key, TParameters parameters, CancellationToken cancellationToken)
     {
-        CheckReady(session, repository, cancellationToken);
-        var command = repository.CommandRegistry(key, parameters);
+        CheckReady(session, repository, requireRepository, cancellationToken);
+        if (!requireRepository)
+            return await session.ExecuteAsync(key, parameters, cancellationToken).ConfigureAwait(false);
+        var command = repository!.CommandRegistry(key, parameters);
         return await session.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    private static void CheckReady(IRepositorySession session, IRepository repository, CancellationToken cancellationToken)
+    private static void CheckReady(IRepositorySession session, IRepository? repository, bool requireRepository, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(repository);
+        if (requireRepository) ArgumentNullException.ThrowIfNull(repository);
         if (session is IRepositoryScopeFailure scope) scope.CheckReady(cancellationToken);
         else cancellationToken.ThrowIfCancellationRequested();
     }

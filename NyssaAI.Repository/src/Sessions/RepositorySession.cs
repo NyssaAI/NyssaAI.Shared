@@ -8,16 +8,18 @@ internal sealed class RepositorySession : IRepositorySession, IRepositoryScopeFa
     private readonly DbConnection _connection;
     private readonly DbTransaction? _transaction;
     private readonly string _databaseProvider;
+    private readonly ICommands? _commands;
     private readonly SemaphoreSlim _operation = new(1, 1);
     private Exception? _failure;
     private bool _isCompleted;
     private bool _isDisposed;
 
-    internal RepositorySession(DbConnection connection, string databaseProvider, DbTransaction? transaction = null)
+    internal RepositorySession(DbConnection connection, string databaseProvider, DbTransaction? transaction = null, ICommands? commands = null)
     {
         _connection = connection;
         _databaseProvider = databaseProvider;
         _transaction = transaction;
+        _commands = commands;
     }
 
     public void RecordFailure(Exception failure)
@@ -36,6 +38,25 @@ internal sealed class RepositorySession : IRepositorySession, IRepositoryScopeFa
             ArgumentNullException.ThrowIfNull(command);
             if (command is not RepoCommandResolved<TParameters, TResult> resolved || resolved.DatabaseProvider != _databaseProvider)
                 throw new ArgumentException("The command was not resolved for this scope's provider.", nameof(command));
+            return await command.ExecuteCoreAsync(_connection, _transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            RecordFailure(exception);
+            throw;
+        }
+        finally { _operation.Release(); }
+    }
+
+    public async Task<TResult> ExecuteAsync<TParameters, TResult>(RepoCommandKey<TParameters, TResult> key, TParameters parameters, CancellationToken cancellationToken = default)
+    {
+        await EnterAsync().ConfigureAwait(false);
+        try
+        {
+            CheckReady(cancellationToken);
+            if (_commands is null)
+                throw new InvalidOperationException("No command registry is available for this scope.");
+            var command = _commands.Resolve(key, parameters);
             return await command.ExecuteCoreAsync(_connection, _transaction, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)

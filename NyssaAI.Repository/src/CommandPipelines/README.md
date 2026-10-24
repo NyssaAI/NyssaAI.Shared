@@ -4,7 +4,7 @@ A pipeline describes dependent commands on one existing session or transaction. 
 
 ```csharp
 var result = await transaction
-    .Pipeline(repository, ProjectTaskOperations.MoveOpen, move)
+    .Pipeline(ProjectTaskOperations.MoveOpen, move)
     .Then(ProjectTaskOperations.RecordTransfer, summary => summary)
     .ExecuteAsync(cancellationToken);
 ```
