@@ -62,4 +62,26 @@ public sealed class MigrationCatalogTests
         Assert.Throws<ArgumentException>(() => MigrationCatalog.Create(provider, [], [new() { Release = "1.0.0", Number = 0 }, new() { Release = "1.0.0", Number = 0 }]));
         Assert.Throws<ArgumentException>(() => MigrationCatalog.Create(provider, [new() { Number = 1, UpSql = "SELECT 1" }, new() { Number = 1, UpSql = "SELECT 2" }], [new() { Release = "1.0.0", Number = 1 }]));
     }
+
+    [Fact]
+    public void Create_CommandTimeoutSeconds_ValidatesAndStoresCatalogAndStepTimeouts()
+    {
+        var catalog = MigrationCatalog.Create(
+            "sqlite",
+            [
+                new() { Number = 1, UpSql = "SELECT 1", CommandTimeoutSeconds = 0 },
+                new() { Number = 2, UpSql = "SELECT 2", CommandTimeoutSeconds = 120 }
+            ],
+            [new() { Release = "1.0.0", Number = 2 }],
+            commandTimeoutSeconds: 60);
+
+        Assert.Equal(60, catalog.CommandTimeoutSeconds);
+        Assert.Equal(0, catalog.Definitions[0].CommandTimeoutSeconds);
+        Assert.Equal(120, catalog.Definitions[1].CommandTimeoutSeconds);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MigrationCatalog.Create("sqlite", [], [new() { Release = "1.0.0", Number = 0 }], commandTimeoutSeconds: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            MigrationCatalog.Create("sqlite", [new() { Number = 1, UpSql = "SELECT 1", CommandTimeoutSeconds = -1 }], [new() { Release = "1.0.0", Number = 1 }]));
+    }
 }

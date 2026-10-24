@@ -10,4 +10,6 @@ public sealed record MigrationDefinition
     public required string UpSql { get; init; }
     /// <summary>Gets the SQL returning to the preceding step; null declares an irreversible step.</summary>
     public string? DownSql { get; init; }
+    /// <summary>Gets the optional command timeout in seconds for this migration step (0 for infinite; null uses the catalog default).</summary>
+    public int? CommandTimeoutSeconds { get; init; }
 }

@@ -4,8 +4,9 @@
 
 ```csharp
 var catalog = MigrationCatalog.Create("sqlite",
-    [new() { Number = 1, UpSql = "CREATE TABLE tasks(id BIGINT PRIMARY KEY)", DownSql = "DROP TABLE tasks" }],
-    [new() { Release = "1.0.0", Number = 1 }]);
+    [new() { Number = 1, UpSql = "CREATE TABLE tasks(id BIGINT PRIMARY KEY)", DownSql = "DROP TABLE tasks", CommandTimeoutSeconds = 120 }],
+    [new() { Release = "1.0.0", Number = 1 }],
+    commandTimeoutSeconds: 60);
 services.AddNyssaRepository(settings, migrations: [catalog]);
 ```
 

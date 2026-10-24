@@ -39,13 +39,12 @@ The registration extension and settings type are in `NyssaAI.Repository.Configur
 
 ## IRepository - The main interface
 
-Inject `IRepository` into the classes that need database access. A typed command key defines the parameters and the complete result type. Selecting a command does not run it.
+Inject `IRepository` into the classes that need database access. A typed command key defines the parameters and the complete result type. Execute a command directly on a session or transaction by supplying its key and parameters, or resolve a command first via `CommandRegistry`.
 
 ```csharp
 await using (var session = await repository.OpenSessionAsync())
 {
-    var command = repository.CommandRegistry(ProjectTaskOperations.Get, taskId);
-    var task = await session.ExecuteAsync(command);
+    var task = await session.ExecuteAsync(ProjectTaskOperations.Get, taskId);
 }
 ```
 
@@ -127,13 +126,12 @@ A transaction adds an explicit commit:
 ```csharp
 await using (var transaction = await repository.OpenTransactionAsync())
 {
-    var command = repository.CommandRegistry(ProjectTaskOperations.Rename, rename);
-    await transaction.ExecuteAsync(command);
+    await transaction.ExecuteAsync(ProjectTaskOperations.Rename, rename);
     await transaction.CommitAsync();
 }
 ```
 
-Disposing an uncommitted transaction attempts rollback and releases its resources. A connection loss or database failure can prevent rollback from completing. A command failure or rejected operation through the transaction prevents a later commit, including an unexpected exception from command code. A failed command lookup performed separately through `IRepository` has not reached the transaction. Let the exception exit the transaction scope, or use a pipeline to include resolution in transaction failure tracking.
+Disposing an uncommitted transaction attempts rollback and releases its resources. A connection loss or database failure can prevent rollback from completing. A command failure, failed resolution through `transaction.ExecuteAsync(key, parameters)`, or rejected operation through the transaction prevents a later commit, including an unexpected exception from command code. A failed command lookup performed separately through `IRepository.CommandRegistry` has not reached the transaction.
 
 Use each scope sequentially. Concurrent operations on the same session or transaction throw `InvalidOperationException`. Independent scopes can run concurrently. The application owns and disposes its scopes; the service container owns the registered provider and should be disposed after those scopes finish.
 
@@ -143,7 +141,7 @@ A pipeline describes commands that depend on earlier results. It uses a session 
 
 ```csharp
 var transfer = await transaction
-    .Pipeline(repository, ProjectTaskOperations.MoveOpen, move)
+    .Pipeline(ProjectTaskOperations.MoveOpen, move)
     .Then(ProjectTaskOperations.RecordTransfer, summary => summary)
     .ExecuteAsync();
 await transaction.CommitAsync();
@@ -199,6 +197,23 @@ services.AddNyssaRepositoryCommands(commands => commands
     .Add(ProjectTaskOperations.Rename, parameters => new TaskRename(parameters)));
 ```
 
+You can also register a delegate directly without writing an `IRepoCommand` class:
+
+```csharp
+services.AddNyssaRepositoryCommands(commands => commands
+    .Add(ProjectTaskOperations.CountOpen, async (parameters, connection, transaction, cancellationToken) =>
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM tutorial_tasks WHERE project_id = @projectId AND is_completed = 0";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@projectId";
+        parameter.Value = parameters.ProjectId;
+        command.Parameters.Add(parameter);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }));
+```
+
 When the SQL differs, register an implementation for each provider under the same typed operation key:
 
 ```csharp
@@ -249,7 +264,7 @@ For complete examples, see [command authoring](src/Commands/README.md), [provide
 
 ## Schema migrations
 
-Migrations are compiled SQL definitions in a `MigrationCatalog`. Each step has a consecutive number and an `UpSql` statement; reversible steps also have `DownSql`. Release pins map exact semantic versions, such as `"1.2.0"`, to a schema number.
+Migrations are compiled SQL definitions in a `MigrationCatalog`. Each step has a consecutive number, an `UpSql` statement, and an optional `CommandTimeoutSeconds` override (defaulting to the catalog's `commandTimeoutSeconds`, which defaults to 30 seconds; `0` means infinite); reversible steps also have `DownSql`. Release pins map exact semantic versions, such as `"1.2.0"`, to a schema number.
 
 Pass the catalog in the `migrations` registration argument, then invoke the separate `IMigrationRunner` service explicitly before serving database traffic:
 
