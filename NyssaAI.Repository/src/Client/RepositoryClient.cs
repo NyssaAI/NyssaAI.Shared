@@ -22,7 +22,7 @@ internal sealed class RepositoryClient : IRepository
     public async Task<IRepositorySession> OpenSessionAsync(CancellationToken cancellationToken = default)
     {
         var opened = await _provider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return new RepositorySession(opened, _provider.DatabaseProvider);
+        return new RepositorySession(opened, _provider.DatabaseProvider, commands: _commands);
     }
 
     public async Task<IRepositoryTransaction> OpenTransactionAsync(CancellationToken cancellationToken = default)
@@ -32,7 +32,7 @@ internal sealed class RepositoryClient : IRepository
         try
         {
             var transaction = await opened.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-            var scope = new RepositoryTransaction(new RepositorySession(opened, _provider.DatabaseProvider, transaction));
+            var scope = new RepositoryTransaction(new RepositorySession(opened, _provider.DatabaseProvider, transaction, _commands));
             didTransferOwnership = true;
             return scope;
         }

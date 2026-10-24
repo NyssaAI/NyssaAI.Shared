@@ -31,4 +31,24 @@ public interface IRepositorySession : IAsyncDisposable
     public Task<TResult> ExecuteAsync<TParameters, TResult>(
         IRepoCommand<TParameters, TResult> command,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Resolves a typed command for the scope's provider and executes it in a single call.</summary>
+    /// <typeparam name="TParameters">The command's input contract fixed by the key.</typeparam>
+    /// <typeparam name="TResult">The complete result: a count, scalar, DTO, buffered list, or supported composite.</typeparam>
+    /// <param name="key">The logical operation and its input and result contracts.</param>
+    /// <param name="parameters">The typed values the command carries and binds during execution.</param>
+    /// <param name="cancellationToken">Cancels resolution, execution, and reading.</param>
+    /// <returns>
+    /// The declared value directly. The application command defines empty-result and row-cardinality behavior.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The scope is busy, completed, its transaction previously failed, or the registered factory is incompatible.</exception>
+    /// <exception cref="ObjectDisposedException">The scope is disposed.</exception>
+    /// <exception cref="ArgumentException">The key or parameters are invalid; null arguments throw ArgumentNullException.</exception>
+    /// <exception cref="KeyNotFoundException">No command matches the key and selected provider.</exception>
+    /// <exception cref="OperationCanceledException">Execution is canceled. Application cancellation exceptions retain their own tokens.</exception>
+    /// <remarks>Driver, mapping, factory, and application exceptions propagate unchanged. Any failed resolution or execution through a transaction prevents later commit, even if caught.</remarks>
+    public Task<TResult> ExecuteAsync<TParameters, TResult>(
+        RepoCommandKey<TParameters, TResult> key,
+        TParameters parameters,
+        CancellationToken cancellationToken = default);
 }

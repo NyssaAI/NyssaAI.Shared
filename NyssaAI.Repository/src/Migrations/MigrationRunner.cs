@@ -41,11 +41,11 @@ internal sealed class MigrationRunner : IMigrationRunner
                 else if (_provider.DatabaseProvider == "postgresql" && connection is Npgsql.NpgsqlConnection)
                 {
                     transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-                    await using (var acquire = Command(connection, transaction, "SELECT pg_try_advisory_xact_lock(564535375002)"))
+                    await using (var acquire = Command(connection, transaction, "SELECT pg_try_advisory_xact_lock(564535375002)", _catalog.CommandTimeoutSeconds))
                     {
                         if (await acquire.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not true)
                             throw new InvalidOperationException("Another migration runner owns this database.");
-                        await using (var quoting = Command(connection, transaction, "SHOW standard_conforming_strings"))
+                        await using (var quoting = Command(connection, transaction, "SHOW standard_conforming_strings", _catalog.CommandTimeoutSeconds))
                         {
                             if (await quoting.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not string setting || setting != "on")
                                 throw new InvalidOperationException("Migrations require PostgreSQL standard_conforming_strings=on.");
@@ -55,7 +55,7 @@ internal sealed class MigrationRunner : IMigrationRunner
                 else throw new NotSupportedException("This provider does not support verified transactional migrations.");
 
                 cancellationToken.ThrowIfCancellationRequested();
-                await ExecuteAsync(connection, transaction, "CREATE TABLE IF NOT EXISTS nyssa_repository_migrations (number BIGINT PRIMARY KEY, fingerprint TEXT NOT NULL)", cancellationToken).ConfigureAwait(false);
+                await ExecuteAsync(connection, transaction, "CREATE TABLE IF NOT EXISTS nyssa_repository_migrations (number BIGINT PRIMARY KEY, fingerprint TEXT NOT NULL)", _catalog.CommandTimeoutSeconds, cancellationToken).ConfigureAwait(false);
                 var current = await ReadHistoryAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
                 // Preflight the entire downgrade before executing any schema change.
                 if (current > target && _catalog.Definitions.Skip((int)target).Take((int)(current - target)).Any(step => step.DownSql is null))
@@ -67,8 +67,9 @@ internal sealed class MigrationRunner : IMigrationRunner
                     for (var number = current + 1; number <= target; number++)
                     {
                         var definition = _catalog.Definitions[(int)number - 1];
-                        await ExecuteAsync(connection, transaction, definition.UpSql, cancellationToken).ConfigureAwait(false);
-                        await using (var insert = Command(connection, transaction, "INSERT INTO nyssa_repository_migrations (number, fingerprint) VALUES (@number, @fingerprint)"))
+                        var stepTimeout = definition.CommandTimeoutSeconds ?? _catalog.CommandTimeoutSeconds;
+                        await ExecuteAsync(connection, transaction, definition.UpSql, stepTimeout, cancellationToken).ConfigureAwait(false);
+                        await using (var insert = Command(connection, transaction, "INSERT INTO nyssa_repository_migrations (number, fingerprint) VALUES (@number, @fingerprint)", _catalog.CommandTimeoutSeconds))
                         {
                             AddParameter(insert, "number", number);
                             AddParameter(insert, "fingerprint", MigrationCatalog.Fingerprint(definition));
@@ -82,8 +83,10 @@ internal sealed class MigrationRunner : IMigrationRunner
                     for (var number = current; number > target; number--)
                     {
                         // The complete range was checked above; SQL is immutable in the catalog snapshot.
-                        await ExecuteAsync(connection, transaction, _catalog.Definitions[(int)number - 1].DownSql!, cancellationToken).ConfigureAwait(false);
-                        await using (var delete = Command(connection, transaction, "DELETE FROM nyssa_repository_migrations WHERE number = @number"))
+                        var definition = _catalog.Definitions[(int)number - 1];
+                        var stepTimeout = definition.CommandTimeoutSeconds ?? _catalog.CommandTimeoutSeconds;
+                        await ExecuteAsync(connection, transaction, definition.DownSql!, stepTimeout, cancellationToken).ConfigureAwait(false);
+                        await using (var delete = Command(connection, transaction, "DELETE FROM nyssa_repository_migrations WHERE number = @number", _catalog.CommandTimeoutSeconds))
                         {
                             AddParameter(delete, "number", number);
                             await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -113,7 +116,7 @@ internal sealed class MigrationRunner : IMigrationRunner
 
     private async Task<long> ReadHistoryAsync(DbConnection connection, DbTransaction? transaction, CancellationToken cancellationToken)
     {
-        await using (var command = Command(connection, transaction, "SELECT number, fingerprint FROM nyssa_repository_migrations ORDER BY number"))
+        await using (var command = Command(connection, transaction, "SELECT number, fingerprint FROM nyssa_repository_migrations ORDER BY number", _catalog!.CommandTimeoutSeconds))
         {
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -132,18 +135,18 @@ internal sealed class MigrationRunner : IMigrationRunner
         }
     }
 
-    private static DbCommand Command(DbConnection connection, DbTransaction? transaction, string sql)
+    private static DbCommand Command(DbConnection connection, DbTransaction? transaction, string sql, int commandTimeoutSeconds)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
-        command.CommandTimeout = 30;
+        command.CommandTimeout = commandTimeoutSeconds;
         return command;
     }
 
-    private static async Task ExecuteAsync(DbConnection connection, DbTransaction? transaction, string sql, CancellationToken cancellationToken)
+    private static async Task ExecuteAsync(DbConnection connection, DbTransaction? transaction, string sql, int commandTimeoutSeconds, CancellationToken cancellationToken)
     {
-        await using (var command = Command(connection, transaction, sql))
+        await using (var command = Command(connection, transaction, sql, commandTimeoutSeconds))
         {
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }

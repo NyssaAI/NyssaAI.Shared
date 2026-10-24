@@ -11,15 +11,19 @@ public sealed partial record MigrationCatalog : IMigrations
     private readonly MigrationDefinition[] _definitions;
     private readonly Dictionary<string, long> _releases;
 
-    private MigrationCatalog(string databaseProvider, MigrationDefinition[] definitions, Dictionary<string, long> releases)
+    private MigrationCatalog(string databaseProvider, MigrationDefinition[] definitions, Dictionary<string, long> releases, int commandTimeoutSeconds)
     {
         DatabaseProvider = databaseProvider;
         _definitions = definitions;
         _releases = releases;
+        CommandTimeoutSeconds = commandTimeoutSeconds;
     }
 
     /// <summary>Gets the canonical built-in provider identity.</summary>
     public string DatabaseProvider { get; }
+
+    /// <summary>Gets the default command timeout in seconds for migration operations (0 for infinite).</summary>
+    public int CommandTimeoutSeconds { get; }
 
     internal IReadOnlyList<MigrationDefinition> Definitions => _definitions;
 
@@ -27,14 +31,16 @@ public sealed partial record MigrationCatalog : IMigrations
     /// <param name="databaseProvider">SQLite or PostgreSQL; other providers lack verified transactional migration semantics.</param>
     /// <param name="definitions">Contiguous positive steps starting at one, in any order.</param>
     /// <param name="releases">Unique valid full SemVer identities pointing to available steps or zero.</param>
+    /// <param name="commandTimeoutSeconds">Default command timeout in seconds (0 for infinite; defaults to 30).</param>
     /// <returns>The validated immutable catalog directly.</returns>
-    /// <exception cref="ArgumentException">Definitions, arguments, or release pins are invalid.</exception>
+    /// <exception cref="ArgumentException">Definitions, arguments, timeouts, or release pins are invalid.</exception>
     /// <exception cref="NotSupportedException">The named provider has no verified migration support.</exception>
-    public static MigrationCatalog Create(string databaseProvider, IReadOnlyList<MigrationDefinition> definitions, IReadOnlyList<MigrationReleasePin> releases)
+    public static MigrationCatalog Create(string databaseProvider, IReadOnlyList<MigrationDefinition> definitions, IReadOnlyList<MigrationReleasePin> releases, int commandTimeoutSeconds = 30)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databaseProvider);
         ArgumentNullException.ThrowIfNull(definitions);
         ArgumentNullException.ThrowIfNull(releases);
+        ArgumentOutOfRangeException.ThrowIfNegative(commandTimeoutSeconds);
         var provider = databaseProvider?.Trim().ToLowerInvariant();
         if (provider is not ("sqlite" or "postgresql"))
             throw new NotSupportedException("This provider does not support verified transactional migrations.");
@@ -48,6 +54,8 @@ public sealed partial record MigrationCatalog : IMigrations
         for (var index = 0; index < snapshot.Length; index++)
         {
             var item = snapshot[index];
+            if (item.CommandTimeoutSeconds < 0)
+                throw new ArgumentOutOfRangeException(nameof(definitions), "Migration command timeout cannot be negative.");
             if (item.Number != index + 1L || !MigrationSql.IsTransactional(item.UpSql) ||
                 (item.DownSql is not null && !MigrationSql.IsTransactional(item.DownSql)))
                 throw new ArgumentException("Migration steps must be contiguous from one and contain transactional SQL.", nameof(definitions));
@@ -58,7 +66,7 @@ public sealed partial record MigrationCatalog : IMigrations
             if (!IsRelease(pin.Release) || pin.Number < 0 || pin.Number > snapshot.Length || !pins.TryAdd(pin.Release, pin.Number))
                 throw new ArgumentException("Migration pins require unique full semantic versions and available schema numbers.", nameof(releases));
         }
-        return new(provider, snapshot, pins);
+        return new(provider, snapshot, pins, commandTimeoutSeconds);
     }
 
     long IMigrations.Resolve(string release)

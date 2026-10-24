@@ -317,6 +317,76 @@ public sealed class RepositoryScopeTests
         }
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ByKeyAndParameters_ExecutesAndPoisonsTransactionOnResolutionFailure()
+    {
+        var expected = new ArgumentException("factory rejected input");
+        var failKey = new RepoCommandKey<CommandParameters, int> { Name = "fail-factory" };
+        var registrations = new[]
+        {
+            RepoCommandRegistration.Create("sqlite", Key, static async (parameters, connection, transaction, cancellationToken) =>
+            {
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = parameters.Sql;
+                return await command.ExecuteNonQueryAsync(cancellationToken);
+            }),
+            RepoCommandRegistration.Create("sqlite", failKey, (Func<CommandParameters, IRepoCommand<CommandParameters, int>>)(_ => throw expected))
+        };
+        await using (var container = Build(registrations, shared: true))
+        {
+            var repository = container.GetRequiredService<IRepository>();
+            var provider = container.GetRequiredService<IRepositoryProvider>();
+            await using (var anchor = await provider.OpenConnectionAsync(TestContext.Current.CancellationToken))
+            {
+                await ExecuteRawAsync(anchor, "CREATE TABLE entries (id INTEGER)");
+                await using (var transaction = await repository.OpenTransactionAsync(TestContext.Current.CancellationToken))
+                {
+                    var inserted = await transaction.ExecuteAsync(Key, new CommandParameters { Sql = "INSERT INTO entries VALUES (1)" }, TestContext.Current.CancellationToken);
+                    Assert.Equal(1, inserted);
+                    var actual = await Assert.ThrowsAsync<ArgumentException>(() =>
+                        transaction.ExecuteAsync(failKey, new CommandParameters { Sql = "unused" }, TestContext.Current.CancellationToken));
+                    Assert.Same(expected, actual);
+                    var commitFailure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                        transaction.CommitAsync(TestContext.Current.CancellationToken));
+                    Assert.Same(expected, commitFailure.InnerException);
+                }
+                await using (var observer = await provider.OpenConnectionAsync(TestContext.Current.CancellationToken))
+                await using (var count = observer.CreateCommand())
+                {
+                    count.CommandText = "SELECT COUNT(*) FROM entries";
+                    Assert.Equal(0L, await count.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DelegateRegistrationViaBuilder_ExecutesWithBorrowedResources()
+    {
+        var services = new ServiceCollection();
+        services.AddNyssaRepository(
+            new RepositoryConfiguration { DatabaseProvider = "sqlite", ConnectionString = "Data Source=:memory:" },
+            commands => commands
+                .Add(Key, static async (parameters, connection, transaction, cancellationToken) =>
+                {
+                    await using var command = connection.CreateCommand();
+                    command.Transaction = transaction;
+                    command.CommandText = parameters.Sql;
+                    return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+                })
+                .Add("postgresql", Key, static (parameters, _, _, _) => Task.FromResult(0)));
+        await using (var container = services.BuildServiceProvider())
+        {
+            var repository = container.GetRequiredService<IRepository>();
+            await using (var session = await repository.OpenSessionAsync(TestContext.Current.CancellationToken))
+            {
+                var value = await session.ExecuteAsync(Key, new CommandParameters { Sql = "SELECT 99" }, TestContext.Current.CancellationToken);
+                Assert.Equal(99, value);
+            }
+        }
+    }
+
     private static ServiceProvider Build(IReadOnlyList<RepoCommandRegistration> registrations, bool shared = false)
     {
         var services = new ServiceCollection();

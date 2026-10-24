@@ -1,10 +1,23 @@
 # Typed commands
 
-A `RepoCommandKey<TParameters, TResult>` names an operation and fixes its input and output types. `RepoCommandRegistration.Create` connects that key to a provider and a factory. The factory validates the parameters and returns an `IRepoCommand<TParameters, TResult>`.
+A `RepoCommandKey<TParameters, TResult>` names an operation and fixes its input and output types. `RepoCommandRegistration.Create` (or `RepositoryCommandBuilder.Add`) connects that key to a provider and either a factory returning an `IRepoCommand<TParameters, TResult>` or an inline `RepoCommandHandler<TParameters, TResult>` delegate.
 
 ```csharp
 var registration = RepoCommandRegistration.Create("sqlite", ProjectTaskOperations.Get,
     parameters => new TaskGet(parameters));
+
+var inlineRegistration = RepoCommandRegistration.Create("sqlite", ProjectTaskOperations.CountOpen,
+    async (parameters, connection, transaction, cancellationToken) =>
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM tutorial_tasks WHERE project_id = @projectId AND is_completed = 0";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@projectId";
+        parameter.Value = parameters.ProjectId;
+        command.Parameters.Add(parameter);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    });
 ```
 
 Pass registrations to `AddNyssaRepository(..., commands: registrations)`. Use the same key for provider-specific implementations when the caller's input and output remain the same. Names are case-sensitive. Duplicate provider/operation pairs throw during registration, before services change. The [shared declaration syntax](../../README.md#registering-commands) also supports omitting the default provider and registering separately from repository setup.
