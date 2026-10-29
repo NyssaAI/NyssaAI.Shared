@@ -294,3 +294,9 @@ Cancellation also depends on the provider and command implementation. PostgreSQL
 The [registration tutorial](../test/NyssaAI.Repository.UseCaseTests/RepositoryRegistrationTutorials.cs) exercises inline, separate, settings-factory, and stored-settings declarations. The [tutorial index](docs/tutorials/README.md) links runnable examples of ordinary reads and writes, transactions, dependent commands, protected settings, custom providers, and migrations.
 
 Unit tests live in `test/NyssaAI.Repository.Tests`. Tutorials and the native smoke application live under the monorepo's root `test` directory. PostgreSQL tests require `NYSSAAI_REPOSITORY_POSTGRES` to point to an isolated test database and fail if it is missing. SQLite tests use isolated databases. See the [monorepo README](../README.md) for the complete test runner.
+
+## Package and licensing
+
+The package and assembly are both named `NyssaAI.Repository`.
+
+Licensed under the [Apache License, Version 2.0](../LICENSE.txt). See the repository's [licensing notice](../README.md#licensing) for details.

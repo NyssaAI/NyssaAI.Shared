@@ -1,5 +1,7 @@
 # Ignore dot directories at every level (tracked files remain tracked).
 .*/
+!.github/
+!.github/**
 **/bin/
 **/obj/
 **/TestResults/

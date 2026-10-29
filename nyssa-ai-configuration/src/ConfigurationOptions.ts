@@ -26,7 +26,7 @@ import type { IBrowserLauncher } from "./oauth/IBrowserLauncher.js";
 export interface ConfigurationOptions {
   /** The application name identifying the manifest section and keyring service (inferred when omitted). */
   readonly applicationName?: string | undefined;
-  /** Explicit configuration directory (overrides default, recorded on first run). */
+  /** Explicit configuration directory (overrides default of <cwd>/.nyssa-ai/config, recorded on first run). */
   readonly configDirectory?: string | undefined;
   /** Custom manifest file path (defaults to ~/.nyssa-ai/config-manifest.json). */
   readonly configManifest?: string | undefined;

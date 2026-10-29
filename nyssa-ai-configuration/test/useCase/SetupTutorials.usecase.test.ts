@@ -54,6 +54,29 @@ describe("SetupTutorials Public Use Cases (F-103)", () => {
     );
   });
 
+  it("setupTutorials_firstTimeInitializeWithoutConfigDirectory_defaultsToCwdNyssaAiConfig", async () => {
+    const keyring = new InMemoryKeyring();
+
+    const initRes = await ConfigurationClient.initialize({
+      applicationName: "DefaultPathCLI",
+      configManifest: manifestPath,
+      keyring
+    });
+    expect(initRes.ok).toBe(true);
+    if (!initRes.ok) return;
+
+    const expectedDefaultDir = path.resolve(process.cwd(), ".nyssa-ai", "config");
+    expect(fs.existsSync(expectedDefaultDir)).toBe(true);
+
+    const manifestJson = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+      version: number;
+      applications: Record<string, { configurationDirectory: string }>;
+    };
+    expect(manifestJson.applications["DefaultPathCLI"]?.configurationDirectory).toBe(
+      expectedDefaultDir
+    );
+  });
+
   it("setupTutorials_manifestKeyVaultOverridesCodeKeyVaultWhole_usesManifestVaultConfiguration (F-103 UC-002)", async () => {
     const keyring = new InMemoryKeyring();
     expect(ProtectedFileSystem.createDirectory(configDir).ok).toBe(true);

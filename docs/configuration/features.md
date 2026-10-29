@@ -28,7 +28,7 @@ This document lists product features in intended build order across the NyssaAI 
 * [ ] F-003: OS Keyring Custody & Address-Bound Local Encryption
 * [ ] F-101: Namespace Document Store & Core Value Operations
 * [ ] F-102: Typed DTO Serialization & Namespace Replacement/Merge
-* [ ] F-103: Application Registration, Startup Pipeline & Test Seams
+* [ ] F-103: Application Registration, Startup Pipeline & Test Seamsyes
 * [ ] F-201: Provider Migration (`MoveAsync`)
 * [ ] F-202: Interactive OAuth Sign-In & Automatic Token Refresh
 * [ ] F-203: Cloud Key Vault Adaptation

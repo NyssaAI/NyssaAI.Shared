@@ -106,7 +106,7 @@ export class ConfigurationClient {
       const defaultDir =
         resolvedOptions.configDirectory && resolvedOptions.configDirectory.trim().length > 0
           ? path.resolve(resolvedOptions.configDirectory)
-          : path.join(path.dirname(manifestPath), applicationName);
+          : path.resolve(process.cwd(), ".nyssa-ai", "config");
 
       const writeRes = ConfigurationManifestWriter.setConfigurationDirectory(
         manifestPath,

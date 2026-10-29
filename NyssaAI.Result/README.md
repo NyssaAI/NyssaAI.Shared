@@ -332,4 +332,4 @@ dotnet run --project NyssaAI.Result/test/NyssaAI.Result.Tests
 
 The package and assembly are named `NyssaAI.Result`. Its public types use the `NyssaAI.Results` namespace.
 
-Refer to the repository's [licensing notice](../README.md#licensing) and [LICENSE.txt](../LICENSE.txt) for terms of use.
+Licensed under the [Apache License, Version 2.0](../LICENSE.txt). See the repository's [licensing notice](../README.md#licensing) for details.

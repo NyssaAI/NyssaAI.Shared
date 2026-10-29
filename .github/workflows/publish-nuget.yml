@@ -1,0 +1,86 @@
+name: Publish NuGet Packages
+
+on:
+  push:
+    tags:
+      - 'NyssaAI.*/v*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      target_project:
+        description: 'Specific package to publish (or "all")'
+        required: true
+        default: 'NyssaAI.Configuration'
+        type: choice
+        options:
+          - NyssaAI.Configuration
+          - NyssaAI.Result
+          - NyssaAI.Logging
+          - NyssaAI.Repository
+          - all
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore NyssaAI.Shared.slnx --locked-mode
+
+      - name: Run verification test
+        shell: pwsh
+        run: ./test/verify-packages.ps1
+
+      - name: Pack target packages
+        id: pack
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ./artifacts -Force | Out-Null
+          $target = "${{ github.event.inputs.target_project }}"
+          if ([string]::IsNullOrWhiteSpace($target)) {
+            $tag = "${{ github.ref_name }}"
+            if ($tag -match '^NyssaAI\.([^/]+)/v') {
+              $target = "NyssaAI.$($matches[1])"
+            } else {
+              $target = "all"
+            }
+          }
+
+          if ($target -eq "all") {
+            $projects = @(
+              "NyssaAI.Result/src/NyssaAI.Result.csproj",
+              "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj",
+              "NyssaAI.Logging/src/NyssaAI.Logging.csproj",
+              "NyssaAI.Repository/src/NyssaAI.Repository.csproj"
+            )
+          } else {
+            # Ensure Result is packed/pushed first if packaging Configuration or Repository
+            if ($target -eq "NyssaAI.Configuration" -or $target -eq "NyssaAI.Repository") {
+              $projects = @(
+                "NyssaAI.Result/src/NyssaAI.Result.csproj",
+                "$target/src/$target.csproj"
+              )
+            } else {
+              $projects = @("$target/src/$target.csproj")
+            }
+          }
+
+          foreach ($proj in $projects) {
+            Write-Host "Packing $proj..."
+            dotnet pack $proj -c Release -o ./artifacts --no-restore
+          }
+
+      - name: Push to NuGet with Trusted Publishing (OIDC)
+        run: |
+          dotnet nuget push ./artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --skip-duplicate

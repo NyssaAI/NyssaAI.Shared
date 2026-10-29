@@ -1,6 +1,6 @@
 {
   "name": "@nyssa-ai/configuration",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Secure, cross-process locked, AES-256-GCM encrypted configuration storage matching NyssaAI.Configuration",
   "type": "module",
   "main": "./dist/ConfigurationClient.js",
@@ -15,12 +15,24 @@
       "types": "./dist/*.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.txt"
+  ],
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('node:fs').rmSync('./dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
+    "prepack": "npm run build",
     "test": "vitest run",
     "test:unit": "vitest run test/unit",
     "test:usecase": "vitest run test/useCase",
     "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NyssaAI/NyssaAI.Shared.git",
+    "directory": "nyssa-ai-configuration"
   },
   "keywords": [
     "configuration",
@@ -31,7 +43,7 @@
     "keyring"
   ],
   "author": "NyssaAI",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^24.10.0",
     "typescript": "^5.8.0",

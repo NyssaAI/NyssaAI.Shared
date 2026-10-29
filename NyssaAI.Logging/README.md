@@ -306,4 +306,4 @@ export const createPinoConfigurationLogger = (logger: pino.Logger): IConfigurati
 
 The package and assembly are both named `NyssaAI.Logging`. The registration extensions are in `NyssaAI.Logging.Configuration`. Its dependencies are Microsoft's logging, console logging, and dependency-injection abstractions packages.
 
-Refer to the repository's [licensing notice](../README.md#licensing) and [LICENSE.txt](../LICENSE.txt) for terms of use.
+Licensed under the [Apache License, Version 2.0](../LICENSE.txt). See the repository's [licensing notice](../README.md#licensing) for details.

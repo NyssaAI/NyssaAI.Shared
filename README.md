@@ -54,4 +54,4 @@ Release versions are pinned in each library project: Result `0.2.1`, Configurati
 
 ## Licensing
 
-These libraries are source-available under the unmodified [PolyForm Small Business License 1.0.0](LICENSE.txt). Businesses outside its eligibility limits need a separate paid commercial license. Each NuGet package includes the license; the build workflow does not publish packages.
+These libraries are licensed under the [Apache License, Version 2.0](LICENSE.txt). Each NuGet package includes the license; the build workflow does not publish packages.

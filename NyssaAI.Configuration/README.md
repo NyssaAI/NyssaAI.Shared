@@ -708,4 +708,4 @@ Live OS keyring tests are skipped by default. To run them against your machine's
 
 The package and assembly are both named `NyssaAI.Configuration`. The public namespaces are `NyssaAI.Configuration`, `NyssaAI.Configuration.Client`, and `NyssaAI.Configuration.Contracts`.
 
-Refer to the repository's [licensing notice](../README.md#licensing) and [LICENSE.txt](../LICENSE.txt) for terms of use.
+Licensed under the [Apache License, Version 2.0](../LICENSE.txt). See the repository's [licensing notice](../README.md#licensing) for details.
