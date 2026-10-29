@@ -81,6 +81,15 @@ jobs:
             dotnet pack $proj -c Release -o ./artifacts --no-restore
           }
 
-      - name: Push to NuGet with Trusted Publishing (OIDC)
+      - name: NuGet Login (OIDC Trusted Publishing)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: jmaynor
+
+      - name: Push to NuGet with Trusted Publishing
         run: |
-          dotnet nuget push ./artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --skip-duplicate
+          dotnet nuget push ./artifacts/*.nupkg \
+            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
