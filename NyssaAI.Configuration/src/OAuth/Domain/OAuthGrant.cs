@@ -1,4 +1,3 @@
-using NyssaAI.Configuration.Contracts;
 namespace NyssaAI.Configuration.OAuth.Domain;
 
 /// <summary>
@@ -7,7 +6,7 @@ namespace NyssaAI.Configuration.OAuth.Domain;
 /// the relative <c>expires_in</c> and the clock at the time of the exchange.
 /// </summary>
 /// <remarks>
-/// Unlike <see cref="OAuthToken"/>, the refresh token is optional here. A refresh exchange that
+/// Unlike <c>OAuthToken</c>, the refresh token is optional here. A refresh exchange that
 /// omits it means "keep the one you presented"; an authorization exchange that omits it is
 /// refused, because a grant with no refresh token cannot outlive its access token.
 /// </remarks>

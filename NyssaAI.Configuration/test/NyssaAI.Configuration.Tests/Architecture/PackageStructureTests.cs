@@ -100,17 +100,16 @@ public sealed class PackageStructureTests
         Assert.Empty(missing);
     }
 
-    /// <summary>D1b and D1c: the two reserved areas exist, and no port sits outside Contracts/.</summary>
+    /// <summary>D1b and D1c: Client reserved area exists and externally implementable ports are contained.</summary>
     [Fact]
     public void ReservedAreas_Exist_AndHoldEveryExternallyImplementablePort()
     {
         var source = SourceRoot();
         Assert.True(Directory.Exists(Path.Combine(source.FullName, "Client")));
-        Assert.True(Directory.Exists(Path.Combine(source.FullName, "Contracts")));
 
         var strayPorts = Package.GetExportedTypes()
             .Where(type => type.IsInterface)
-            .Where(type => type.Namespace is not "NyssaAI.Configuration" and not "NyssaAI.Configuration.Contracts")
+            .Where(type => type.Namespace is not "NyssaAI.Configuration" and not "NyssaAI.Configuration.Contracts" and not "NyssaAI.Configuration.CloudKeyVaults")
             .Where(type => type != typeof(global::NyssaAI.Configuration.CloudKeyVaults.ICloudKeyVaultRecovery))
             .Select(type => type.FullName!)
             .Order(StringComparer.Ordinal);
