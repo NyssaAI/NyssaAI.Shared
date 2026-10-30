@@ -1,0 +1,21 @@
+[project]
+name = "dev-standards-python-examples"
+version = "0.5.1"
+description = "Executable Python reference examples for dev-standards"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["addresses", "formatting", "persistence", "results"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+mypy_path = "."

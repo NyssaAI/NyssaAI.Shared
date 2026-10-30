@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/jamaynor/Nyssa.Shared.git",
+  "revision": "b7ecdfb0a5a9c4c0f51fc74546b1a4756703aa9b",
+  "project": "Nyssa.Result/src/Nyssa.Result.csproj",
+  "reason": "Canonical Result and Guard APIs; this revision is not available from public NuGet. Supply an authorized checkout through NYSSA_SHARED_ROOT."
+}

@@ -1,0 +1,32 @@
+{
+  "revision": "REPLACE_WITH_40_CHARACTER_SOURCE_COMMIT",
+  "source_roots": [
+    "src"
+  ],
+  "commands": {
+    "build": {
+      "cwd": ".",
+      "argv": [
+        "npm",
+        "run",
+        "build"
+      ]
+    },
+    "unit": {
+      "cwd": ".",
+      "argv": [
+        "npm",
+        "run",
+        "test:unit"
+      ]
+    },
+    "use_case": {
+      "cwd": ".",
+      "argv": [
+        "npm",
+        "run",
+        "test:use-case"
+      ]
+    }
+  }
+}

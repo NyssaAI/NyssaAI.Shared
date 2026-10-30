@@ -1,0 +1,70 @@
+{
+  "revision": "fac7834c091d552a61d4cc814fdb7afeb413092c",
+  "source_roots": [
+    "nyssa-ai-configuration-py/src"
+  ],
+  "commands": {
+    "build": {
+      "cwd": ".",
+      "argv": [
+        "python",
+        "-m",
+        "mypy",
+        "nyssa-ai-configuration-py/src",
+        "--strict"
+      ]
+    },
+    "unit": {
+      "cwd": ".",
+      "argv": [
+        "python",
+        "-m",
+        "pytest",
+        "nyssa-ai-configuration-py/tests"
+      ]
+    },
+    "use_case": {
+      "cwd": ".",
+      "argv": [
+        "python",
+        "-m",
+        "pytest",
+        "nyssa-ai-configuration-py/tests"
+      ]
+    }
+  },
+  "version": "0.6.3",
+  "file_hashes": {
+    "README.md": "6b537c2373c7172cce29d981e406dd09de4590ac2f1e075649c5ed18b3e1457c",
+    "adoption/AGENTS.fragment.md": "655110308aa0dc763a8030c57daec045a697f7ffa98879c8313e7ccbe664c4e4",
+    "adoption/README.md": "0ae32b3440e7675d881fc6caa55a2e9bf9e128b266894065ea2180eab541d63c",
+    "adoption/repository.example.json": "be3d1e9df85d28093b5a394795a9fd9849def4348de306677b49b915df95010e",
+    "examples/README.md": "ffb6a8055429d62e82bcfa90e10d67c3c064f0ab1e28ace9af524af2cf675de8",
+    "examples/addresses/__init__.py": "3bb655df5923f6f3d71b1fe63ab5abfa812cc2fed7e6195b330a54bad16dbcd9",
+    "examples/addresses/email_address.py": "73a904363755489f3aec8586cd5cbdd618e6658884075b311569dc68ebbbac08",
+    "examples/demo.py": "aeb7a5220ac3f4edb3e4b40827672eb4af73a716bdac664d08d1f7ba9103df4b",
+    "examples/formatting/__init__.py": "9c91c5c7a5da38f4bc191a96043aed6560d16e56e86d4a0a0769e3a5386707f4",
+    "examples/formatting/email_formatter.py": "f794ad6709471902c4fc8f948c2ce3fdd587a0cf57b9c1d25792ef48b331622b",
+    "examples/formatting/email_formatter_json.py": "127117a3bafbad615aca62ad836060bc849ec43a0b3124079c267e1fb53b4117",
+    "examples/formatting/email_formatter_text.py": "ec529f1cd14f68e481eeb24906077164b39f3ef11723e4c39653b92c342783fe",
+    "examples/persistence/001_registrations.sql": "822f89d21f8cd82261ae20fc0e94f13a0f1b651f7cb37ee8debe2a259f861c4a",
+    "examples/persistence/README.md": "6f4a9f1842e962ca11dc771d2a260c4ab383a567b940becf6b70a96b7185a446",
+    "examples/persistence/__init__.py": "92a187dbc724099e1d728bd4eebab130b3f773be230893a286736e91d57aac21",
+    "examples/persistence/register_email.py": "15186c9c0905e29e029feb4ff451749baae95a940b75b4e8795a14680109a8bc",
+    "examples/persistence/registration_log.py": "c763f046306b924346a7454bb54020f9f1170504c99e573af35475eba3e1160a",
+    "examples/persistence/types.py": "600fa48da83679b4e880bd5f7859ab9200b978174301ff3f0091a8d8f6b27351",
+    "examples/pyproject.toml": "528ab901576c7f1895b49e8d9fb1b243a03dc4e6799fe8544cd84b74ececc8c0",
+    "examples/results/__init__.py": "89e0cb69104f9dca992af526a7e34e2e94a80225564fe6d20c63614bb94b93c1",
+    "examples/results/result.py": "a977dd6923040da3fcf7ecc19e8b239b3590cd5f11919c47aa2e8053fa691460",
+    "references/code-smells.md": "6cc6761619b8db59e252595e1d5bc284aab994e9ea0731515e57ceb46616976f",
+    "references/logging.md": "5eadac132ffe271bd47f59b1ea7d6c489a0ed5aa2d0e7089d01fe7f111feb253",
+    "references/testing.md": "151c31f9cee98267ad2824ebe36cd42fdc13b8d107348470ef06c8252ce95a1f",
+    "rules/architecture-standards.md": "4b4e0070451a49998c1375394b84a3946105c4c5b14f82c15cc14f0eee9bb047",
+    "rules/repo-standards.md": "dc4defe17166b8f7cd89ebc01c44492fbf9ebbdceaa4b3723e564c10500d88aa",
+    "rules/standards.md": "5f7a4a3f3e7a9b6be280a5b6fd97a92729619e2f18859dd6a6076a875f8ca7f3",
+    "scripts/check.py": "da2b2e2b947cb1ac7c5550052564d16d2a9c4774ea80eecdf576ed46e039ce95",
+    "scripts/check_adoption.py": "69d181fcaed768ba770021838b52e59db9330e251209b0be661fde25de215386",
+    "scripts/verify.py": "346613a23ec368295342af3949f4c586d10217d2031b164296f56f9ff97bb34e"
+  },
+  "agents_section_hash": "fcadf04a5bedab5ea917fa4b341842f54ba5704666b92066d9b73f8ad6cf12b0"
+}

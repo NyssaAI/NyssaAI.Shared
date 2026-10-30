@@ -1,0 +1,31 @@
+{
+  "revision": "REPLACE_WITH_40_CHARACTER_SOURCE_COMMIT",
+  "source_roots": [
+    "src"
+  ],
+  "commands": {
+    "build": {
+      "cwd": ".",
+      "argv": [
+        "dotnet",
+        "build"
+      ]
+    },
+    "unit": {
+      "cwd": ".",
+      "argv": [
+        "dotnet",
+        "test",
+        "test/unit/UnitTests"
+      ]
+    },
+    "use_case": {
+      "cwd": ".",
+      "argv": [
+        "dotnet",
+        "test",
+        "test/use_case/UseCaseTests"
+      ]
+    }
+  }
+}

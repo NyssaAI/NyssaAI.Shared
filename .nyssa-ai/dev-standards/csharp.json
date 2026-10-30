@@ -1,0 +1,69 @@
+{
+  "revision": "758e538dfaae67ba49ad6d144f0e21800ddbf4c5",
+  "source_roots": [
+    "NyssaAI.Configuration/src",
+    "NyssaAI.Logging/src",
+    "NyssaAI.Repository/src",
+    "NyssaAI.Result/src"
+  ],
+  "commands": {
+    "build": {
+      "cwd": ".",
+      "argv": [
+        "dotnet",
+        "build",
+        "NyssaAI.Shared.slnx"
+      ]
+    },
+    "unit": {
+      "cwd": ".",
+      "argv": [
+        "dotnet",
+        "test",
+        "NyssaAI.Configuration/test/NyssaAI.Configuration.Tests"
+      ]
+    },
+    "use_case": {
+      "cwd": ".",
+      "argv": [
+        "dotnet",
+        "test",
+        "test/NyssaAI.Configuration.UseCaseTests"
+      ]
+    }
+  },
+  "version": "0.6.3",
+  "file_hashes": {
+    "README.md": "193791a8cc2ca5f046bb61baceb19f0cdd7a051ace86e7803b51b3ab36986b07",
+    "adoption/AGENTS.fragment.md": "5ab8df3f8723929ba3e4a157d2b8ef3271c1a23cdc882cf4520c7813ed232290",
+    "adoption/README.md": "979a3b839393d44e5310cc0875bb47bef551bd99c3e450770b29fab786fc0e61",
+    "adoption/repository.example.json": "398711c97a37f4378b51eae39c1443ae322b9bc0fc03e27cc86eb245f30ede8d",
+    "examples/Demo/Demo.csproj": "760aa69b4b586d8985096cc354eb98def515dea521849933ef58576b3576f63d",
+    "examples/Demo/Program.cs": "bbca61d429e5859c957fef7d98dadc65d0d4aaee686ee48d3aea4ad62a3e0127",
+    "examples/Directory.Build.props": "cf25020dfc421e471e06e40fb3d1ee8bf5be2e1c09bf238e0e724b78afb11d67",
+    "examples/Persistence/README.md": "6cfc17efcc5c67fd71ae8ae06ca08857c0479fee020ed3e18b28761ef71d02ce",
+    "examples/Persistence/Registration/001_registrations.sql": "46ad4ac5064adcb4ebe11771f3abbef70037195becda33be7f93fb46dc6c79bb",
+    "examples/Persistence/Registration/EmailRegistration.cs": "ecdcc6be4b2e5c863913a3d3bb7d6ab301f2d23a35b269b4a5b7caf706a98f30",
+    "examples/Persistence/Registration/Registration.csproj": "3df4b46b267f1894378c4e3bcff31353cfe993a331f1be63b6c779c3b2c68fc5",
+    "examples/Persistence/Registration/RegistrationLog.cs": "7598c0d7f3d7afa9c044426db855329e9181a24ae3d384d0bed385601c7e4609",
+    "examples/README.md": "75a315208a7e110f0847bb295791b87a2d35bf4d0233655d94b296fa128a707a",
+    "examples/Samples/Email/EmailAddress.cs": "9ed910f0c2d28d4f5efed7a85ee55797048bb30fdbd39705e4c71fe728c93f88",
+    "examples/Samples/Formatting/EmailFormatterJson.cs": "f9f506509bbe9efbcc91bf36c18940449211fcc9a5d4267afa995b34ff367f54",
+    "examples/Samples/Formatting/EmailFormatterText.cs": "52b83b12df7bc593235278bf6be323d139705d064d816a32251a5ba19371a7ad",
+    "examples/Samples/Formatting/IEmailFormatter.cs": "a1951e1dbc41e4b5e1d4c40f6679316e9c3807dda4c1121bcf6b730bdb570e78",
+    "examples/Samples/Samples.csproj": "a7df1d54b972d4a713423df2c713e32bba12671717c6335948254a88b866efb0",
+    "references/code-smells.md": "3a3e6964eeccd3f44f71ade282b0c8ee3b38b3a3aba79c293b73399c5698fb62",
+    "references/logging.md": "28662034bfabee0010e2601bca1016a1d979cbd772dbf67aa610b2866e2984cf",
+    "references/testing.md": "84fb16e708bd0fc1882d3abb1e4f7a81e11b53a16c5d4deacfeb0aa6ccc28460",
+    "rules/architecture-standards.md": "4b4e0070451a49998c1375394b84a3946105c4c5b14f82c15cc14f0eee9bb047",
+    "rules/repo-standards.md": "dc4defe17166b8f7cd89ebc01c44492fbf9ebbdceaa4b3723e564c10500d88aa",
+    "rules/standards.md": "60ce4d8c6282e0e053d08c91d95fad97a946b7589bcccf603fff1276c5b7d143",
+    "scripts/Checker/Checker.csproj": "58f7e645eb14450d17cd76fb22652265b1577264e814c4066e4f4459404f78f4",
+    "scripts/Checker/Program.cs": "ccc69b49f04b91240a29192a965084efae9a674a5e9223a2549b35e70fa348a0",
+    "scripts/check_adoption.py": "c434bd2dfa9eca85a3fd36f051592b20a8579f26876e6a7c6d4e7b76a2427eab",
+    "scripts/dependency-lock.json": "e92bca155c7bc22dcba9388749f421b565312b20f179b33489316905e935841f",
+    "scripts/verify.py": "042ea7071d46a889934a8a5f89ed5d2a13d0ae04fdec955a79515ec97669474c",
+    "scripts/verify_persistence.py": "7dca23c274df3942bfba90a2e42147ac6cb41c020aa2ac0e4318f64528e3d836"
+  },
+  "agents_section_hash": "e6b11ba981a09592b8466008415785c1369d10aada07098d3626ae3a9132d810"
+}

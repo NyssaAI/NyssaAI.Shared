@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "outDir": "../../.temp/compiled",
+    "rootDir": "../../skills/dev-standards/references/typescript/examples",
+    "skipLibCheck": false,
+    "typeRoots": ["./node_modules/@types"],
+    "paths": {
+      "pg": ["./node_modules/pg"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime.d.ts"],
+      "react-dom": ["./node_modules/@types/react-dom"]
+    }
+  },
+  "include": [
+    "../../skills/dev-standards/references/typescript/examples/**/*.ts",
+    "../../skills/dev-standards/references/typescript/examples/**/*.tsx"
+  ]
+}

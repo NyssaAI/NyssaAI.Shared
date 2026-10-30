@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><RootNamespace>Standards.Sample</RootNamespace></PropertyGroup>
+ <ItemGroup><ProjectReference Include="$(NyssaResultProject)" /></ItemGroup>
+ <Target Name="RequireNyssa" BeforeTargets="Restore;PrepareForBuild" Condition="'$(NyssaResultProject)' == ''">
+  <Error Text="Run this package's verify.py with NYSSA_SHARED_ROOT pointing to a Nyssa.Shared checkout. The script snapshots the pinned revision without modifying that checkout." />
+ </Target>
+</Project>

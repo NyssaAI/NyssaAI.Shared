@@ -1,0 +1,68 @@
+{
+  "revision": "8be5376ed8d7264cc490ef56bdaa9b98d8aa65be",
+  "source_roots": [
+    "nyssa-ai-configuration/src"
+  ],
+  "commands": {
+    "build": {
+      "cwd": "nyssa-ai-configuration",
+      "argv": [
+        "npm",
+        "run",
+        "build"
+      ]
+    },
+    "unit": {
+      "cwd": "nyssa-ai-configuration",
+      "argv": [
+        "npm",
+        "run",
+        "test"
+      ]
+    },
+    "use_case": {
+      "cwd": "nyssa-ai-configuration",
+      "argv": [
+        "npm",
+        "run",
+        "test"
+      ]
+    }
+  },
+  "version": "0.6.3",
+  "file_hashes": {
+    "README.md": "c4bd063a9d345284d417b8152adad2b718274f58a80658efd69d34799f643159",
+    "adoption/AGENTS.fragment.md": "d9689bff6268f8d2f2b6b6de102ae91e3de29b413a23b723037260c867be7cc2",
+    "adoption/README.md": "ebc1aa106bd63f167c13b5fc4d5e2dfd3f6ea2f2e448738f4435171cfd78901c",
+    "adoption/repository.example.json": "cb5d87c3eb93593bbd1fef1c4a33e8b4460579881d4f308218fbcdac1b73659a",
+    "examples/README.md": "0d2fe467ac15140b83fa2cd0aed915ba6cf0d7d3ce974c466f18ce4bf2004cfe",
+    "examples/demo.ts": "f0539e907078f94e3695ea0ef5efc41df384e295f2a63a2730e2e6de401b1280",
+    "examples/email/EmailAddress.ts": "e6a9816fd75e18abc806550d350a5874bfb475c1225af9097b6a47365c721f6b",
+    "examples/formatting/EmailFormatter.ts": "48156fcabc24bf888407463991db2d484302ac1895420086d5c65d9fae496763",
+    "examples/formatting/emailFormatterJson.ts": "73f61af76e27f5b0725927cde0d61459c7e54e92ade95b07c4c636d88a3cf025",
+    "examples/formatting/emailFormatterText.ts": "05aaa3be58352ccad1795167032f9f702484669b311860ec362fc942758536d8",
+    "examples/package.json": "1bf0e53fc74b05f1aade7451fbac72f1944b067d4229d96bae7a225519a250e4",
+    "examples/persistence/001_registrations.sql": "e26da63a98f8d88415c189c15c85934e649584f10693deacf2fe125298ee21f3",
+    "examples/persistence/README.md": "dfcee46e3ce32c155e82e93d912472ba166edbcb84af44160575892af305045a",
+    "examples/persistence/RegistrationLog.ts": "906a5aa2e33356dbd956b0fe3326e20b2352bb2d1a1b1269b758f8c1ed421f46",
+    "examples/persistence/RegistrationResult.ts": "42647e0a40c9a9b7b379fc6986fa6793980b4930e6d249c0a86d0c3be40d7dd2",
+    "examples/persistence/registerEmail.ts": "16acaa094d5067d1d088c840322e13ff7360fab261c1f4af9d424b23b80f648c",
+    "examples/persistence/startPostgresFixture.ts": "cb71fdf72618ed8152a2e991b929232cbd8d5426781772a7d1b0eee7c7ed8a1a",
+    "examples/results/Result.ts": "4332c56acb73eddcb527bf2375ba46c5d84aa797de6c52fcfc840550bb980680",
+    "examples/ui/EmailForm.tsx": "ba159c3d4c8a01ca45442cbfe61d27ce00d25a6d208c6c51d081a10e60f8f269",
+    "references/code-smells.md": "1a30895f1b7c26c73cde68d68a6dc884a94632a67f006c4e291c20a08495acca",
+    "references/logging.md": "7956cbba274117e10959cec41b7ac19ad3975f4c70e0020c940b0d50cb6dd12a",
+    "references/testing.md": "29b81afb60c6346e81ccb49dc9465345e0f5f01c608268a0b555d689a2a64c98",
+    "rules/architecture-standards.md": "4b4e0070451a49998c1375394b84a3946105c4c5b14f82c15cc14f0eee9bb047",
+    "rules/repo-standards.md": "dc4defe17166b8f7cd89ebc01c44492fbf9ebbdceaa4b3723e564c10500d88aa",
+    "rules/standards.md": "284ef3b94475ed7f3922f24774bbe112e655aaaa535a03152806c4e99ca91dac",
+    "scripts/check.mjs": "024f668d94fbb698411699006d141fb2ceebdd3f7d58f5d9576107f1074f7dd7",
+    "scripts/check_adoption.py": "cf3ff46f9843748e5b6ff0ec88167b582442b4ee9fcac5979b429313c09b3d98",
+    "scripts/package-lock.json": "7fb803d9087cceafa0ee1d77fb8b8a42bd48d8e60098107b9e8355ad047e0bc2",
+    "scripts/package.json": "6c9e8275737aef23c48fd07308107985ebc067813eb15f5eea624f168fe80c2e",
+    "scripts/tsconfig.json": "905a007d777302190b6a8cc8ec493c6d7a83aa128d997d14e6ffbb0857036f20",
+    "scripts/verify.py": "35e140bb235faac8fb1b9b6200e8620b371f55027df764db6d3c73c9e7f0ff5c",
+    "scripts/vitest.config.mjs": "84595357e0ae9af87d816e97e6181bc9a71ccb0423ff040506825c6ed0c68638"
+  },
+  "agents_section_hash": "fdab345594fe1739ec43eed5af8ca6a358227e989ecf4c854283a23cccc1f0ae"
+}

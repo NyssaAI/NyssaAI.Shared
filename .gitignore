@@ -2,6 +2,13 @@
 .*/
 !.github/
 !.github/**
+!.nyssa-ai/
+!.nyssa-ai/dev-standards/
+!.nyssa-ai/dev-standards/**
+!.compound-engineering/
+!.compound-engineering/config.yaml
+!.compound-engineering/config.example.yaml
+
 **/bin/
 **/obj/
 **/TestResults/
@@ -14,3 +21,16 @@
 !.env.example
 **/secrets.json
 **/config-manifest.json
+
+# Build, dependency, and test runner outputs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+dist/
+
+# Mandatory repository-local scratch directory (REPO-SCRATCH)
+.temp/
+.worktrees/
+.compound-engineering/*.local.yaml
+.context/compound-engineering/

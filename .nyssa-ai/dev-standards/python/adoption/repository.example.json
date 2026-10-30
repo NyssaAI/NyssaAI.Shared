@@ -1,0 +1,36 @@
+{
+  "revision": "REPLACE_WITH_40_CHARACTER_SOURCE_COMMIT",
+  "source_roots": [
+    "src"
+  ],
+  "commands": {
+    "build": {
+      "cwd": ".",
+      "argv": [
+        "python",
+        "-m",
+        "mypy",
+        "--strict",
+        "src"
+      ]
+    },
+    "unit": {
+      "cwd": ".",
+      "argv": [
+        "python",
+        "-m",
+        "pytest",
+        "test/unit"
+      ]
+    },
+    "use_case": {
+      "cwd": ".",
+      "argv": [
+        "python",
+        "-m",
+        "pytest",
+        "test/use_case"
+      ]
+    }
+  }
+}

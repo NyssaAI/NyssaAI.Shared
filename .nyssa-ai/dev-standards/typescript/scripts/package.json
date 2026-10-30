@@ -1,0 +1,30 @@
+{
+  "name": "dev-standards-typescript",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run test:unit",
+    "test:unit": "vitest run --exclude '**/*.usecase.test.ts'",
+    "test:usecase": "vitest run .usecase.test.ts",
+    "headers:update": "node check.mjs ../../skills/dev-standards/references/typescript/examples --update-headers",
+    "demo": "npm run build && node ../../.temp/compiled/demo.js",
+    "check": "node check.mjs ../../skills/dev-standards/references/typescript/examples"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.2",
+    "@types/node": "24.10.1",
+    "@types/pg": "8.15.5",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "jsdom": "26.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
+  }
+}
