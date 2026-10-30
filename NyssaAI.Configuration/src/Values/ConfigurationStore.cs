@@ -2,11 +2,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
-using NyssaAI.Results;
-
 using NyssaAI.Configuration.Client;
-using NyssaAI.Configuration.Recovery;
+using NyssaAI.Configuration.CloudKeyVaults;
 using NyssaAI.Configuration.Contracts;
+using NyssaAI.Configuration.Recovery;
+using NyssaAI.Results;
 
 namespace NyssaAI.Configuration.Values;
 
@@ -14,13 +14,7 @@ namespace NyssaAI.Configuration.Values;
 /// ConfigurationStore resolves configuration values, reading literals straight from the document
 /// and delegating provider-backed entries to the registered <see cref="IConfigurationProvider"/>.
 /// </summary>
-/// <remarks>
-/// Construct a store with providers through <c>Create</c>, which refuses a blank or duplicate
-/// provider name as a failure. The constructor takes no providers and cannot fail.
-/// The store accepts an <see cref="ILogger"/> and chooses no destination; provider failures are
-/// reported there once, by namespace and key, never by value.
-/// </remarks>
-internal sealed partial class ConfigurationStore : IConfigurationValues
+internal sealed class ConfigurationStore : IConfigurationValues
 {
     private const string OpenGenericJustification =
         "TValue is caller-supplied and cannot be enumerated into a source-generated context at this project's compile time; "
@@ -31,6 +25,8 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     private readonly IReadOnlyDictionary<string, ProviderCredential> _credentials;
     private readonly ILogger? _logger;
     private readonly IRecovery? _recovery;
+    private readonly ConfigurationRecoveryCoordinator _recoveryCoordinator;
+    private readonly NamespaceDocumentHandler _namespaceHandler;
     private readonly AsyncLocal<(string Provider, string Token)?> _removalCredential = new();
 
     /// <summary>Creates a store over one document factory with no providers; every entry is a literal.</summary>
@@ -49,13 +45,21 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         IConfigurationDocumentFactory documents,
         IReadOnlyDictionary<string, IConfigurationProvider> providers,
         IReadOnlyDictionary<string, ProviderCredential> credentials,
-        ILogger? logger, IRecovery? recovery = null)
+        ILogger? logger,
+        IRecovery? recovery = null)
     {
         _documents = documents;
         _providers = providers;
         _credentials = credentials;
         _logger = logger;
         _recovery = recovery;
+        _recoveryCoordinator = new ConfigurationRecoveryCoordinator(documents, GetProvider, recovery);
+        _namespaceHandler = new NamespaceDocumentHandler(
+            documents,
+            ReadThroughAsync,
+            GetProvider,
+            CheckCircular,
+            _recoveryCoordinator);
     }
 
     /// <summary>
@@ -79,13 +83,14 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     /// <param name="documents">The factory that opens a namespace's document.</param>
     /// <param name="providers">The providers available to resolve non-literal entries.</param>
     /// <param name="credentials">Which entry each authenticating provider signs in with.</param>
-    /// <param name="recovery">The application-scoped recovery handle protector, when composed.</param>
     /// <param name="logger">The logger failures are reported to, if any.</param>
+    /// <param name="recovery">The application-scoped recovery handle protector, when composed.</param>
     public static Result<ConfigurationStore> Create(
         IConfigurationDocumentFactory documents,
         IEnumerable<IConfigurationProvider> providers,
         IEnumerable<ProviderCredential> credentials,
-        ILogger? logger = null, IRecovery? recovery = null)
+        ILogger? logger = null,
+        IRecovery? recovery = null)
     {
         var registered = new Dictionary<string, IConfigurationProvider>(StringComparer.Ordinal);
         foreach (var provider in providers)
@@ -251,6 +256,15 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
             : resolved;
     }
 
+    private ValueTask<Result<string>> ReadThroughAsync(
+        ConfigurationValue entry, string @namespace, string key, CancellationToken cancellationToken)
+    {
+        var provider = GetProvider(entry.Provider);
+        if (provider.IsFailure)
+            return ValueTask.FromResult(Result<string>.Failure(provider.Errors));
+        return provider.Value.ReadAsync(entry, @namespace, key, cancellationToken);
+    }
+
     /// <inheritdoc/>
     public ValueTask<Result> SetAsync(
         string @namespace,
@@ -371,22 +385,22 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
                 if (circular.IsFailure) return circular;
                 // Capture the deletion condition before reading the value; a replacement between
                 // preparation and reading cannot subsequently be deleted by this operation.
-                var cleanup = await PrepareStepAsync(existing.Provider, CloudKeyVaults.CloudKeyVaultAction.Remove,
+                var cleanup = await _recoveryCoordinator.PrepareStepAsync(existing.Provider, CloudKeyVaultAction.Remove,
                     @namespace, key, null, existing, existing.IsJsonValue, cancellationToken).ConfigureAwait(false);
                 if (cleanup.IsFailure) return Result.Failure(cleanup.Errors);
                 var plaintext = existing.IsLiteral ? Result<string>.Success(existing.Value)
                     : await ReadThroughAsync(existing, @namespace, key, cancellationToken).ConfigureAwait(false);
                 if (plaintext.IsFailure) return Result.Failure(plaintext.Errors);
-                var destination = await PrepareStepAsync(toProvider, CloudKeyVaults.CloudKeyVaultAction.Write,
+                var destination = await _recoveryCoordinator.PrepareStepAsync(toProvider, CloudKeyVaultAction.Write,
                     @namespace, key, plaintext.Value, null, existing.IsJsonValue, cancellationToken).ConfigureAwait(false);
                 if (destination.IsFailure) return Result.Failure(destination.Errors);
                 from = existing.Provider;
                 state = new ConfigurationRecoveryState
                 {
                     OperationId = Guid.NewGuid(), Namespace = @namespace, Kind = ConfigurationOperationKind.Move,
-                    Original = Snapshot(entries), Proposed = Snapshot(entries), Steps = [destination.Value, cleanup.Value],
+                    Original = ConfigurationRecoveryCoordinator.Snapshot(entries), Proposed = ConfigurationRecoveryCoordinator.Snapshot(entries), Steps = [destination.Value, cleanup.Value],
                 };
-                var written = await WriteStepsAsync(state, cancellationToken).ConfigureAwait(false);
+                var written = await _recoveryCoordinator.WriteStepsAsync(state, cancellationToken).ConfigureAwait(false);
                 if (written.IsFailure) return written;
                 cancellationToken.ThrowIfCancellationRequested();
                 entries[key] = state.Proposed[key];
@@ -397,7 +411,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
             if (result.IsSuccess)
             {
                 state = state! with { Publication = ConfigurationPublicationState.Published };
-                result = await CleanupStepsAsync(state, cancellationToken).ConfigureAwait(false);
+                result = await _recoveryCoordinator.CleanupStepsAsync(state, cancellationToken).ConfigureAwait(false);
             }
             else if (publishing)
                 state = state! with { Publication = ConfigurationPublicationState.Failed };
@@ -406,9 +420,9 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         {
             result = Result.Failure(Error.FromMessage(Error.CanceledUserMessage, ErrorCategory.Canceled));
         }
-        catch (Exception) { result = Result.Failure(RecoveryUnfinished); }
+        catch (Exception) { result = Result.Failure(Error.FromMessage("The configuration operation is unfinished.", ErrorCategory.Unavailable)); }
 
-        var outcome = state is null ? null : Outcome(state);
+        var outcome = state is null ? null : _recoveryCoordinator.Outcome(state);
         var progress = outcome?.Progress;
         var handle = outcome?.RecoveryHandle;
         if (state?.Publication != ConfigurationPublicationState.Published
@@ -428,17 +442,10 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         });
     }
 
-    private async ValueTask<Result<string>> ReadThroughAsync(
-        ConfigurationValue entry,
-        string @namespace,
-        string key,
-        CancellationToken cancellationToken)
-    {
-        var provider = GetProvider(entry.Provider);
-        return provider.IsFailure
-            ? Result<string>.Failure(provider.Errors)
-            : await provider.Value.ReadAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
-    }
+    /// <inheritdoc/>
+    public ValueTask<ConfigurationAttempt<ConfigurationRecoveryOutcome>> RecoverAsync(
+        ConfigurationRecoveryHandle handle, CancellationToken cancellationToken = default) =>
+        _recoveryCoordinator.RecoverAsync(handle, cancellationToken);
 
     /// <inheritdoc/>
     public async ValueTask<Result<ConfigurationRemoval>> RemoveAsync(string @namespace, string key, CancellationToken cancellationToken = default)
@@ -534,7 +541,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     /// <summary>
     /// Reads one value and deserializes it from JSON into <typeparamref name="TValue"/> through
     /// the reflection-based serializer. Callers publishing with Native AOT use
-    /// <see cref="GetAsAsync{TValue}(string, string, JsonTypeInfo{TValue}, CancellationToken)"/>.
+    /// <see cref="GetAsAsync{TValue}(string, string?, JsonTypeInfo{TValue}, CancellationToken)"/>.
     /// </summary>
     /// <param name="namespace">The namespace holding the entry.</param>
     /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
@@ -545,7 +552,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     public async ValueTask<Result<TValue>> GetAsAsync<TValue>(string @namespace, string? key, CancellationToken cancellationToken = default)
     {
         var value = key is null
-            ? await GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
+            ? await _namespaceHandler.GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
             : await ReadValueAsync(@namespace, key, encodeString: typeof(TValue) == typeof(string), cancellationToken).ConfigureAwait(false);
         if (value.IsFailure)
             return Result<TValue>.Failure(value.Errors);
@@ -576,7 +583,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     public async ValueTask<Result<TValue>> GetAsAsync<TValue>(string @namespace, string? key, JsonTypeInfo<TValue> typeInfo, CancellationToken cancellationToken = default)
     {
         var value = key is null
-            ? await GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
+            ? await _namespaceHandler.GetNamespaceAsync(@namespace, cancellationToken).ConfigureAwait(false)
             : await ReadValueAsync(@namespace, key, encodeString: typeof(TValue) == typeof(string), cancellationToken).ConfigureAwait(false);
         if (value.IsFailure)
             return Result<TValue>.Failure(value.Errors);
@@ -599,7 +606,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
     /// <summary>
     /// Serializes a value to JSON through the reflection-based serializer and writes it to one
     /// entry. Callers publishing with Native AOT use
-    /// <see cref="SetAsAsync{TValue}(string, string, TValue, JsonTypeInfo{TValue}, string, CancellationToken)"/>.
+    /// <see cref="SetAsAsync{TValue}(string, string?, TValue, JsonTypeInfo{TValue}, string?, CancellationToken)"/>.
     /// </summary>
     /// <param name="namespace">The namespace to hold the entry.</param>
     /// <param name="key">The entry key; typed methods accept null to select the whole namespace.</param>
@@ -634,7 +641,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         }
 
         if (key is null)
-            return SetNamespaceAsync(@namespace, serialized, replaceNamespace, cancellationToken);
+            return _namespaceHandler.SetNamespaceAsync(@namespace, serialized, replaceNamespace, cancellationToken);
 
         return ConfigurationAttempt.FromAsync(SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken));
     }
@@ -667,7 +674,7 @@ internal sealed partial class ConfigurationStore : IConfigurationValues
         }
 
         if (key is null)
-            return SetNamespaceAsync(@namespace, serialized, replaceNamespace, cancellationToken);
+            return _namespaceHandler.SetNamespaceAsync(@namespace, serialized, replaceNamespace, cancellationToken);
 
         return ConfigurationAttempt.FromAsync(SetValueAsync(@namespace, key, serialized, provider, true, cancellationToken));
     }

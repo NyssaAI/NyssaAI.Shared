@@ -1,17 +1,54 @@
-using NyssaAI.Configuration.Recovery;
-using NyssaAI.Configuration.CloudKeyVaults;
 using System.Text;
 using System.Text.Json;
+using NyssaAI.Configuration.CloudKeyVaults;
 using NyssaAI.Configuration.Contracts;
+using NyssaAI.Configuration.Recovery;
 using NyssaAI.Results;
 
 namespace NyssaAI.Configuration.Values;
 
-internal sealed partial class ConfigurationStore
+/// <summary>
+/// NamespaceDocumentHandler manages reading, writing, merging, and migration
+/// of full-namespace JSON documents in configuration storage.
+/// </summary>
+internal sealed class NamespaceDocumentHandler
 {
     private const string LegacySettingsKey = "namespaceSettings";
 
-    private async ValueTask<Result<string>> GetNamespaceAsync(string @namespace, CancellationToken cancellationToken)
+    private static Error NamespaceObjectRequired => Error.FromMessages(
+        "The namespace settings could not be merged.",
+        "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
+        ErrorCategory.Validation);
+
+    private static Error NamespaceJsonInvalid => Error.FromMessages(
+        "The namespace settings could not be processed.",
+        "Namespace settings require valid JSON properties without duplicate names or the reserved namespaceSettings name.",
+        ErrorCategory.Validation);
+
+    private static Error RecoveryUnfinished => Error.FromMessage(
+        "The configuration operation is unfinished.", ErrorCategory.Unavailable);
+
+    private readonly IConfigurationDocumentFactory _documents;
+    private readonly Func<ConfigurationValue, string, string, CancellationToken, ValueTask<Result<string>>> _readThrough;
+    private readonly Func<string, Result<IConfigurationProvider>> _getProvider;
+    private readonly Func<string, string, string, Result> _checkCircular;
+    private readonly ConfigurationRecoveryCoordinator _recoveryCoordinator;
+
+    public NamespaceDocumentHandler(
+        IConfigurationDocumentFactory documents,
+        Func<ConfigurationValue, string, string, CancellationToken, ValueTask<Result<string>>> readThrough,
+        Func<string, Result<IConfigurationProvider>> getProvider,
+        Func<string, string, string, Result> checkCircular,
+        ConfigurationRecoveryCoordinator recoveryCoordinator)
+    {
+        _documents = documents;
+        _readThrough = readThrough;
+        _getProvider = getProvider;
+        _checkCircular = checkCircular;
+        _recoveryCoordinator = recoveryCoordinator;
+    }
+
+    public async ValueTask<Result<string>> GetNamespaceAsync(string @namespace, CancellationToken cancellationToken)
     {
         try
         {
@@ -32,7 +69,8 @@ internal sealed partial class ConfigurationStore
         if (read.IsFailure)
             return Result<string>.Failure(read.Errors);
         if (read.Value.Count == 0)
-            return Result<string>.Failure(EntryNotFound(@namespace, LegacySettingsKey));
+            return Result<string>.Failure(ConfigurationStore.EntryNotFound(@namespace, LegacySettingsKey));
+
         // Old files remain readable until a namespace object write migrates their plaintext DTO.
         if (read.Value.TryGetValue(LegacySettingsKey, out var legacy))
             return await ResolveNamespaceEntryAsync(legacy, @namespace, LegacySettingsKey, cancellationToken).ConfigureAwait(false);
@@ -60,7 +98,9 @@ internal sealed partial class ConfigurationStore
                 }
             }
             else
+            {
                 writer.WriteStringValue(resolved.Value);
+            }
         }
         writer.WriteEndObject();
         writer.Flush();
@@ -75,10 +115,11 @@ internal sealed partial class ConfigurationStore
             return Result<string>.Failure(valid.Errors);
         return entry.IsLiteral
             ? Result<string>.Success(entry.Value)
-            : await ReadThroughAsync(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
+            : await _readThrough(entry, @namespace, key, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<ConfigurationAttempt> SetNamespaceAsync(string @namespace, string serialized, bool replace, CancellationToken cancellationToken)
+    public async ValueTask<ConfigurationAttempt> SetNamespaceAsync(
+        string @namespace, string serialized, bool replace, CancellationToken cancellationToken)
     {
         try
         {
@@ -94,7 +135,8 @@ internal sealed partial class ConfigurationStore
         }
     }
 
-    private async ValueTask<ConfigurationAttempt> WriteNamespaceAsync(string @namespace, string serialized, bool replace, CancellationToken cancellationToken)
+    private async ValueTask<ConfigurationAttempt> WriteNamespaceAsync(
+        string @namespace, string serialized, bool replace, CancellationToken cancellationToken)
     {
         using var json = JsonDocument.Parse(serialized);
         var isObject = json.RootElement.ValueKind == JsonValueKind.Object;
@@ -127,11 +169,11 @@ internal sealed partial class ConfigurationStore
         {
             result = await document.Value.ModifyAsync(async entries =>
             {
-                var original = Snapshot(entries);
+                var original = ConfigurationRecoveryCoordinator.Snapshot(entries);
                 if (isObject && entries.TryGetValue(LegacySettingsKey, out var legacy))
                 {
                     if (!legacy.IsLiteral)
-                        return Result.Failure(AlreadyStoredElsewhere(@namespace, LegacySettingsKey, legacy.Provider));
+                        return Result.Failure(ConfigurationStore.AlreadyStoredElsewhere(@namespace, LegacySettingsKey, legacy.Provider));
                     if (!replace)
                     {
                         // Merge must preserve properties that existed only in the legacy object.
@@ -153,10 +195,10 @@ internal sealed partial class ConfigurationStore
                         return valid;
                     if (!entry.IsLiteral)
                     {
-                        var provider = GetProvider(entry.Provider);
+                        var provider = _getProvider(entry.Provider);
                         if (provider.IsFailure)
                             return Result.Failure(provider.Errors);
-                        var circular = CheckCircular(entry.Provider, @namespace, key);
+                        var circular = _checkCircular(entry.Provider, @namespace, key);
                         if (circular.IsFailure)
                             return circular;
                     }
@@ -166,7 +208,7 @@ internal sealed partial class ConfigurationStore
                 foreach (var (key, value) in incoming)
                 {
                     entries.TryGetValue(key, out var existing);
-                    var step = await PrepareStepAsync(existing?.Provider ?? string.Empty, CloudKeyVaultAction.Write,
+                    var step = await _recoveryCoordinator.PrepareStepAsync(existing?.Provider ?? string.Empty, CloudKeyVaultAction.Write,
                         @namespace, key, value.Value, existing, value.IsJsonValue, cancellationToken).ConfigureAwait(false);
                     if (step.IsFailure) return Result.Failure(step.Errors);
                     steps.Add(step.Value);
@@ -175,7 +217,7 @@ internal sealed partial class ConfigurationStore
                 {
                     OperationId = Guid.NewGuid(), Namespace = @namespace,
                     Kind = replace ? ConfigurationOperationKind.Replace : ConfigurationOperationKind.Merge,
-                    Original = original, Proposed = Snapshot(entries), Steps = steps,
+                    Original = original, Proposed = ConfigurationRecoveryCoordinator.Snapshot(entries), Steps = steps,
                 };
                 if (replace)
                 {
@@ -183,7 +225,7 @@ internal sealed partial class ConfigurationStore
                         state.Proposed.Remove(key);
                 }
                 else state.Proposed.Remove(LegacySettingsKey);
-                var written = await WriteStepsAsync(state, cancellationToken).ConfigureAwait(false);
+                var written = await _recoveryCoordinator.WriteStepsAsync(state, cancellationToken).ConfigureAwait(false);
                 if (written.IsFailure) return written;
                 entries.Clear();
                 foreach (var entry in state.Proposed) entries.Add(entry.Key, entry.Value);
@@ -202,7 +244,7 @@ internal sealed partial class ConfigurationStore
         }
         catch (JsonException) { result = Result.Failure(NamespaceJsonInvalid); }
         catch (Exception) { result = Result.Failure(RecoveryUnfinished); }
-        return Attempt(result, state);
+        return _recoveryCoordinator.Attempt(result, state);
     }
 
     private static Result<Dictionary<string, ConfigurationValue>> ReadNamespaceProperties(JsonElement value)
@@ -215,7 +257,6 @@ internal sealed partial class ConfigurationStore
             var isJson = property.Value.ValueKind != JsonValueKind.String;
             var entry = new ConfigurationValue
             {
-                // ValueKind.String guarantees GetString returns a non-null value.
                 Value = isJson ? property.Value.GetRawText() : property.Value.GetString()!,
                 IsJsonValue = isJson,
             };
@@ -225,14 +266,4 @@ internal sealed partial class ConfigurationStore
         }
         return Result<Dictionary<string, ConfigurationValue>>.Success(properties);
     }
-
-    private static Error NamespaceObjectRequired => Error.FromMessages(
-        "The namespace settings could not be merged.",
-        "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
-        ErrorCategory.Validation);
-
-    private static Error NamespaceJsonInvalid => Error.FromMessages(
-        "The namespace settings could not be processed.",
-        "Namespace settings require valid JSON properties without duplicate names or the reserved namespaceSettings name.",
-        ErrorCategory.Validation);
 }

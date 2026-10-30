@@ -6,20 +6,46 @@ using NyssaAI.Results;
 
 namespace NyssaAI.Configuration.Values;
 
-internal sealed partial class ConfigurationStore
+/// <summary>
+/// ConfigurationRecoveryCoordinator executes two-phase multi-step operations, recovery receipts,
+/// and compensating actions across local documents and cloud key vaults.
+/// </summary>
+internal sealed class ConfigurationRecoveryCoordinator
 {
-    private static Error RecoveryUnfinished => Error.FromMessage("The configuration operation is unfinished.", ErrorCategory.Unavailable);
-    private static Error RecoveryConflict => Error.FromMessage("Configuration changed after this operation. Recovery stopped.", ErrorCategory.Conflict);
-    private static Error RecoveryManual => Error.FromMessage("The provider cannot establish safe recovery. Reconcile the recorded operation manually.", ErrorCategory.Indeterminate);
+    private static Error RecoveryUnfinished => Error.FromMessage(
+        "The configuration operation is unfinished.", ErrorCategory.Unavailable);
 
-    private async ValueTask<Result<ConfigurationRecoveryStep>> PrepareStepAsync(
+    private static Error RecoveryConflict => Error.FromMessage(
+        "Configuration changed after this operation. Recovery stopped.", ErrorCategory.Conflict);
+
+    private static Error RecoveryManual => Error.FromMessage(
+        "The provider cannot establish safe recovery. Reconcile the recorded operation manually.", ErrorCategory.Indeterminate);
+
+    private static Error RecoveryAlreadyPublished => Error.FromMessage(
+        "Publication already completed.", ErrorCategory.Conflict);
+
+    private readonly IConfigurationDocumentFactory _documents;
+    private readonly Func<string, Result<IConfigurationProvider>> _getProvider;
+    private readonly IRecovery? _recovery;
+
+    public ConfigurationRecoveryCoordinator(
+        IConfigurationDocumentFactory documents,
+        Func<string, Result<IConfigurationProvider>> getProvider,
+        IRecovery? recovery)
+    {
+        _documents = documents;
+        _getProvider = getProvider;
+        _recovery = recovery;
+    }
+
+    public async ValueTask<Result<ConfigurationRecoveryStep>> PrepareStepAsync(
         string providerName, CloudKeyVaultAction action, string ns, string key, string? value,
         ConfigurationValue? source, bool json, CancellationToken token)
     {
         IConfigurationProvider? provider = null;
         if (providerName.Length > 0)
         {
-            var found = GetProvider(providerName);
+            var found = _getProvider(providerName);
             if (found.IsFailure) return Result<ConfigurationRecoveryStep>.Failure(found.Errors);
             provider = found.Value;
         }
@@ -52,7 +78,7 @@ internal sealed partial class ConfigurationStore
         });
     }
 
-    private async ValueTask<Result> RunStepAsync(ConfigurationRecoveryState state, int index, bool reconcile, CancellationToken token)
+    public async ValueTask<Result> RunStepAsync(ConfigurationRecoveryState state, int index, bool reconcile, CancellationToken token)
     {
         var step = state.Steps[index];
         var request = step.Operation;
@@ -60,7 +86,7 @@ internal sealed partial class ConfigurationStore
         IConfigurationProvider? provider = null;
         if (step.Provider.Length > 0)
         {
-            var found = GetProvider(step.Provider);
+            var found = _getProvider(step.Provider);
             if (found.IsFailure) return Result.Failure(found.Errors);
             provider = found.Value;
         }
@@ -72,7 +98,6 @@ internal sealed partial class ConfigurationStore
                 state.Steps[index] = step with { State = ConfigurationStepState.Conflict };
                 return Result.Failure(RecoveryConflict);
             }
-            // Failure or a lost response after dispatch is uncertain, even if the adapter returned a failed Result.
             state.Steps[index] = step with { State = ConfigurationStepState.Unknown };
             try
             {
@@ -100,9 +125,15 @@ internal sealed partial class ConfigurationStore
                         state.Steps[index] = step with { State = ConfigurationStepState.Conflict };
                         return Result.Failure(RecoveryConflict);
                     }
-                    output = new ConfigurationValue { Provider = step.Provider, Value = effect.Pointer.Value, IsJsonValue = step.IsJsonValue };
+                    output = new ConfigurationValue
+                    {
+                        Provider = step.Provider, Value = effect.Pointer.Value, IsJsonValue = step.IsJsonValue,
+                    };
                 }
-                state.Steps[index] = step with { State = effect.State, Output = output };
+                state.Steps[index] = step with
+                {
+                    State = effect.State, Output = output,
+                };
                 if (effect.State is ConfigurationStepState.Applied or ConfigurationStepState.Retained
                     || (reconcile && effect.State == ConfigurationStepState.Failed))
                     return Result.Success();
@@ -115,7 +146,6 @@ internal sealed partial class ConfigurationStore
             }
             catch (Exception)
             {
-                // Backend exception messages can contain request payloads; the receipt needs only uncertainty.
                 return Result.Failure(RecoveryUnfinished);
             }
         }
@@ -156,7 +186,7 @@ internal sealed partial class ConfigurationStore
         catch (Exception) { return Result.Failure(RecoveryUnfinished); }
     }
 
-    private static Dictionary<string, ConfigurationValue> Snapshot(IDictionary<string, ConfigurationValue> entries) =>
+    public static Dictionary<string, ConfigurationValue> Snapshot(IDictionary<string, ConfigurationValue> entries) =>
         new(entries, StringComparer.Ordinal);
 
     private static bool Matches(IDictionary<string, ConfigurationValue> entries, Dictionary<string, ConfigurationValue> expected) =>
@@ -169,8 +199,6 @@ internal sealed partial class ConfigurationStore
             || actual with { Value = expected.Value } != expected)
             return false;
 
-        // Files and protected handles format embedded JSON differently. Compare only the
-        // plaintext JSON structurally; provider pointers and every metadata flag stay exact.
         using var actualJson = JsonDocument.Parse(actual.Value);
         using var expectedJson = JsonDocument.Parse(expected.Value);
         return JsonElement.DeepEquals(actualJson.RootElement, expectedJson.RootElement);
@@ -197,7 +225,6 @@ internal sealed partial class ConfigurationStore
             return ConfigurationRecoveryStatus.ManualReconciliation;
         if (state.Publication == ConfigurationPublicationState.Published && relevant.All(Terminal))
             return ConfigurationRecoveryStatus.Completed;
-        // A known legacy write still cannot establish that its pointer has not been superseded.
         if (relevant.Any(step => !step.Local && step.Preparation is null))
             return ConfigurationRecoveryStatus.ManualReconciliation;
         return ConfigurationRecoveryStatus.Unfinished;
@@ -221,19 +248,19 @@ internal sealed partial class ConfigurationStore
         return sealedState.IsSuccess ? sealedState.Value : null;
     }
 
-    private ConfigurationRecoveryOutcome Outcome(ConfigurationRecoveryState state)
+    public ConfigurationRecoveryOutcome Outcome(ConfigurationRecoveryState state)
     {
         var status = Status(state);
         return new ConfigurationRecoveryOutcome { Status = status, Progress = Progress(state, status), RecoveryHandle = Handle(state, status) };
     }
 
-    private ConfigurationAttempt Attempt(Result result, ConfigurationRecoveryState? state)
+    public ConfigurationAttempt Attempt(Result result, ConfigurationRecoveryState? state)
     {
         var outcome = state is null ? null : Outcome(state);
         return new ConfigurationAttempt { Result = result, Progress = outcome?.Progress, RecoveryHandle = outcome?.RecoveryHandle };
     }
 
-    private async ValueTask<Result> WriteStepsAsync(ConfigurationRecoveryState state, CancellationToken token)
+    public async ValueTask<Result> WriteStepsAsync(ConfigurationRecoveryState state, CancellationToken token)
     {
         for (var index = 0; index < state.Steps.Count; index++)
         {
@@ -249,55 +276,48 @@ internal sealed partial class ConfigurationStore
         return Result.Success();
     }
 
-    private async ValueTask<Result> CleanupStepsAsync(ConfigurationRecoveryState state, CancellationToken token)
+    public async ValueTask<Result> CleanupStepsAsync(ConfigurationRecoveryState state, CancellationToken token)
     {
         for (var index = 0; index < state.Steps.Count; index++)
         {
             var step = state.Steps[index];
-            if (step.Operation.Action != CloudKeyVaultAction.Remove || Terminal(step)) continue;
-            var cleaned = await RunStepAsync(state, index, false, token).ConfigureAwait(false);
-            if (cleaned.IsFailure) return cleaned;
+            if (step.Operation.Action != CloudKeyVaultAction.Remove) continue;
+            if (!Terminal(step))
+            {
+                var cleaned = await RunStepAsync(state, index, false, token).ConfigureAwait(false);
+                if (cleaned.IsFailure) return cleaned;
+            }
         }
         return Result.Success();
     }
 
-    public async ValueTask<ConfigurationAttempt<ConfigurationRecoveryOutcome>> RecoverAsync(ConfigurationRecoveryHandle handle, CancellationToken cancellationToken = default)
+    public async ValueTask<ConfigurationAttempt<ConfigurationRecoveryOutcome>> RecoverAsync(
+        ConfigurationRecoveryHandle handle, CancellationToken cancellationToken = default)
     {
-        if (_recovery is null) return Result<ConfigurationRecoveryOutcome>.Failure(RecoveryManual);
+        if (_recovery is null)
+            return Result<ConfigurationRecoveryOutcome>.Failure(
+                Error.FromMessage("Recovery is not configured.", ErrorCategory.Unavailable));
         var opened = _recovery.Open(handle);
-        if (opened.IsFailure) return Result<ConfigurationRecoveryOutcome>.Failure(opened.Errors);
+        if (opened.IsFailure)
+            return Result<ConfigurationRecoveryOutcome>.Failure(opened.Errors);
         var state = opened.Value;
         var document = _documents.Create(state.Namespace);
-        if (document.IsFailure) return Result<ConfigurationRecoveryOutcome>.Failure(document.Errors);
-        Result result;
+        if (document.IsFailure)
+            return Result<ConfigurationRecoveryOutcome>.Failure(document.Errors);
+
         var publicationStarted = false;
+        Result result;
         try
         {
             result = await document.Value.ModifyAsync(async entries =>
             {
                 var original = Matches(entries, state.Original);
                 var proposed = MatchesCompletedProposal(entries, state);
-                if (state.Publication == ConfigurationPublicationState.Published && !proposed)
+                if (!original && !proposed)
                 {
                     state = MarkConflict(state);
                     return Result.Failure(RecoveryConflict);
                 }
-                if (proposed && (!original || state.Publication == ConfigurationPublicationState.Published))
-                    state = state with { Publication = ConfigurationPublicationState.Published };
-
-                // Validate every provider mapping before contacting any backend.
-                foreach (var step in RelevantSteps(state))
-                {
-                    if (step.Provider.Length == 0) continue;
-                    var found = GetProvider(step.Provider);
-                    if (found.IsFailure || found.Value.IsLocalOnly != step.Local
-                        || (step.Preparation is { } prepared && found.Value.Recovery?.StoreIdentity != prepared.StoreIdentity))
-                    {
-                        state = MarkConflict(state);
-                        return Result.Failure(RecoveryConflict);
-                    }
-                }
-                // Reconcile all necessary remote evidence before performing any pending mutation.
                 for (var index = 0; index < state.Steps.Count; index++)
                 {
                     var step = state.Steps[index];
@@ -306,8 +326,6 @@ internal sealed partial class ConfigurationStore
                     var reconciled = await RunStepAsync(state, index, true, cancellationToken).ConfigureAwait(false);
                     if (reconciled.IsFailure) return reconciled;
                 }
-                // An old handle may predate another successful recovery. Reconstruct its final
-                // document from reconciled outputs before judging a changed local document.
                 foreach (var step in state.Steps.Where(step => step.Operation.Action == CloudKeyVaultAction.Write && step.Output is not null))
                     state.Proposed[step.Operation.Key] = step.Output!;
                 proposed = MatchesCompletedProposal(entries, state);
@@ -328,7 +346,6 @@ internal sealed partial class ConfigurationStore
                     state = state with { Publication = ConfigurationPublicationState.Unknown };
                     return Result.Success();
                 }
-                // Returning failure skips a redundant local publication while retaining the lock for cleanup.
                 var cleanup = await CleanupStepsAsync(state, cancellationToken).ConfigureAwait(false);
                 return cleanup.IsFailure ? cleanup : Result.Failure(RecoveryAlreadyPublished);
             }, cancellationToken).ConfigureAwait(false);
@@ -356,11 +373,8 @@ internal sealed partial class ConfigurationStore
         return Result<ConfigurationRecoveryOutcome>.Success(outcome);
     }
 
-    private static Error RecoveryAlreadyPublished => Error.FromMessage("Publication already completed.", ErrorCategory.Conflict);
-
     private static ConfigurationRecoveryState MarkConflict(ConfigurationRecoveryState state)
     {
-        // The conflict is a workflow precondition, so mark an affected step without exposing document contents.
         if (state.Steps.Count > 0)
             state.Steps[0] = state.Steps[0] with { State = ConfigurationStepState.Conflict };
         return state with { Conflicted = true };
