@@ -295,8 +295,7 @@ internal sealed class ConfigurationRecoveryCoordinator
         ConfigurationRecoveryHandle handle, CancellationToken cancellationToken = default)
     {
         if (_recovery is null)
-            return Result<ConfigurationRecoveryOutcome>.Failure(
-                Error.FromMessage("Recovery is not configured.", ErrorCategory.Unavailable));
+            return Result<ConfigurationRecoveryOutcome>.Failure(RecoveryManual);
         var opened = _recovery.Open(handle);
         if (opened.IsFailure)
             return Result<ConfigurationRecoveryOutcome>.Failure(opened.Errors);
@@ -313,11 +312,27 @@ internal sealed class ConfigurationRecoveryCoordinator
             {
                 var original = Matches(entries, state.Original);
                 var proposed = MatchesCompletedProposal(entries, state);
-                if (!original && !proposed)
+                if (state.Publication == ConfigurationPublicationState.Published && !proposed)
                 {
                     state = MarkConflict(state);
                     return Result.Failure(RecoveryConflict);
                 }
+                if (proposed && (!original || state.Publication == ConfigurationPublicationState.Published))
+                    state = state with { Publication = ConfigurationPublicationState.Published };
+
+                // Validate every provider mapping before contacting any backend.
+                foreach (var step in RelevantSteps(state))
+                {
+                    if (step.Provider.Length == 0) continue;
+                    var found = _getProvider(step.Provider);
+                    if (found.IsFailure || found.Value.IsLocalOnly != step.Local
+                        || (step.Preparation is { } prepared && found.Value.Recovery?.StoreIdentity != prepared.StoreIdentity))
+                    {
+                        state = MarkConflict(state);
+                        return Result.Failure(RecoveryConflict);
+                    }
+                }
+                // Reconcile all necessary remote evidence before performing any pending mutation.
                 for (var index = 0; index < state.Steps.Count; index++)
                 {
                     var step = state.Steps[index];
@@ -326,6 +341,8 @@ internal sealed class ConfigurationRecoveryCoordinator
                     var reconciled = await RunStepAsync(state, index, true, cancellationToken).ConfigureAwait(false);
                     if (reconciled.IsFailure) return reconciled;
                 }
+                // An old handle may predate another successful recovery. Reconstruct its final
+                // document from reconciled outputs before judging a changed local document.
                 foreach (var step in state.Steps.Where(step => step.Operation.Action == CloudKeyVaultAction.Write && step.Output is not null))
                     state.Proposed[step.Operation.Key] = step.Output!;
                 proposed = MatchesCompletedProposal(entries, state);
@@ -346,6 +363,7 @@ internal sealed class ConfigurationRecoveryCoordinator
                     state = state with { Publication = ConfigurationPublicationState.Unknown };
                     return Result.Success();
                 }
+                // Returning failure skips a redundant local publication while retaining the lock for cleanup.
                 var cleanup = await CleanupStepsAsync(state, cancellationToken).ConfigureAwait(false);
                 return cleanup.IsFailure ? cleanup : Result.Failure(RecoveryAlreadyPublished);
             }, cancellationToken).ConfigureAwait(false);
