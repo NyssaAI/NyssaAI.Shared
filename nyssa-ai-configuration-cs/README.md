@@ -325,7 +325,7 @@ Return `Applied` only with evidence of the original operation; matching content 
 
 Request deduplication must survive adapter recreation and concurrent callers. Applied write pointers must still identify the original output when reconciled. A read followed by an unguarded write or delete is insufficient: the mutation itself must enforce the condition atomically. Backend limitations cannot be repaired by an in-memory retry cache. Preparation contexts must not contain access tokens, refresh tokens, or reusable credentials; errors and diagnostic target references must contain no setting values or secret material.
 
-See the runnable [recovery tutorials](../test/NyssaAI.Configuration.UseCaseTests/ConfigurationRecoveryTutorials.cs) and [consumer-implemented recovery vault](../test/NyssaAI.Configuration.UseCaseTests/fixtures/RecoveryVaultFactory.cs). That fixture models backend request records and revisions; a production adapter must obtain equivalent guarantees from its remote system.
+See the runnable [recovery tutorials](test/use_case/ConfigurationRecoveryTutorials.cs) and [consumer-implemented recovery vault](test/use_case/fixtures/RecoveryVaultFactory.cs). That fixture models backend request records and revisions; a production adapter must obtain equivalent guarantees from its remote system.
 
 ### Remove a value
 
@@ -688,18 +688,18 @@ The [executable tutorials](docs/tutorials/README.md) show how to use the public 
 
 | Tutorial | What it covers |
 | --- | --- |
-| [ManifestTutorials](../test/NyssaAI.Configuration.UseCaseTests/ManifestTutorials.cs) | First-use setup, paths, overrides, and manifest precedence. |
-| [SetupTutorials](../test/NyssaAI.Configuration.UseCaseTests/SetupTutorials.cs) | Application identity, startup failures, encryption, and vault setup. |
-| [ConfigurationTutorials](../test/NyssaAI.Configuration.UseCaseTests/ConfigurationTutorials.cs) | Plain and encrypted values, nested objects, persistence across scopes, provider moves, and source-generated JSON. |
-| [ConfigurationDefaultsTutorials](../test/NyssaAI.Configuration.UseCaseTests/ConfigurationDefaultsTutorials.cs) | Default DTO storage, updates that preserve providers, moves back to default storage, and compact JSON. |
-| [NamespaceWriteTutorials](../test/NyssaAI.Configuration.UseCaseTests/NamespaceWriteTutorials.cs) | Replacement versus merging, omitted keys, nested objects, nulls, and empty objects. |
-| [NamespaceSettingsTutorials](../test/NyssaAI.Configuration.UseCaseTests/NamespaceSettingsTutorials.cs) | Default namespace settings, plaintext storage, updates, isolation, and source-generated JSON. |
-| [OAuthTutorials](../test/NyssaAI.Configuration.UseCaseTests/OAuthTutorials.cs) | Sign-in, token refresh, revoked grants, and provider authentication. |
+| [ManifestTutorials](test/use_case/ManifestTutorials.cs) | First-use setup, paths, overrides, and manifest precedence. |
+| [SetupTutorials](test/use_case/SetupTutorials.cs) | Application identity, startup failures, encryption, and vault setup. |
+| [ConfigurationTutorials](test/use_case/ConfigurationTutorials.cs) | Plain and encrypted values, nested objects, persistence across scopes, provider moves, and source-generated JSON. |
+| [ConfigurationDefaultsTutorials](test/use_case/ConfigurationDefaultsTutorials.cs) | Default DTO storage, updates that preserve providers, moves back to default storage, and compact JSON. |
+| [NamespaceWriteTutorials](test/use_case/NamespaceWriteTutorials.cs) | Replacement versus merging, omitted keys, nested objects, nulls, and empty objects. |
+| [NamespaceSettingsTutorials](test/use_case/NamespaceSettingsTutorials.cs) | Default namespace settings, plaintext storage, updates, isolation, and source-generated JSON. |
+| [OAuthTutorials](test/use_case/OAuthTutorials.cs) | Sign-in, token refresh, revoked grants, and provider authentication. |
 
 Run all included tests from the repository root:
 
 ```powershell
-./run-tests.ps1
+./scripts/run-tests.ps1
 ```
 
 Live OS keyring tests are skipped by default. To run them against your machine's credential store, set `NYSSA_OS_KEYRING_TESTS=1`. These tests create and delete entries under `nyssa.configuration.tests`.

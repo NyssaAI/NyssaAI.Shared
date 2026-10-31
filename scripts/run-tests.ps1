@@ -4,26 +4,27 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $postgresFixture = $null
 $originalPostgres = $env:NYSSAAI_REPOSITORY_POSTGRES
-. (Join-Path $PSScriptRoot 'test/PostgresFixture.ps1')
-Push-Location $PSScriptRoot
+. (Join-Path $PSScriptRoot 'PostgresFixture.ps1')
+Push-Location $repoRoot
 try {
     dotnet build NyssaAI.Shared.slnx --configuration $Configuration --nologo
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    $postgresFixture = Start-RepositoryPostgres -ScratchRoot (Join-Path $PSScriptRoot '.temp')
+    $postgresFixture = Start-RepositoryPostgres -ScratchRoot (Join-Path $repoRoot '.temp')
     $env:NYSSAAI_REPOSITORY_POSTGRES = $postgresFixture.ConnectionString
 
     $testProjects = @(
-        'NyssaAI.Result/test/NyssaAI.Result.Tests/NyssaAI.Result.Tests.csproj',
-        'test/NyssaAI.Result.UseCaseTests/NyssaAI.Result.UseCaseTests.csproj',
-        'NyssaAI.Configuration/test/NyssaAI.Configuration.Tests/NyssaAI.Configuration.Tests.csproj',
-        'test/NyssaAI.Configuration.UseCaseTests/NyssaAI.Configuration.UseCaseTests.csproj',
-        'NyssaAI.Logging/test/NyssaAI.Logging.Tests/NyssaAI.Logging.Tests.csproj',
-        'test/NyssaAI.Logging.UseCaseTests/NyssaAI.Logging.UseCaseTests.csproj',
-        'NyssaAI.Repository/test/NyssaAI.Repository.Tests/NyssaAI.Repository.Tests.csproj',
-        'test/NyssaAI.Repository.UseCaseTests/NyssaAI.Repository.UseCaseTests.csproj'
+        'nyssa-ai-result-cs/test/unit/NyssaAI.Result.Tests.csproj',
+        'nyssa-ai-result-cs/test/use_case/NyssaAI.Result.UseCaseTests.csproj',
+        'nyssa-ai-configuration-cs/test/unit/NyssaAI.Configuration.Tests.csproj',
+        'nyssa-ai-configuration-cs/test/use_case/NyssaAI.Configuration.UseCaseTests.csproj',
+        'nyssa-ai-logging-cs/test/unit/NyssaAI.Logging.Tests.csproj',
+        'nyssa-ai-logging-cs/test/use_case/NyssaAI.Logging.UseCaseTests.csproj',
+        'nyssa-ai-dbgateway-cs/test/unit/NyssaAI.DbGateway.Tests.csproj',
+        'nyssa-ai-dbgateway-cs/test/use_case/NyssaAI.DbGateway.UseCaseTests.csproj'
     )
     foreach ($testProject in $testProjects) {
         $projectDirectory = Split-Path -Parent $testProject

@@ -1,10 +1,10 @@
 {
   "revision": "758e538dfaae67ba49ad6d144f0e21800ddbf4c5",
   "source_roots": [
-    "NyssaAI.Configuration/src",
-    "NyssaAI.Logging/src",
-    "NyssaAI.Repository/src",
-    "NyssaAI.Result/src"
+    "nyssa-ai-configuration-cs/src",
+    "nyssa-ai-logging-cs/src",
+    "nyssa-ai-dbgateway-cs/src",
+    "nyssa-ai-result-cs/src"
   ],
   "commands": {
     "build": {
@@ -20,7 +20,8 @@
       "argv": [
         "dotnet",
         "test",
-        "NyssaAI.Configuration/test/NyssaAI.Configuration.Tests"
+        "--project",
+        "nyssa-ai-configuration-cs/test/unit"
       ]
     },
     "use_case": {
@@ -28,7 +29,8 @@
       "argv": [
         "dotnet",
         "test",
-        "test/NyssaAI.Configuration.UseCaseTests"
+        "--project",
+        "nyssa-ai-configuration-cs/test/use_case"
       ]
     }
   },

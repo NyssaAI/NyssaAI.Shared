@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Nullable, TreatWarningsAsErrors, GenerateDocumentationFile, ImplicitUsings, and LangVersion
+       come from the repository-root Directory.Build.props. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AssemblyName>NyssaAI.DbGateway</AssemblyName>
+    <RootNamespace>NyssaAI.DbGateway</RootNamespace>
+    <ClientContractFile>IDbGateway.cs</ClientContractFile>
+    <Version>0.1.0</Version>
+    <Authors>jamaynor</Authors>
+    <Description>AOT-compatible dual-engine database gateway with typed commands, automatic parameter and row type coercion, transaction scopes, and paired migrations for SQLite and PostgreSQL.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/NyssaAI/NyssaAI.Shared/tree/main/nyssa-ai-dbgateway-cs</PackageProjectUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../nyssa-ai-configuration-cs/src/NyssaAI.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NyssaAI.DbGateway.Tests" />
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+</Project>

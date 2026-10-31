@@ -188,7 +188,8 @@ public sealed class OwnerOnlyAccessTests
             targetType: typeof(SecurityIdentifier));
 
         var rule = Assert.IsType<FileSystemAccessRule>(Assert.Single(rules));
-        Assert.Equal(WindowsIdentity.GetCurrent().User, rule.IdentityReference);
+        using var identity = WindowsIdentity.GetCurrent();
+        Assert.Equal(identity.User, rule.IdentityReference);
         Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
         Assert.Equal(FileSystemRights.FullControl, rule.FileSystemRights);
     }

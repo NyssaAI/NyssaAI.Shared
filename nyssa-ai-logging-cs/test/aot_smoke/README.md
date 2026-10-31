@@ -5,8 +5,8 @@ This application writes structured records through two file providers with diffe
 From a Linux machine with the .NET 10 SDK and Native AOT prerequisites:
 
 ```sh
-dotnet publish test/NyssaAI.Logging.AotSmoke -c Release -r linux-x64 -o .temp/logging-native
+dotnet publish nyssa-ai-logging-cs/test/aot_smoke -c Release -r linux-x64 -o .temp/logging-native
 .temp/logging-native/NyssaAI.Logging.AotSmoke
 ```
 
-The process exits nonzero on failure. The shared `test/verify-native.sh` script also runs the Repository native checks.
+The process exits nonzero on failure. The shared `scripts/verify-native.sh` script also runs the DbGateway native checks.

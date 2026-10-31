@@ -1,8 +1,13 @@
 # NyssaAI.Logging
 
-`NyssaAI.Logging` gives .NET applications a very simple way to write logs for AI use cases. It comes with logging sinks for STDERR, console output, and a rotating JSON file. It is a very simple, small library that uses the standard `ILogger<T>` interface. The library configures the destinations and handles the file's format, permissions, and rotation.
+`NyssaAI.Logging` provides lightweight, Native AOT-ready logging destinations for `Microsoft.Extensions.Logging`. It delivers the essential operational sinks that .NET's base framework omits—structured rotating JSON files, owner-only access controls, independent STDERR/STDOUT routing, and fail-safe execution—without introducing custom logging wrappers or heavy dependencies.
 
-The package targets .NET 10 and enables Native AOT compatibility checks. It requires no configuration store or separate logging interface.
+* **Rotating JSONL persistence**: Automatically rotates at 10 MiB with 30-day retention without extra frameworks.
+* **Clean protocol streams**: Routes diagnostics to STDERR while keeping STDOUT unpolluted for machine protocols.
+* **Cross-account privacy**: Enforces Unix 0600 modes and Windows DACLs to prevent unauthorized access.
+* **Zero-reflection performance**: Employs Utf8JsonWriter to guarantee trimming and Native AOT compilation safety.
+* **Crash-proof startup**: Degrades gracefully to STDERR diagnostics without ever throwing or aborting execution.
+* **Zero-ceremony integration**: Provides fluent builder extensions while preserving standard Microsoft `ILogger<T>` conventions.
 
 ## Simple setup, ordinary logging
 
@@ -251,12 +256,12 @@ Records are written with `Utf8JsonWriter`, using explicit handling for each supp
 
 The [executable tutorials](docs/tutorials/README.md) show chained setup with OpenTelemetry, ordinary logging, structured fields, filtering, and continuing when a file cannot be opened. They use temporary directories and exercise the public registration calls.
 
-The [unit tests](test/NyssaAI.Logging.Tests) cover the JSON format, permissions, rotation, retention, filtering, failure reporting, and disposal. Platform-specific permission tests run on their matching operating system.
+The [unit tests](test/unit) cover the JSON format, permissions, rotation, retention, filtering, failure reporting, and disposal. Platform-specific permission tests run on their matching operating system.
 
 Run the repository's test suites from its root:
 
 ```powershell
-./run-tests.ps1
+./scripts/run-tests.ps1
 ```
 
 ## Node.js and TypeScript applications
@@ -290,7 +295,7 @@ const logger = pino(
 );
 ```
 
-When a Node.js application also uses `@nyssa-ai/configuration`, pass a small adapter for [`IConfigurationLogger`](../nyssa-ai-configuration/src/logging/IConfigurationLogger.ts) so configuration boundary events flow into the same Pino destinations:
+When a Node.js application also uses `@nyssa-ai/configuration`, pass a small adapter for [`IConfigurationLogger`](../nyssa-ai-configuration-ts/src/logging/IConfigurationLogger.ts) so configuration boundary events flow into the same Pino destinations:
 
 ```ts
 import type { IConfigurationLogger } from "@nyssa-ai/configuration/logging/IConfigurationLogger.js";

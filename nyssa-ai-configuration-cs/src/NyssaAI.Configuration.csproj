@@ -13,7 +13,7 @@
     <Authors>jamaynor</Authors>
     <Description>Manifest-based configuration, typed settings, local encryption, OAuth, and vault provider contracts.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/NyssaAI/NyssaAI.Shared/tree/main/NyssaAI.Configuration</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/NyssaAI/NyssaAI.Shared/tree/main/nyssa-ai-configuration-cs</PackageProjectUrl>
     <!-- Enables the trim, single-file, and AOT analyzers, matching NyssaAI.Result. With
          TreatWarningsAsErrors from Directory.Build.props, any AOT-incompatible API use fails the
          build. The JSON call sites use source-generated contexts; the two open-generic accessors on
@@ -38,7 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../NyssaAI.Result/src/NyssaAI.Result.csproj" />
+    <ProjectReference Include="../../nyssa-ai-result-cs/src/NyssaAI.Result.csproj" />
   </ItemGroup>
 
   <ItemGroup>

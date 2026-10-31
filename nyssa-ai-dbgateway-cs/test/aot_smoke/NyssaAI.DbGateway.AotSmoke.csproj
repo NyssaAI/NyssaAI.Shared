@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <RuntimeIdentifiers>linux-x64;win-x64</RuntimeIdentifiers>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../use_case/Fixtures/ConfigurationHost.cs" Link="Fixtures/ConfigurationHost.cs" />
+    <Compile Include="../use_case/Fixtures/DatabaseWorkspace.cs" Link="Fixtures/DatabaseWorkspace.cs" />
+    <Compile Include="../use_case/Domain/TaskCommands.cs" Link="Domain/TaskCommands.cs" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <ProjectReference Include="../../src/NyssaAI.DbGateway.csproj" />
+  </ItemGroup>
+</Project>

@@ -5,10 +5,10 @@ This package contains values and per-operation construction APIs, so it needs no
 Run these public API tutorials from the repository root with the .NET 10 SDK:
 
 ```powershell
-dotnet run --project test/NyssaAI.Result.UseCaseTests
+dotnet run --project nyssa-ai-result-cs/test/use_case
 ```
 
-Read [the executable examples](../../../test/NyssaAI.Result.UseCaseTests/ResultTutorials.cs) from Arrange through Cleanup. The Act sections are copyable consumer workflows using public contracts; xUnit assertions and temporary-resource setup stay outside them.
+Read [the executable examples](../../test/use_case/ResultTutorials.cs) from Arrange through Cleanup. The Act sections are copyable consumer workflows using public contracts; xUnit assertions and temporary-resource setup stay outside them.
 
 - `Then_OrderValidation_CalculatesAReceiptAndShortCircuitsInvalidInput` composes guard validation, transforms the successful value, and resolves both a receipt and correction feedback.
 

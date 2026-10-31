@@ -9,7 +9,7 @@
     <Version>0.2.1</Version>
     <Authors>jamaynor</Authors>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/NyssaAI/NyssaAI.Shared/tree/main/NyssaAI.Logging</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/NyssaAI/NyssaAI.Shared/tree/main/nyssa-ai-logging-cs</PackageProjectUrl>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
   </PropertyGroup>

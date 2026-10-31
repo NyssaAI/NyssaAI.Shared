@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
-using Microsoft.Extensions.Options;
 
 namespace NyssaAI.Logging.ConsoleLogging;
 
@@ -12,16 +11,5 @@ namespace NyssaAI.Logging.ConsoleLogging;
 [ProviderAlias("NyssaConsole")]
 internal sealed class ConsoleOutputLoggerProvider : ConsoleLoggerProvider
 {
-    public ConsoleOutputLoggerProvider() : base(new OutputOptions()) { }
-
-    private sealed class OutputOptions : IOptionsMonitor<ConsoleLoggerOptions>
-    {
-        public ConsoleLoggerOptions CurrentValue { get; } = new()
-        {
-            LogToStandardErrorThreshold = LogLevel.None,
-        };
-
-        public ConsoleLoggerOptions Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<ConsoleLoggerOptions, string?> listener) => null;
-    }
+    public ConsoleOutputLoggerProvider() : base(new ConsoleOutputOptions()) { }
 }

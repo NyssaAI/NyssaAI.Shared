@@ -7,7 +7,8 @@ on:
       - 'NyssaAI.Result/v[0-9]*'
       - 'NyssaAI.Configuration/v[0-9]*'
       - 'NyssaAI.Logging/v[0-9]*'
-      - 'NyssaAI.Repository/v[0-9]*'
+      - 'NyssaAI.DbGateway/v[0-9]*'
+      - 'nyssa-ai-*-cs/v[0-9]*'
 
 permissions:
   contents: read
@@ -30,8 +31,8 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          if ($tag -match '^NyssaAI\.([^/]+)/v(.+)$') {
-            $target = "NyssaAI.$($matches[1])"
+          if ($tag -match '^(?:NyssaAI\.|nyssa-ai-)([^/]+?)(?:-cs)?/v(.+)$') {
+            $target = $matches[1].ToLower()
             $version = $matches[2]
           } elseif ($tag -match '^v(.+)$') {
             $target = "all"
@@ -43,27 +44,33 @@ jobs:
           switch ($target) {
             "all" {
               $projects = @(
-                "NyssaAI.Result/src/NyssaAI.Result.csproj",
-                "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj",
-                "NyssaAI.Logging/src/NyssaAI.Logging.csproj",
-                "NyssaAI.Repository/src/NyssaAI.Repository.csproj"
+                "nyssa-ai-result-cs/src/NyssaAI.Result.csproj",
+                "nyssa-ai-configuration-cs/src/NyssaAI.Configuration.csproj",
+                "nyssa-ai-logging-cs/src/NyssaAI.Logging.csproj",
+                "nyssa-ai-dbgateway-cs/src/NyssaAI.DbGateway.csproj"
               )
             }
-            "NyssaAI.Repository" {
+            "dbgateway" {
               $projects = @(
-                "NyssaAI.Result/src/NyssaAI.Result.csproj",
-                "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj",
-                "NyssaAI.Repository/src/NyssaAI.Repository.csproj"
+                "nyssa-ai-result-cs/src/NyssaAI.Result.csproj",
+                "nyssa-ai-configuration-cs/src/NyssaAI.Configuration.csproj",
+                "nyssa-ai-dbgateway-cs/src/NyssaAI.DbGateway.csproj"
               )
             }
-            "NyssaAI.Configuration" {
+            "configuration" {
               $projects = @(
-                "NyssaAI.Result/src/NyssaAI.Result.csproj",
-                "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj"
+                "nyssa-ai-result-cs/src/NyssaAI.Result.csproj",
+                "nyssa-ai-configuration-cs/src/NyssaAI.Configuration.csproj"
               )
+            }
+            "logging" {
+              $projects = @("nyssa-ai-logging-cs/src/NyssaAI.Logging.csproj")
+            }
+            "result" {
+              $projects = @("nyssa-ai-result-cs/src/NyssaAI.Result.csproj")
             }
             default {
-              $projects = @("$target/src/$target.csproj")
+              throw "Unknown target: $target"
             }
           }
 
@@ -82,7 +89,7 @@ jobs:
 
       - name: Run package verification test
         shell: pwsh
-        run: ./test/verify-packages.ps1
+        run: ./scripts/verify-packages.ps1
 
       - name: Pack target NuGet packages
         shell: pwsh

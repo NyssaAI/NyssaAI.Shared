@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace NyssaAI.Logging.UseCaseTests.fixtures;
+namespace NyssaAI.Logging.UseCaseTests.Fixtures;
 
 /// <summary>Owns a validated host for the registrations shown by a logging tutorial.</summary>
 public static class ServiceContainer

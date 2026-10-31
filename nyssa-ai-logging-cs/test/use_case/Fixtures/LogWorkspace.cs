@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace NyssaAI.Logging.UseCaseTests.fixtures;
+namespace NyssaAI.Logging.UseCaseTests.Fixtures;
 
 /// <summary>
 /// A temporary directory and log path for one workflow, deleted with the scope.

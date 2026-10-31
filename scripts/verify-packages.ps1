@@ -11,9 +11,10 @@ $versions = @{}
 [xml] $centralPackages = Get-Content -LiteralPath (Join-Path $repoRoot 'Directory.Packages.props')
 $dependencyInjectionVersion = ($centralPackages.Project.ItemGroup.PackageVersion |
     Where-Object { $_.Include -eq 'Microsoft.Extensions.DependencyInjection' }).Version
-foreach ($name in @('Result', 'Configuration', 'Logging', 'Repository')) {
+foreach ($name in @('Result', 'Configuration', 'Logging', 'DbGateway')) {
     $id = "NyssaAI.$name"
-    $project = Join-Path $repoRoot "$id/src/$id.csproj"
+    $dir = "nyssa-ai-$($name.ToLower())-cs"
+    $project = Join-Path $repoRoot "$dir/src/$id.csproj"
     [xml] $projectXml = Get-Content -LiteralPath $project
     $version = [string]($projectXml.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1)
     $versions[$id] = $version
@@ -59,7 +60,7 @@ $escapedFeed = [System.Security.SecurityElement]::Escape($feed)
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NyssaAI.Logging" Version="$($versions['NyssaAI.Logging'])" />
-    <PackageReference Include="NyssaAI.Repository" Version="$($versions['NyssaAI.Repository'])" />
+    <PackageReference Include="NyssaAI.DbGateway" Version="$($versions['NyssaAI.DbGateway'])" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="$dependencyInjectionVersion" />
   </ItemGroup>
 </Project>

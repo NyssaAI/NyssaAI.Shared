@@ -65,11 +65,12 @@ public sealed class LoggingInstallationTests
             using var record = JsonDocument.Parse(Assert.Single(File.ReadAllLines(expectedPath)));
             Assert.Equal("Written", record.RootElement.GetProperty("Message").GetString());
         }
-        finally { File.Delete(expectedPath); }
-    }
-
-    private sealed class FixedClock : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => new(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);
+        finally
+        {
+            if (File.Exists(expectedPath))
+            {
+                File.Delete(expectedPath);
+            }
+        }
     }
 }

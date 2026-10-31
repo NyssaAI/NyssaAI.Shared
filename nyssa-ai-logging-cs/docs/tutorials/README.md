@@ -2,7 +2,7 @@
 
 These tutorials show how an application uses `ILogger<T>` with NyssaAI's file destination. Each test creates its own temporary workspace, registers the production logging extensions, writes records, and checks the resulting file.
 
-The examples are in [LoggingTutorials.cs](../../../test/NyssaAI.Logging.UseCaseTests/LoggingTutorials.cs).
+The examples are in [LoggingTutorials.cs](../../test/use_case/LoggingTutorials.cs).
 
 | Tutorial | What it demonstrates |
 | --- | --- |
@@ -14,10 +14,10 @@ The examples are in [LoggingTutorials.cs](../../../test/NyssaAI.Logging.UseCaseT
 | `Choose_Which_Records_Reach_The_File` | Set a higher minimum level for the file. |
 | `Keep_Running_When_The_Log_File_Cannot_Be_Opened` | Keep a working destination when another file cannot be opened. |
 
-Run all tests from the repository root with `./run-tests.ps1`. To run just these tutorials after building, execute:
+Run all tests from the repository root with `./scripts/run-tests.ps1`. To run just these tutorials after building, execute:
 
 ```powershell
-dotnet run --project test/NyssaAI.Logging.UseCaseTests --no-build
+dotnet run --project nyssa-ai-logging-cs/test/use_case --no-build
 ```
 
 The [main README](../../README.md) explains file paths, record fields, retention, and failure behavior.

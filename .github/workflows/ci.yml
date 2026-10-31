@@ -24,10 +24,10 @@ jobs:
         run: dotnet restore NyssaAI.Shared.slnx --locked-mode
       - name: Build and run all tests
         shell: pwsh
-        run: ./run-tests.ps1
+        run: ./scripts/run-tests.ps1
       - name: Verify NuGet packages with an isolated consumer
         shell: pwsh
-        run: ./test/verify-packages.ps1
+        run: ./scripts/verify-packages.ps1
 
   native:
     runs-on: ubuntu-latest
@@ -53,4 +53,4 @@ jobs:
       - name: Publish and run native consumers
         env:
           NYSSAAI_REPOSITORY_POSTGRES: Host=127.0.0.1;Port=${{ job.services.postgres.ports['5432'] }};Database=nyssaai_test;Username=nyssaai_test;Password=native-test-only;Pooling=False
-        run: bash test/verify-native.sh
+        run: bash scripts/verify-native.sh

@@ -1,11 +1,10 @@
-using System.Data.Common;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NyssaAI.DbGateway;
+using NyssaAI.DbGateway.Commands;
+using NyssaAI.DbGateway.Configuration;
 using NyssaAI.Logging.Configuration;
-using NyssaAI.Repository;
-using NyssaAI.Repository.Commands;
-using NyssaAI.Repository.Configuration;
 
 var directory = Directory.CreateTempSubdirectory("nyssaai-package-consumer-").FullName;
 try
@@ -16,27 +15,20 @@ try
         .WithRotatingJsonLog(Path.Combine(directory, "chained.jsonl"))
         .WithStdErr()
         .WithConsole();
-    services.AddNyssaRepository(new RepositoryConfiguration
+    services.AddNyssaDbGateway(new DbGatewayConfiguration
     {
         DatabaseProvider = "sqlite",
         ConnectionString = "Data Source=:memory:"
-    }, commands:
-    [
-        RepoCommandRegistration.Create<int, int>("sqlite", EchoCommand.Operation, value =>
-            new EchoCommand(value))
-    ]);
+    });
 
     await using (var container = services.BuildServiceProvider())
     {
-        var repository = container.GetRequiredService<IRepository>();
-        await using (var session = (await repository.OpenSessionAsync()))
-        {
-            var command = repository.CommandRegistry(EchoCommand.Operation, 42);
-            var answer = (await session.ExecuteAsync(command));
-            if (answer != 42) throw new InvalidOperationException("The packaged command returned the wrong value.");
-            container.GetRequiredService<ILoggerFactory>().CreateLogger("Consumer")
-                .LogInformation("Read answer {Answer}", answer);
-        }
+        var gateway = container.GetRequiredService<IDbGateway>();
+        var answer = await gateway.ExecuteAsync(new EchoCommand { Value = 42 });
+        if (answer != 42)
+            throw new InvalidOperationException("The packaged command returned the wrong value.");
+        container.GetRequiredService<ILoggerFactory>().CreateLogger("Consumer")
+            .LogInformation("Read answer {Answer}", answer);
     }
 
     using (var entry = JsonDocument.Parse(File.ReadAllLines(logPath).Single()))
@@ -54,25 +46,18 @@ finally
     Directory.Delete(directory, recursive: true);
 }
 
-internal sealed class EchoCommand(int value) : IRepoCommand<int, int>
+internal sealed record EchoCommand : IDbCommand<int>
 {
-    public static RepoCommandKey<int, int> Operation { get; } = new() { Name = "consumer.echo" };
-    public RepoCommandKey<int, int> Key => Operation;
-    public int Parameters => value;
+    public required int Value { get; init; }
 
-    public async Task<int> ExecuteCoreAsync(DbConnection connection, DbTransaction? transaction,
-        CancellationToken cancellationToken)
+    public string GetSql(DbDialect dialect) => "SELECT @value";
+
+    public void BindParameters(IParameterBinder parameters, DbDialect dialect) =>
+        parameters.Add("@value", Value);
+
+    public async ValueTask<int> MapResultAsync(IDataRecordReader reader, CancellationToken cancellationToken = default)
     {
-        await using (var command = connection.CreateCommand())
-        {
-            command.Transaction = transaction;
-            command.CommandText = "SELECT @value";
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "value";
-            parameter.Value = Parameters;
-            command.Parameters.Add(parameter);
-            var answer = await command.ExecuteScalarAsync(cancellationToken);
-            return Convert.ToInt32(answer);
-        }
+        await reader.ReadAsync(cancellationToken);
+        return reader.GetInt32(0);
     }
 }

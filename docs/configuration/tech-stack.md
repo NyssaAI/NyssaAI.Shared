@@ -4,7 +4,7 @@ Record high-level technology context for planning. Keep this file descriptive.
 
 ## Stack Summary
 
-NyssaAI Configuration is a multi-language infrastructure component in the `NyssaAI.Shared` monorepo, shipping as both a Native-AOT-compatible .NET library (`NyssaAI.Configuration` v0.2.1) and an ESM TypeScript/Node.js package (`@nyssa-ai/configuration` v0.2.1 in `nyssa-ai-configuration/`). Both implementations share the same on-disk JSON schemas, cross-process locking protocol, OS permission model, and binary cryptographic wire formats.
+NyssaAI Configuration is a multi-language infrastructure component in the `NyssaAI.Shared` monorepo, shipping as both a Native-AOT-compatible .NET library (`NyssaAI.Configuration` v0.2.1) and an ESM TypeScript/Node.js package (`@nyssa-ai/configuration` v0.2.1 in `nyssa-ai-configuration-ts/`). Both implementations share the same on-disk JSON schemas, cross-process locking protocol, OS permission model, and binary cryptographic wire formats.
 
 ## Languages and Runtimes
 

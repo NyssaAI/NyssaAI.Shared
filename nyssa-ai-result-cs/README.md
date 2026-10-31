@@ -314,18 +314,18 @@ For older result construction calls, use `Error.FromMessages` for separate messa
 
 ## Run the tutorials and tests
 
-The [executable tutorials](docs/tutorials/README.md) cover validation, chained operations, explicit throwing, file failures, and cancellation. Their [source](../test/NyssaAI.Result.UseCaseTests/ResultTutorials.cs) shows complete public API examples without external service dependencies.
+The [executable tutorials](docs/tutorials/README.md) cover validation, chained operations, explicit throwing, file failures, and cancellation. Their [source](test/use_case/ResultTutorials.cs) shows complete public API examples without external service dependencies.
 
 Run the tutorials from the repository root with the .NET 10 SDK:
 
 ```powershell
-dotnet run --project test/NyssaAI.Result.UseCaseTests
+dotnet run --project nyssa-ai-result-cs/test/use_case
 ```
 
 Run the Result unit tests:
 
 ```powershell
-dotnet run --project NyssaAI.Result/test/NyssaAI.Result.Tests
+dotnet run --project nyssa-ai-result-cs/test/unit
 ```
 
 ## Package and licensing

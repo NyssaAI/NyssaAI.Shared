@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace NyssaAI.Logging.UseCaseTests.domain;
+namespace NyssaAI.Logging.UseCaseTests.Domain;
 
 /// <summary>A consumer that logs. It names the framework's logger, never this package.</summary>
 public sealed class OrderService

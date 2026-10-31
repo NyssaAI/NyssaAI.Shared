@@ -11,7 +11,7 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="OpenTelemetry.Exporter.InMemory" />
-    <ProjectReference Include="../../NyssaAI.Logging/src/NyssaAI.Logging.csproj" />
+    <ProjectReference Include="../../src/NyssaAI.Logging.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />

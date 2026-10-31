@@ -1,4 +1,4 @@
-namespace NyssaAI.Logging.UseCaseTests.fixtures;
+namespace NyssaAI.Logging.UseCaseTests.Fixtures;
 
 /// <summary>
 /// Redirects <see cref="Console.Error"/> for the life of the scope and restores it on disposal.

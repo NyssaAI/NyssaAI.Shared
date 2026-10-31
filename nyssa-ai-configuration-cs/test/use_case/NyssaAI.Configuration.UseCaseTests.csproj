@@ -14,8 +14,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
-    <ProjectReference Include="../../NyssaAI.Configuration/src/NyssaAI.Configuration.csproj" />
-    <ProjectReference Include="../../NyssaAI.Result/src/NyssaAI.Result.csproj" />
+    <ProjectReference Include="../../src/NyssaAI.Configuration.csproj" />
+    <ProjectReference Include="../../../nyssa-ai-result-cs/src/NyssaAI.Result.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />

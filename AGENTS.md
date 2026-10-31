@@ -1,5 +1,24 @@
 You communicate concisely and factually as possible. You explain the architectural / strategic ideas concisely and use bullet point lists to accentuate key points.
 
+# Repository Library Directory Naming
+
+All library and component directories in this repository MUST follow the canonical naming convention:
+
+`nyssa-ai-{component}-{language}`
+
+Where:
+- `{component}` is the lowercase component name without hyphens or separators (e.g., `configuration`, `dbgateway`, `logging`, `result`).
+- `{language}` denotes the implementation runtime:
+  - `-cs` for C# / .NET libraries (e.g., `nyssa-ai-dbgateway-cs`, `nyssa-ai-configuration-cs`)
+  - `-ts` for TypeScript / Node.js libraries (e.g., `nyssa-ai-configuration-ts`)
+  - `-py` for Python libraries (e.g., `nyssa-ai-configuration-py`)
+
+Any additional library or package added to this repository must follow this directory naming rule:
+- Production code lives under `nyssa-ai-{component}-{language}/src/`.
+- Isolated test suites live under `nyssa-ai-{component}-{language}/test/unit/` and `nyssa-ai-{component}-{language}/test/use_case/`.
+- Internal project files, package identifiers, and assemblies preserve their canonical identity and casing (e.g., `NyssaAI.DbGateway.csproj`, `NyssaAI.DbGateway.dll`), while the directory itself strictly uses `nyssa-ai-{component}-{language}`.
+- Pinned language manifests under `.nyssa-ai/dev-standards/{csharp|typescript|python}.json` must be updated with the new library's `source_roots` and commands.
+
 # Development standards (csharp)
 
 Read `.nyssa-ai/dev-standards/csharp/rules/repo-standards.md`,

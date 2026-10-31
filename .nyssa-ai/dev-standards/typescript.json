@@ -1,11 +1,11 @@
 {
   "revision": "8be5376ed8d7264cc490ef56bdaa9b98d8aa65be",
   "source_roots": [
-    "nyssa-ai-configuration/src"
+    "nyssa-ai-configuration-ts/src"
   ],
   "commands": {
     "build": {
-      "cwd": "nyssa-ai-configuration",
+      "cwd": "nyssa-ai-configuration-ts",
       "argv": [
         "npm",
         "run",
@@ -13,19 +13,19 @@
       ]
     },
     "unit": {
-      "cwd": "nyssa-ai-configuration",
+      "cwd": "nyssa-ai-configuration-ts",
       "argv": [
         "npm",
         "run",
-        "test"
+        "test:unit"
       ]
     },
     "use_case": {
-      "cwd": "nyssa-ai-configuration",
+      "cwd": "nyssa-ai-configuration-ts",
       "argv": [
         "npm",
         "run",
-        "test"
+        "test:usecase"
       ]
     }
   },

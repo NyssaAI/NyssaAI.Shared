@@ -8,7 +8,7 @@
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../NyssaAI.Logging/src/NyssaAI.Logging.csproj" />
+    <ProjectReference Include="../../src/NyssaAI.Logging.csproj" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 </Project>

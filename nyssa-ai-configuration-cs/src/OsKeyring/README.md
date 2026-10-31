@@ -32,7 +32,7 @@ off a UI thread.
 ## Running the adapter tests
 
 The Windows, macOS and Linux adapters are covered by a manual suite in
-`test/NyssaAI.Configuration.Tests/OsKeyring/`. It is deliberately not part of CI: the properties
+`test/unit/OsKeyring/`. It is deliberately not part of CI: the properties
 worth checking here -- an error code mistaken for an absent secret, a blob decoded with the wrong
 encoding, a handle released twice -- only appear when a real store answers, and a hosted agent has
 no unlocked keyring to give one. A suite that reported "the store is unavailable" on every run
@@ -42,7 +42,7 @@ So it writes to, and deletes from, the credential store of whoever runs it, and 
 an operator opts in:
 
 ```bash
-NYSSA_OS_KEYRING_TESTS=1 dotnet run --project test/NyssaAI.Configuration.Tests
+NYSSA_OS_KEYRING_TESTS=1 dotnet run --project nyssa-ai-configuration-cs/test/unit
 ```
 
 Everything it files goes under the service `nyssa.configuration.tests` with a per-run key and is

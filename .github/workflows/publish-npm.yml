@@ -5,6 +5,7 @@ on:
     tags:
       - 'v[0-9]*'
       - 'nyssa-ai-configuration/v[0-9]*'
+      - 'nyssa-ai-configuration-ts/v[0-9]*'
       - 'npm/v[0-9]*'
 
 permissions:
@@ -17,7 +18,7 @@ jobs:
     environment: release
     defaults:
       run:
-        working-directory: nyssa-ai-configuration
+        working-directory: nyssa-ai-configuration-ts
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

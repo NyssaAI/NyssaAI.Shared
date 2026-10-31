@@ -1,8 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NyssaAI.Logging.Configuration;
-using NyssaAI.Logging.UseCaseTests.domain;
-using NyssaAI.Logging.UseCaseTests.fixtures;
+using NyssaAI.Logging.UseCaseTests.Domain;
+using NyssaAI.Logging.UseCaseTests.Fixtures;
 using OpenTelemetry.Logs;
 using Xunit;
 
@@ -109,6 +109,8 @@ public sealed class LoggingTutorials
     [Fact]
     public void Chain_Destinations_And_OpenTelemetry()
     {
+        using (var stdout = new StdoutCapture())
+        using (var stderr = new StderrCapture())
         using (var workspace = new LogWorkspace())
         {
             var records = new List<LogRecord>();
@@ -126,6 +128,8 @@ public sealed class LoggingTutorials
                     .LogInformation("Order {OrderId} placed", 1042);
             }
 
+            Assert.Contains("Order 1042 placed", stdout.Text, StringComparison.Ordinal);
+            Assert.Contains("Order 1042 placed", stderr.Text, StringComparison.Ordinal);
             var telemetry = Assert.Single(records);
             Assert.Equal("Order {OrderId} placed", telemetry.Body);
             Assert.Contains(telemetry.Attributes!, field => field.Key == "OrderId" && Equals(field.Value, 1042));
@@ -189,18 +193,22 @@ public sealed class LoggingTutorials
     }
 
     /// <summary>Choose which records reach the file.
-    /// The host's minimum level applies to every destination it composes, and AddFilter narrows one
-    /// destination further. Here the console keeps everything from Information up while the file
-    /// takes only Warning and above, so a shipped log stays small without silencing the terminal.
+    /// The host's minimum level applies to every destination it composes, and a file's minimumLevel
+    /// narrows that file further. Here standard error keeps everything from Information up while the
+    /// file takes only Warning and above, so a shipped log stays small without silencing the terminal.
     /// </summary>
     [Fact]
     public void Choose_Which_Records_Reach_The_File()
     {
         // Arrange
+        using (var stderr = new StderrCapture())
         using (var workspace = new LogWorkspace())
         {
             var services = new ServiceCollection().AddLogging(builder =>
-                builder.SetMinimumLevel(LogLevel.Information).AddNyssaJsonFile(workspace.LogPath, LogLevel.Warning)
+                builder
+                    .SetMinimumLevel(LogLevel.Information)
+                    .WithStdErr()
+                    .AddNyssaJsonFile(workspace.LogPath, LogLevel.Warning)
             );
 
             // Act
@@ -212,6 +220,8 @@ public sealed class LoggingTutorials
             }
 
             // Assert
+            Assert.Contains("Inventory checked for ABC-123", stderr.Text, StringComparison.Ordinal);
+            Assert.Contains("Inventory low for ABC-123", stderr.Text, StringComparison.Ordinal);
             var record = Assert.Single(workspace.ReadRecords());
             Assert.Equal("Inventory low for ABC-123", record.GetProperty("Message").GetString());
         }
@@ -251,11 +261,5 @@ public sealed class LoggingTutorials
             var record = Assert.Single(workspace.ReadRecords());
             Assert.Equal("Still running", record.GetProperty("Message").GetString());
         }
-    }
-
-    private enum ShippingService
-    {
-        Ground,
-        Express,
     }
 }

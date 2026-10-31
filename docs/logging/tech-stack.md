@@ -4,7 +4,7 @@ Record high-level technology context for planning. Keep this file descriptive.
 
 ## Stack Summary
 
-`NyssaAI.Logging` is a standalone, Native-AOT-compatible .NET 10 library in the `NyssaAI.Shared` monorepo (`NyssaAI.Logging/src/NyssaAI.Logging.csproj`). It implements `Microsoft.Extensions.Logging.ILoggerProvider` to supply rotating JSONL file and independent console output destinations behind Microsoft's standard `ILogger<T>` and `ILoggingBuilder` abstractions.
+`NyssaAI.Logging` is a standalone, Native-AOT-compatible .NET 10 library in the `NyssaAI.Shared` monorepo (`nyssa-ai-logging-cs/src/NyssaAI.Logging.csproj`). It implements `Microsoft.Extensions.Logging.ILoggerProvider` to supply rotating JSONL file and independent console output destinations behind Microsoft's standard `ILogger<T>` and `ILoggingBuilder` abstractions.
 
 ## Languages and Runtimes
 
@@ -46,7 +46,7 @@ Record high-level technology context for planning. Keep this file descriptive.
   - `dotnet build NyssaAI.Shared.slnx --configuration Release`
 - **Unit & Use-Case Test Suites:**
   - `./run-tests.ps1` (runs all monorepo unit and use-case suites).
-  - `dotnet run --project NyssaAI.Logging/test/NyssaAI.Logging.Tests --no-build` (unit tests for `JsonFileLoggerProvider`, `LogFile`, `LoggingInstallation`, `OwnerOnlyAccess`, `PackageSurface`, and `PublicTypeInventory`).
+  - `dotnet run --project nyssa-ai-logging-cs/test/NyssaAI.Logging.Tests --no-build` (unit tests for `JsonFileLoggerProvider`, `LogFile`, `LoggingInstallation`, `OwnerOnlyAccess`, `PackageSurface`, and `PublicTypeInventory`).
   - `dotnet run --project test/NyssaAI.Logging.UseCaseTests --no-build` (executable tutorials in `LoggingTutorials.cs`).
 - **Package & Native AOT Verification:**
   - `./test/verify-packages.ps1` (validates NuGet archive contents and `PackageConsumer`).
@@ -57,4 +57,4 @@ Record high-level technology context for planning. Keep this file descriptive.
 - **Deliberate Contract Opt-Out (`SP9b` / `SP9h`):** `NyssaAI.Logging.csproj` declares `<SourceRootContractOptOut>` and exports only `LoggingBuilderExtensions` and `LoggingServiceCollectionExtensions` (pinned by `PackageSurfaceTests` and `PublicTypeInventoryTests`). No `Client/` or `Contracts/` directory may be added unless the architectural contract changes.
 - **No Reflection Serialization:** `LogFile.WriteField` explicitly matches `null`, `string`, `bool`, `int`, `long`, `double`, `float`, `decimal`, `DateTime`, `DateTimeOffset`, and `Guid`, falling back to `value.ToString()` so Native AOT trimming never strips runtime type metadata.
 - **Process-Local Write Lock:** `LogFile` serializes writes within a single provider instance via an in-process lock and seeks to `SeekOrigin.End` before writing; separate processes or duplicate file providers targeting the same file path are unsupported for coordinated rotation.
-- **Node.js / TypeScript Ecosystem Choice:** Unlike `NyssaAI.Configuration`, `NyssaAI.Logging` has no companion `@nyssa-ai/logging` Node.js package. Node.js applications use `pino` (with `destination: 2` for `stderr`) and `pino-roll` for rotating JSONL files, documented in `NyssaAI.Logging/README.md`.
+- **Node.js / TypeScript Ecosystem Choice:** Unlike `NyssaAI.Configuration`, `NyssaAI.Logging` has no companion `@nyssa-ai/logging` Node.js package. Node.js applications use `pino` (with `destination: 2` for `stderr`) and `pino-roll` for rotating JSONL files, documented in `nyssa-ai-logging-cs/README.md`.

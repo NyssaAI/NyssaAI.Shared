@@ -52,7 +52,7 @@ public sealed class LinuxVmWorkstation : IDisposable
             $$"""
             NYSSA_APP={{Quote(applicationName)}} NYSSA_NS={{Quote(@namespace)}} NYSSA_KEY={{Quote(key)}} NYSSA_VAL={{Quote(value)}} NYSSA_PROVIDER={{Quote(provider ?? "")}} NYSSA_MANIFEST={{Quote(manifestPath ?? "")}} NYSSA_DIR={{Quote(configDirectory ?? "")}} \
             node --input-type=module - <<'EOF'
-            import { ConfigurationClient } from "/repo/nyssa-ai-configuration/dist/ConfigurationClient.js";
+            import { ConfigurationClient } from "/repo/nyssa-ai-configuration-ts/dist/ConfigurationClient.js";
             const opts = { applicationName: process.env.NYSSA_APP };
             if (process.env.NYSSA_MANIFEST) opts.configManifest = process.env.NYSSA_MANIFEST;
             if (process.env.NYSSA_DIR) opts.configDirectory = process.env.NYSSA_DIR;
@@ -69,7 +69,7 @@ public sealed class LinuxVmWorkstation : IDisposable
             $$"""
             NYSSA_APP={{Quote(applicationName)}} NYSSA_NS={{Quote(@namespace)}} NYSSA_KEY={{Quote(key)}} NYSSA_MANIFEST={{Quote(manifestPath ?? "")}} NYSSA_DIR={{Quote(configDirectory ?? "")}} \
             node --input-type=module - <<'EOF'
-            import { ConfigurationClient } from "/repo/nyssa-ai-configuration/dist/ConfigurationClient.js";
+            import { ConfigurationClient } from "/repo/nyssa-ai-configuration-ts/dist/ConfigurationClient.js";
             const opts = { applicationName: process.env.NYSSA_APP };
             if (process.env.NYSSA_MANIFEST) opts.configManifest = process.env.NYSSA_MANIFEST;
             if (process.env.NYSSA_DIR) opts.configDirectory = process.env.NYSSA_DIR;

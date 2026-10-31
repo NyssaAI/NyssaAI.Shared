@@ -26,13 +26,13 @@
     "prepack": "npm run build",
     "test": "vitest run",
     "test:unit": "vitest run test/unit",
-    "test:usecase": "vitest run test/useCase",
+    "test:usecase": "vitest run test/use_case",
     "typecheck": "tsc --noEmit"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/NyssaAI/NyssaAI.Shared.git",
-    "directory": "nyssa-ai-configuration"
+    "directory": "nyssa-ai-configuration-ts"
   },
   "keywords": [
     "configuration",
