@@ -127,6 +127,18 @@ public sealed class ConfigurationManifestReaderTests
     }
 
     [Fact]
+    public void ReadApplication_WithLockTimeoutMs_ParsesMillisecondsCorrectly()
+    {
+        using var home = new TemporaryDirectory();
+        var path = Write(home.Path, """{ "version": 1, "applications": { "tool": { "configurationDirectory": "tool", "lockTimeoutMs": 5000 } } }""");
+
+        var read = ConfigurationManifestReader.ReadApplication(path, "tool");
+
+        Assert.True(read.IsSuccess, read.ToString());
+        Assert.Equal(TimeSpan.FromSeconds(5), read.Value.LockTimeout);
+    }
+
+    [Fact]
     public void ReadApplication_WithANonPositiveLockTimeout_IsAValidationFailure()
     {
         using var home = new TemporaryDirectory();

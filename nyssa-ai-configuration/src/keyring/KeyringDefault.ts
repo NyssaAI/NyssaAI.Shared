@@ -3,6 +3,7 @@
 // `-- KeyringDefault
 //     +-- KEY_ACCOUNT
 //     +-- KEY_LENGTH
+//     +-- SERVICE_NAME
 //     +-- getKey(applicationName, keyring, signal)
 //     `-- getOrCreateKey(applicationName, keyring, signal)
 
@@ -16,6 +17,7 @@ import type { IKeyring } from "./IKeyring.js";
  * Only explicit absence (ok(null)) triggers generation of a new 32-byte key.
  */
 export class KeyringDefault {
+  public static readonly SERVICE_NAME = "nyssa-ai-configuration";
   public static readonly KEY_ACCOUNT = "configuration-key";
   public static readonly KEY_LENGTH = 32;
 
@@ -29,7 +31,7 @@ export class KeyringDefault {
   ): Promise<Result<Buffer | null>> {
     signal?.throwIfAborted();
 
-    const readRes = await keyring.get(applicationName, this.KEY_ACCOUNT, signal);
+    const readRes = await keyring.get(this.SERVICE_NAME, applicationName, signal);
     signal?.throwIfAborted();
     if (!readRes.ok) {
       return fail(
@@ -44,7 +46,7 @@ export class KeyringDefault {
 
     if (readRes.value.length !== this.KEY_LENGTH) {
       return fail(
-        `keyring: '${applicationName}/${this.KEY_ACCOUNT}' does not hold ${this.KEY_LENGTH} bytes of key material`,
+        `keyring: '${this.SERVICE_NAME}/${applicationName}' does not hold ${this.KEY_LENGTH} bytes of key material`,
         "Validation"
       );
     }
@@ -72,7 +74,7 @@ export class KeyringDefault {
     }
 
     const freshKey = crypto.randomBytes(this.KEY_LENGTH);
-    const setRes = await keyring.set(applicationName, this.KEY_ACCOUNT, freshKey, signal);
+    const setRes = await keyring.set(this.SERVICE_NAME, applicationName, freshKey, signal);
     signal?.throwIfAborted();
     if (!setRes.ok) {
       freshKey.fill(0);

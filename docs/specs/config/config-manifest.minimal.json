@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "applications": {
+    "OrdersApp": {
+      "configurationDirectory": ".nyssa-ai/config"
+    }
+  }
+}

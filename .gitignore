@@ -21,6 +21,7 @@
 !.env.example
 **/secrets.json
 **/config-manifest.json
+!docs/specs/**/config-manifest.json
 
 # Build, dependency, and test runner outputs
 __pycache__/

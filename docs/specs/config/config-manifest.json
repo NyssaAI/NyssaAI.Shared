@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "applications": {
+    "OrdersApp": {
+      "configurationDirectory": "D:/apps/orders/config",
+      "lockTimeoutMs": 10000,
+      "keyVault": {
+        "name": "corporateVault",
+        "kind": "bitwarden-secrets",
+        "endpoint": "https://vault.example.com",
+        "credential": "auth/bitwarden-token",
+        "settings": {
+          "organizationId": "b1a2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+        },
+        "secrets": {
+          "machineAccessToken": "<token-redacted-for-security>"
+        }
+      }
+    },
+    "NotificationService": {
+      "configurationDirectory": "./config/notifications",
+      "lockTimeoutMs": 5000
+    }
+  }
+}

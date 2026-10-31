@@ -76,7 +76,7 @@ public sealed class ConfigurationIsolationTests
             );
 
             // Verify Bob's keychain cannot see Alice's master key before Bob initializes his own app
-            var bobKeyringLookup = bobWorkstation.Keyring.Get(Workstation.ApplicationName, "configuration-key");
+            var bobKeyringLookup = bobWorkstation.Keyring.Get(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName);
             Assert.True(bobKeyringLookup.IsSuccess);
             Assert.Null(bobKeyringLookup.Value);
 
@@ -101,8 +101,8 @@ public sealed class ConfigurationIsolationTests
 
             // Assert
             Assert.NotEqual(
-                aliceWorkstation.Keyring.Get(Workstation.ApplicationName, "configuration-key").Value,
-                bobWorkstation.Keyring.Get(Workstation.ApplicationName, "configuration-key").Value
+                aliceWorkstation.Keyring.Get(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName).Value,
+                bobWorkstation.Keyring.Get(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName).Value
             );
             Assert.Single(failure.Errors);
             Assert.DoesNotContain(

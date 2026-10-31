@@ -79,8 +79,8 @@ public sealed class Workstation : IDisposable
     /// <summary>What an administrator may do: place the encryption key in the credential store ahead of time.</summary>
     public void ProvisionKey() =>
         Keyring.Set(
+            ConfigurationServiceCollectionExtensions.KeyringService,
             ApplicationName,
-            "configuration-key",
             Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
         );
 

@@ -54,8 +54,8 @@ public sealed class SetupTutorials
             Assert.True(manifestExisted);
             Assert.Equal("fictional-password", password);
             // The library created the key itself, once, at the address the application name implies, and logged it
-            Assert.True(workstation.Keyring.Holds(Workstation.ApplicationName, "configuration-key"));
-            Assert.Equal([(Workstation.ApplicationName, "configuration-key")], workstation.Keyring.Writes);
+            Assert.True(workstation.Keyring.Holds(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName));
+            Assert.Equal([(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName)], workstation.Keyring.Writes);
             Assert.Contains(
                 workstation.Log.Messages,
                 message =>
@@ -103,7 +103,7 @@ public sealed class SetupTutorials
                 Path.Combine(workstation.Home, ".nyssa-ai", "SomeApp-cli"),
                 workstation.ConfigurationDirectory
             );
-            Assert.True(workstation.Keyring.Holds(Workstation.ApplicationName, "configuration-key"));
+            Assert.True(workstation.Keyring.Holds(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName));
         }
     }
 
@@ -140,8 +140,8 @@ public sealed class SetupTutorials
             // Assert
             // Every address moved: "someone-else" got its own section, and its own key
             Assert.Contains("someone-else", File.ReadAllText(workstation.ManifestPath), StringComparison.Ordinal);
-            Assert.True(workstation.Keyring.Holds("someone-else", "configuration-key"));
-            Assert.False(workstation.Keyring.Holds(Workstation.ApplicationName, "configuration-key"));
+            Assert.True(workstation.Keyring.Holds(ConfigurationServiceCollectionExtensions.KeyringService, "someone-else"));
+            Assert.False(workstation.Keyring.Holds(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName));
         }
     }
 
@@ -168,7 +168,7 @@ public sealed class SetupTutorials
 
             // The message names the address it needed, so an operator knows what to provision
             Assert.Contains(Workstation.ApplicationName, failure.Message, StringComparison.Ordinal);
-            Assert.Contains("configuration-key", failure.Message, StringComparison.Ordinal);
+            Assert.Contains(ConfigurationServiceCollectionExtensions.KeyringService, failure.Message, StringComparison.Ordinal);
             Assert.False(workstation.DocumentExists("mail"));
         }
     }
@@ -213,7 +213,7 @@ public sealed class SetupTutorials
             );
             Assert.True(workstation.DocumentExists("mail"));
             // and the key it needed, created once and said out loud
-            Assert.Equal([(Workstation.ApplicationName, "configuration-key")], workstation.Keyring.Writes);
+            Assert.Equal([(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName)], workstation.Keyring.Writes);
             Assert.Contains(
                 workstation.Log.Messages,
                 message =>
@@ -515,7 +515,7 @@ public sealed class SetupTutorials
                 StringComparison.Ordinal
             );
             // The library still created its own key
-            Assert.True(workstation.Keyring.Holds(Workstation.ApplicationName, "configuration-key"));
+            Assert.True(workstation.Keyring.Holds(ConfigurationServiceCollectionExtensions.KeyringService, Workstation.ApplicationName));
         }
     }
 

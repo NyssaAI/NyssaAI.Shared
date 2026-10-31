@@ -131,15 +131,32 @@ export class ConfigurationManifestReader {
     }
 
     let lockTimeoutMs = this.DEFAULT_LOCK_TIMEOUT_MS;
-    if (section.lockTimeout !== undefined && section.lockTimeout !== null) {
-      const parseRes = TimeSpanParser.parse(section.lockTimeout);
-      if (!parseRes.ok) {
+    if (section.lockTimeoutMs !== undefined && section.lockTimeoutMs !== null) {
+      if (typeof section.lockTimeoutMs !== "number" || section.lockTimeoutMs <= 0) {
         return fail(
-          `manifest: '${manifestPath}' names lockTimeout '${section.lockTimeout}' for '${applicationName}', which is not a positive TimeSpan`,
+          `manifest: '${manifestPath}' names lockTimeoutMs '${section.lockTimeoutMs}' for '${applicationName}', which is not a positive integer`,
           "Validation"
         );
       }
-      lockTimeoutMs = parseRes.value;
+      lockTimeoutMs = Math.round(section.lockTimeoutMs);
+    } else if (section.lockTimeout !== undefined && section.lockTimeout !== null) {
+      if (typeof section.lockTimeout === "number" && section.lockTimeout > 0) {
+        lockTimeoutMs = Math.round(section.lockTimeout);
+      } else if (typeof section.lockTimeout === "string") {
+        const parseRes = TimeSpanParser.parse(section.lockTimeout);
+        if (!parseRes.ok) {
+          return fail(
+            `manifest: '${manifestPath}' names lockTimeout '${section.lockTimeout}' for '${applicationName}', which is not a positive TimeSpan`,
+            "Validation"
+          );
+        }
+        lockTimeoutMs = parseRes.value;
+      } else {
+        return fail(
+          `manifest: '${manifestPath}' names invalid lockTimeout for '${applicationName}'`,
+          "Validation"
+        );
+      }
     }
 
     const secretsMap = section.keyVault?.secrets ?? {};

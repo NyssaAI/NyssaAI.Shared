@@ -41,7 +41,7 @@ internal static class ConfigurationManifestWriter
 
         using var lockStream = locked.Value;
 
-        var recorded = Record(path, applicationName, configurationDirectory);
+        var recorded = Record(path, applicationName, configurationDirectory, lockTimeout);
         if (recorded.IsFailure)
             return Result<string>.Failure(recorded.Errors);
 
@@ -54,7 +54,11 @@ internal static class ConfigurationManifestWriter
     // Reads the manifest and returns it with this application's directory set, leaving every other
     // section, and everything else in this one, exactly as it was. Both entry points share it, so
     // what a write preserves cannot differ between them.
-    private static Result<ConfigurationManifest> Record(string path, string applicationName, string configurationDirectory)
+    private static Result<ConfigurationManifest> Record(
+        string path,
+        string applicationName,
+        string configurationDirectory,
+        TimeSpan? lockTimeout)
     {
         var existing = ConfigurationManifestReader.Read(path);
         if (existing.IsFailure)
@@ -63,7 +67,23 @@ internal static class ConfigurationManifestWriter
         var manifest = existing.Value ?? new ConfigurationManifest { Applications = new Dictionary<string, ApplicationManifestEntry>(StringComparer.Ordinal) };
         var applications = new Dictionary<string, ApplicationManifestEntry>(manifest.Applications!, StringComparer.Ordinal);
         var section = applications.GetValueOrDefault(applicationName) ?? new ApplicationManifestEntry();
-        applications[applicationName] = section with { ConfigurationDirectory = configurationDirectory };
+        var updated = section with { ConfigurationDirectory = configurationDirectory };
+        if (section.LockTimeout is null && section.LockTimeoutMs is null)
+        {
+            updated = updated with
+            {
+                LockTimeoutMs = (int)Math.Round((lockTimeout ?? DefaultLockTimeout).TotalMilliseconds),
+            };
+        }
+        else if (lockTimeout.HasValue && section.LockTimeout is null)
+        {
+            updated = updated with
+            {
+                LockTimeoutMs = (int)Math.Round(lockTimeout.Value.TotalMilliseconds),
+            };
+        }
+
+        applications[applicationName] = updated;
 
         return Result<ConfigurationManifest>.Success(manifest with { Applications = applications });
     }

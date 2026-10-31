@@ -51,7 +51,7 @@ internal sealed class ConfigurationHost : IDisposable
     private sealed class MemoryKeyring : IKeyring
     {
         private readonly Dictionary<string, string> _values = [];
-        internal MemoryKeyring(string key) => _values["repository-tests/configuration-key"] = key;
+        internal MemoryKeyring(string key) => _values["nyssa-ai-configuration/repository-tests"] = key;
         public Result<string?> Get(string service, string key) => Result<string?>.Success(_values.GetValueOrDefault($"{service}/{key}"));
         public Result Set(string service, string key, string secret)
         {

@@ -46,15 +46,16 @@ describe("SetupTutorials Public Use Cases (F-103)", () => {
 
     const manifestJson = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
       version: number;
-      applications: Record<string, { configurationDirectory: string; lockTimeout: string }>;
+      applications: Record<string, { configurationDirectory: string; lockTimeoutMs: number }>;
     };
     expect(manifestJson.version).toBe(1);
     expect(manifestJson.applications["FirstRunCLI"]?.configurationDirectory).toBe(
       path.resolve(configDir)
     );
+    expect(manifestJson.applications["FirstRunCLI"]?.lockTimeoutMs).toBe(10000);
   });
 
-  it("setupTutorials_firstTimeInitializeWithoutConfigDirectory_defaultsToCwdNyssaAiConfig", async () => {
+  it("setupTutorials_firstTimeInitializeWithoutConfigDirectory_defaultsToManifestSiblingAppDir", async () => {
     const keyring = new InMemoryKeyring();
 
     const initRes = await ConfigurationClient.initialize({
@@ -65,16 +66,17 @@ describe("SetupTutorials Public Use Cases (F-103)", () => {
     expect(initRes.ok).toBe(true);
     if (!initRes.ok) return;
 
-    const expectedDefaultDir = path.resolve(process.cwd(), ".nyssa-ai", "config");
+    const expectedDefaultDir = path.join(path.dirname(manifestPath), "DefaultPathCLI");
     expect(fs.existsSync(expectedDefaultDir)).toBe(true);
 
     const manifestJson = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
       version: number;
-      applications: Record<string, { configurationDirectory: string }>;
+      applications: Record<string, { configurationDirectory: string; lockTimeoutMs: number }>;
     };
     expect(manifestJson.applications["DefaultPathCLI"]?.configurationDirectory).toBe(
       expectedDefaultDir
     );
+    expect(manifestJson.applications["DefaultPathCLI"]?.lockTimeoutMs).toBe(10000);
   });
 
   it("setupTutorials_manifestKeyVaultOverridesCodeKeyVaultWhole_usesManifestVaultConfiguration (F-103 UC-002)", async () => {
@@ -176,7 +178,10 @@ describe("SetupTutorials Public Use Cases (F-103)", () => {
     expect(setRes.ok).toBe(true);
 
     // Master key was stored in the injected InMemoryKeyring
-    const mkRes = await keyring.get("nyssa.configuration", "master-key.v1");
+    const mkRes = await keyring.get("nyssa-ai-configuration", "IsolatedTestApp");
     expect(mkRes.ok).toBe(true);
+    if (mkRes.ok) {
+      expect(mkRes.value).not.toBeNull();
+    }
   });
 });

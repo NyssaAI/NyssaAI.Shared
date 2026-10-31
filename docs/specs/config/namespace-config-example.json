@@ -1,0 +1,60 @@
+{
+  // 1. Plaintext Scalar Primitives
+  // Unencrypted literals are stored as native JSON types.
+  "PlainStringKey": {
+    "value": "example-plaintext-value"
+  },
+  "PlainNumberKey": {
+    "value": 42
+  },
+  "PlainBooleanKey": {
+    "value": true
+  },
+
+  // 2. Serialized DTO Stored Under a Single Key (Plaintext)
+  "PlainDtoKey": {
+    "value": {
+      "Endpoint": "https://api.internal.service",
+      "TimeoutSeconds": 30,
+      "RetryPolicy": {
+        "MaxAttempts": 3,
+        "BackoffMultiplier": 2.0
+      }
+    }
+  },
+
+  // 3. Locally Encrypted Scalar Secret ("aesLocal")
+  "EncryptedSecretKey": {
+    "value": "AhE_B2gW3l8uVwL4k7zM9xP2rQ5yT8vN0aB1cD2eF3gH4jK5mN6pQ7rS8tU9vW0xY1zA",
+    "encrypted": true,
+    "provider": "aesLocal"
+  },
+
+  // 4. Locally Encrypted DTO Under a Single Key ("aesLocal")
+  "EncryptedDtoKey": {
+    "value": "AkF_G6lA8r3zaqQ9p2eR4cV7wX0dY3aS5fG6hI7jK8lM9oP0rS1uV2wX3yZ4aB5cD6eE",
+    "encrypted": true,
+    "provider": "aesLocal",
+    "json": true
+  },
+
+  // 5. Cloud Key Vault Secret Pointer
+  "VaultSecretKey": {
+    "value": "namespace/remote-secret-name",
+    "provider": "vaultProviderName"
+  },
+
+  // 6. Cloud Key Vault-Backed DTO Under a Single Key  
+  "VaultDtoKey": {
+    "value": "namespace/remote-dto-name",
+    "provider": "vaultProviderName",
+    "json": true
+  },
+
+  // 7. OAuth 2.0 PKCE Credential / Token Grant  
+  "OAuthTokenKey": {
+    "value": "AiD_E4jZ6p1xYpO7n0cP2aT5uV8bW1yQ3dE4fG5hI6jK7mN8pQ9sT0uV1wX2yZ3aB4cC",
+    "encrypted": true,
+    "provider": "oauth"
+  }
+}

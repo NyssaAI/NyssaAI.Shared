@@ -81,7 +81,7 @@ internal static class ConfigurationManifestReader
         if (string.IsNullOrWhiteSpace(section.ConfigurationDirectory))
             return Result<ApplicationManifestSettings>.Failure(DirectoryNotNamed(path, applicationName));
 
-        var lockTimeout = ParseLockTimeout(section.LockTimeout, path, applicationName);
+        var lockTimeout = ParseLockTimeout(section, path, applicationName);
         if (lockTimeout.IsFailure)
             return Result<ApplicationManifestSettings>.Failure(lockTimeout.Errors);
 
@@ -128,16 +128,31 @@ internal static class ConfigurationManifestReader
         return manifest with { Applications = applications };
     }
 
-    private static Result<TimeSpan?> ParseLockTimeout(string? value, string path, string applicationName)
+    private static Result<TimeSpan?> ParseLockTimeout(ApplicationManifestEntry section, string path, string applicationName)
     {
-        if (value is null)
+        if (section.LockTimeoutMs.HasValue)
+        {
+            if (section.LockTimeoutMs.Value <= 0)
+            {
+                return Result<TimeSpan?>.Failure(Error.FromMessages(
+                    "The configuration manifest is malformed.",
+                    $"manifest: '{path}' names lockTimeoutMs '{section.LockTimeoutMs.Value}' for '{applicationName}', which is not a positive integer",
+                    ErrorCategory.Validation));
+            }
+            return Result<TimeSpan?>.Success(TimeSpan.FromMilliseconds(section.LockTimeoutMs.Value));
+        }
+
+        if (section.LockTimeout is null)
             return Result<TimeSpan?>.Success(null);
 
-        return TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var timeout) && timeout > TimeSpan.Zero
+        if (long.TryParse(section.LockTimeout, CultureInfo.InvariantCulture, out var ms) && ms > 0)
+            return Result<TimeSpan?>.Success(TimeSpan.FromMilliseconds(ms));
+
+        return TimeSpan.TryParse(section.LockTimeout, CultureInfo.InvariantCulture, out var timeout) && timeout > TimeSpan.Zero
             ? Result<TimeSpan?>.Success(timeout)
             : Result<TimeSpan?>.Failure(Error.FromMessages(
                 "The configuration manifest is malformed.",
-                $"manifest: '{path}' names lockTimeout '{value}' for '{applicationName}', which is not a positive TimeSpan",
+                $"manifest: '{path}' names lockTimeout '{section.LockTimeout}' for '{applicationName}', which is not a positive TimeSpan",
                 ErrorCategory.Validation));
     }
 

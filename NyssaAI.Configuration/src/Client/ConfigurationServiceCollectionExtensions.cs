@@ -40,8 +40,8 @@ namespace NyssaAI.Configuration.Client;
 /// </remarks>
 public static class ConfigurationServiceCollectionExtensions
 {
-    /// <summary>The keyring entry, under the application's service, that holds the local encryption key.</summary>
-    private const string KeyEntry = "configuration-key";
+    /// <summary>The keyring service name under which every application's local encryption key is filed.</summary>
+    public const string KeyringService = "nyssa-ai-configuration";
 
     private const int KeyLength = 32;
 
@@ -175,7 +175,7 @@ public static class ConfigurationServiceCollectionExtensions
 
     private static Result<byte[]> GetOrCreateKey(string applicationName, IKeyring keyring, ILogger? logger)
     {
-        var key = KeyringManagedSecret.GetOrCreate(applicationName, KeyEntry, KeyLength, keyring);
+        var key = KeyringManagedSecret.GetOrCreate(KeyringService, applicationName, KeyLength, keyring);
         if (key.IsFailure)
             return Result<byte[]>.Failure(KeyUnavailable(applicationName, key.Errors[0]));
 
@@ -184,7 +184,7 @@ public static class ConfigurationServiceCollectionExtensions
             logger?.LogInformation(
                 "Created encryption key for {Tool}: none was in the credential store; "
                 + "the key is filed at keyring service '{Service}', entry '{Entry}'",
-                applicationName, applicationName, KeyEntry);
+                applicationName, KeyringService, applicationName);
         }
 
         return Result<byte[]>.Success(key.Value.Material);
@@ -297,7 +297,7 @@ public static class ConfigurationServiceCollectionExtensions
     /// <summary>The failure returned when the credential store could not supply or accept the key.</summary>
     private static Error KeyUnavailable(string applicationName, Error cause) => Error.FromMessages(
         "The application's encryption key is not available.",
-        $"configuration: the encryption key for '{applicationName}' at keyring service '{applicationName}', entry '{KeyEntry}' "
+        $"configuration: the encryption key for '{applicationName}' at keyring service '{KeyringService}', entry '{applicationName}' "
         + $"could not be obtained: {cause.TechnicalMessage}; the application needs a reachable credential store",
         cause.Category);
 

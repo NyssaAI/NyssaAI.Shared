@@ -11,7 +11,6 @@ import { ok, fail, type Result } from "../results/Result.js";
 import { ProtectedFileSystem } from "../fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "../fileSecurity/DirectorySafety.js";
 import { ConfigurationManifestReader } from "./ConfigurationManifestReader.js";
-import { TimeSpanParser } from "./TimeSpanParser.js";
 import type { ConfigurationManifest } from "./ConfigurationManifest.js";
 import type { ApplicationManifestEntry } from "./ApplicationManifestEntry.js";
 
@@ -73,10 +72,12 @@ export class ConfigurationManifestWriter {
         ...existingSection,
         configurationDirectory,
         ...(lockTimeoutMs !== undefined
-          ? { lockTimeout: TimeSpanParser.format(lockTimeoutMs) }
-          : existingSection.lockTimeout !== undefined
-            ? { lockTimeout: existingSection.lockTimeout }
-            : {})
+          ? { lockTimeoutMs: Math.round(lockTimeoutMs) }
+          : existingSection.lockTimeoutMs !== undefined
+            ? { lockTimeoutMs: existingSection.lockTimeoutMs }
+            : existingSection.lockTimeout !== undefined
+              ? { lockTimeout: existingSection.lockTimeout }
+              : { lockTimeoutMs: this.DEFAULT_LOCK_TIMEOUT_MS })
       };
 
       apps[applicationName] = updatedSection;

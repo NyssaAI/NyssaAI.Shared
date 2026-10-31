@@ -13,6 +13,7 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { ok, fail, type Result } from "../results/Result.js";
 import { ProtectedFileSystem } from "../fileSecurity/ProtectedFileSystem.js";
+import { OAuthGrantCodec } from "./OAuthGrantCodec.js";
 import type { IConfigurationCipher } from "../encryption/IConfigurationCipher.js";
 import type { ConfigurationValue } from "../values/ConfigurationValue.js";
 import type { OAuthOptions } from "./OAuthOptions.js";
@@ -20,17 +21,18 @@ import type { IOAuthFlowClient } from "./IOAuthFlowClient.js";
 import type { IBrowserLauncher } from "./IBrowserLauncher.js";
 
 /**
- * OAuthTokenManager coordinates PKCE S256 sign-in, 60-second expiry window refresh,
- * invalid_grant marking, and crash-safe rotated grant persistence in .pending/<namespace>.oauth.json.
+ * OAuthTokenManager coordinates PKCE S256 sign-in, 5-minute expiry window refresh,
+ * invalid_grant marking, and rotated grant durability.
  */
 export class OAuthTokenManager {
-  public static readonly REFRESH_WINDOW_MS = 60000;
+  public static readonly REFRESH_WINDOW_MS = 300000;
 
   private readonly _configurationDirectory: string;
   private readonly _cipher: IConfigurationCipher | undefined;
   private readonly _flowClient: IOAuthFlowClient | undefined;
   private readonly _browserLauncher: IBrowserLauncher | undefined;
   private readonly _clock: () => number;
+  private readonly _heldGrants = new Map<string, ConfigurationValue>();
 
   public constructor(
     configurationDirectory: string,
@@ -46,24 +48,10 @@ export class OAuthTokenManager {
     this._clock = clock ?? (() => Date.now());
   }
 
-  /**
-   * Checks whether a decrypted string payload is a serialized StoredOAuthGrant.
-   */
   public static isOAuthGrantPayload(decrypted: string): boolean {
-    if (!decrypted.startsWith("{") || !decrypted.includes("\"__nyssa_oauth_grant\":true")) {
-      return false;
-    }
-    try {
-      const parsed = JSON.parse(decrypted) as { __nyssa_oauth_grant?: unknown };
-      return parsed.__nyssa_oauth_grant === true;
-    } catch {
-      return false;
-    }
+    return OAuthGrantCodec.isOAuthGrantPayload(decrypted);
   }
 
-  /**
-   * Runs the OAuth 2.0 Authorization Code + PKCE flow and returns the sealed ConfigurationValue entry.
-   */
   public async authorize(
     namespace: string,
     key: string,
@@ -72,7 +60,7 @@ export class OAuthTokenManager {
   ): Promise<Result<ConfigurationValue>> {
     signal?.throwIfAborted();
 
-    const validRes = this.validateOptions(options);
+    const validRes = OAuthGrantCodec.validateOptions(options);
     if (!validRes.ok) {
       return validRes;
     }
@@ -91,16 +79,8 @@ export class OAuthTokenManager {
     const scopes = options.scopes ?? [];
 
     if (this._browserLauncher) {
-      const url = new URL(options.authorizationEndpoint);
-      url.searchParams.set("response_type", "code");
-      url.searchParams.set("client_id", options.clientId);
-      url.searchParams.set("code_challenge", codeChallenge);
-      url.searchParams.set("code_challenge_method", "S256");
-      url.searchParams.set("state", state);
-      if (scopes.length > 0) {
-        url.searchParams.set("scope", scopes.join(" "));
-      }
-      const launchRes = await this._browserLauncher.openUrl(url.toString(), signal);
+      const authUrl = OAuthGrantCodec.buildAuthorizeUrl(options, codeChallenge, state);
+      const launchRes = await this._browserLauncher.openUrl(authUrl, signal);
       signal?.throwIfAborted();
       if (!launchRes.ok) {
         return launchRes;
@@ -132,18 +112,18 @@ export class OAuthTokenManager {
     }
 
     const nowMs = this._clock();
-    const grant = {
-      __nyssa_oauth_grant: true as const,
+    const payload = OAuthGrantCodec.encodeGrant({
       accessToken: exchangeRes.value.accessToken,
       refreshToken: exchangeRes.value.refreshToken,
       expiresAtMs: nowMs + exchangeRes.value.expiresInSeconds * 1000,
       tokenEndpoint: options.tokenEndpoint,
       authorizationEndpoint: options.authorizationEndpoint,
       clientId: options.clientId,
-      scopes
-    };
+      scopes,
+      redirectPort: options.redirectPort
+    });
 
-    const sealRes = this._cipher.seal(JSON.stringify(grant), namespace, key);
+    const sealRes = this._cipher.seal(payload, namespace, key);
     if (!sealRes.ok) {
       return sealRes;
     }
@@ -158,10 +138,6 @@ export class OAuthTokenManager {
     });
   }
 
-  /**
-   * Resolves the current access token for an OAuth grant entry, refreshing silently if within 60s of expiry
-   * or recovering from a pending rotated grant in .pending/<namespace>.oauth.json.
-   */
   public async resolveGrantAccessToken(
     namespace: string,
     key: string,
@@ -175,9 +151,8 @@ export class OAuthTokenManager {
       return fail("Cannot decrypt OAuth grant: no cipher configured.", "Unavailable");
     }
 
-    // 1. Check if a pending rotated grant exists for (namespace, key)
     let activeEntry = entry;
-    const pendingEntry = this.readPendingGrant(namespace, key);
+    const pendingEntry = this._heldGrants.get(`${namespace}/${key}`) ?? this.readPendingGrant(namespace, key);
     if (pendingEntry) {
       const publishPending = await persistEntry(pendingEntry);
       if (!publishPending.ok) {
@@ -203,29 +178,17 @@ export class OAuthTokenManager {
       return openRes;
     }
 
-    let grant: {
-      readonly __nyssa_oauth_grant: true;
-      readonly accessToken: string;
-      readonly refreshToken: string;
-      readonly expiresAtMs: number;
-      readonly tokenEndpoint: string;
-      readonly authorizationEndpoint: string;
-      readonly clientId: string;
-      readonly scopes: ReadonlyArray<string>;
-    };
-    try {
-      grant = JSON.parse(openRes.value) as typeof grant;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to parse OAuth grant for '${namespace}/${key}': ${message}`, "Validation");
+    const grantRes = OAuthGrantCodec.decodeGrant(openRes.value, namespace, key);
+    if (!grantRes.ok) {
+      return grantRes;
     }
+    const grant = grantRes.value;
 
     const nowMs = this._clock();
     if (grant.expiresAtMs > nowMs + OAuthTokenManager.REFRESH_WINDOW_MS) {
       return ok(grant.accessToken);
     }
 
-    // Needs silent token refresh
     if (!this._flowClient) {
       return fail("Cannot refresh OAuth token: no IOAuthFlowClient configured.", "Unavailable");
     }
@@ -256,14 +219,15 @@ export class OAuthTokenManager {
       return refreshRes;
     }
 
-    const updatedGrant = {
+    const updatedAccessToken = refreshRes.value.accessToken;
+    const updatedPayload = OAuthGrantCodec.encodeGrant({
       ...grant,
-      accessToken: refreshRes.value.accessToken,
+      accessToken: updatedAccessToken,
       refreshToken: refreshRes.value.refreshToken ?? grant.refreshToken,
       expiresAtMs: this._clock() + refreshRes.value.expiresInSeconds * 1000
-    };
+    });
 
-    const sealedRotated = this._cipher.seal(JSON.stringify(updatedGrant), namespace, key);
+    const sealedRotated = this._cipher.seal(updatedPayload, namespace, key);
     if (!sealedRotated.ok) {
       return sealedRotated;
     }
@@ -271,11 +235,11 @@ export class OAuthTokenManager {
     const rotatedEntry: ConfigurationValue = {
       value: sealedRotated.value,
       encrypted: true,
-      provider: "aesLocal",
+      provider: activeEntry.provider ?? "aesLocal",
       reauth_required: false
     };
 
-    // Write rotated grant to .pending/<namespace>.oauth.json BEFORE updating <namespace>.json
+    this._heldGrants.set(`${namespace}/${key}`, rotatedEntry);
     const pendingRes = this.writePendingGrant(namespace, key, rotatedEntry);
     if (!pendingRes.ok) {
       return pendingRes;
@@ -283,18 +247,15 @@ export class OAuthTokenManager {
 
     const publishRes = await persistEntry(rotatedEntry);
     if (!publishRes.ok) {
-      // Leave .pending/<namespace>.oauth.json intact so the next get() recovers without losing the rotated refresh token!
       return publishRes;
     }
 
     this.deletePendingGrant(namespace, key);
-    return ok(updatedGrant.accessToken);
+    return ok(updatedAccessToken);
   }
 
-  /**
-   * Deletes any pending rotated OAuth grant file for the namespace/key.
-   */
   public deletePendingGrant(namespace: string, key: string): void {
+    this._heldGrants.delete(`${namespace}/${key}`);
     const filePath = this.pendingFilePath(namespace);
     if (!fs.existsSync(filePath)) {
       return;
@@ -343,45 +304,5 @@ export class OAuthTokenManager {
       return writeRes;
     }
     return ok(undefined);
-  }
-
-  private validateOptions(options: OAuthOptions): Result<void> {
-    if (!options) {
-      return fail("oauth: options are required", "Validation");
-    }
-    if (!this.isHttpsUrl(options.authorizationEndpoint)) {
-      return fail(
-        `oauth: the authorization endpoint must be an absolute https URI; '${options.authorizationEndpoint}' was supplied`,
-        "Validation"
-      );
-    }
-    if (!this.isHttpsUrl(options.tokenEndpoint)) {
-      return fail(
-        `oauth: the token endpoint must be an absolute https URI; '${options.tokenEndpoint}' was supplied`,
-        "Validation"
-      );
-    }
-    if (!options.clientId || options.clientId.trim().length === 0) {
-      return fail("oauth: a client id is required", "Validation");
-    }
-    if (
-      options.redirectPort !== undefined &&
-      (!Number.isInteger(options.redirectPort) || options.redirectPort < 1 || options.redirectPort > 65535)
-    ) {
-      return fail(
-        `oauth: redirect port ${options.redirectPort} is not between 1 and 65535`,
-        "Validation"
-      );
-    }
-    return ok(undefined);
-  }
-
-  private isHttpsUrl(candidate: string): boolean {
-    try {
-      const url = new URL(candidate);
-      return url.protocol === "https:";
-    } catch {
-      return false;
-    }
   }
 }

@@ -39,6 +39,10 @@ internal sealed record ApplicationManifestEntry
     [JsonPropertyName("lockTimeout")]
     public string? LockTimeout { get; init; }
 
+    /// <summary>Gets the bounded wait for a document lock in integer milliseconds, or null for the default.</summary>
+    [JsonPropertyName("lockTimeoutMs")]
+    public int? LockTimeoutMs { get; init; }
+
     /// <summary>Gets the key vault this application reads sealed values through, or null when it uses none.</summary>
     [JsonPropertyName("keyVault")]
     public VaultManifestEntry? KeyVault { get; init; }

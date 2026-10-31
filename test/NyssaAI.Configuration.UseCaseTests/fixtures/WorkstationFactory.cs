@@ -42,18 +42,13 @@ public sealed class WorkstationFactory : IDisposable
     }
 
     /// <summary>
-    /// Removes what the tutorials wrote: this factory's stand-in for the user's manifest, and the
-    /// default configuration directory a tutorial that named no directory was given. Every
+    /// Removes what the tutorials wrote: this factory's stand-in for the user's manifest and any
+    /// configuration directories created beneath this factory's simulated home directory. Every
     /// <see cref="Workstation"/> removes its own home when it is disposed.
     /// </summary>
     public void CleanUp()
     {
         RepositoryTemp.DeleteHome(_home);
-
-        // ConfigDirectory defaults to .nyssa-ai/config beneath the test executable's output folder.
-        var defaults = new NyssaConfigurationOptions();
-        if (Directory.Exists(defaults.ConfigDirectory))
-            Directory.Delete(defaults.ConfigDirectory, recursive: true);
     }
 
     /// <summary>Cleans up once the class's tutorials have all run.</summary>
