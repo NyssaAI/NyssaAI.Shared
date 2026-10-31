@@ -9,6 +9,8 @@ on:
       - 'nyssa-ai-dbgateway/v[0-9]*'
       - 'nyssa-ai-dbgateway-ts/v[0-9]*'
       - 'nyssa-ai-db-gateway/v[0-9]*'
+      - 'nyssa-ai-logging/v[0-9]*'
+      - 'nyssa-ai-logging-ts/v[0-9]*'
       - 'npm/v[0-9]*'
 
 permissions:
@@ -30,6 +32,9 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           if [[ "$TAG" =~ (nyssa-ai-dbgateway|nyssa-ai-dbgateway-ts|nyssa-ai-db-gateway)/v(.+) ]]; then
             DIR="nyssa-ai-dbgateway-ts"
+            VERSION="${BASH_REMATCH[2]}"
+          elif [[ "$TAG" =~ (nyssa-ai-logging|nyssa-ai-logging-ts)/v(.+) ]]; then
+            DIR="nyssa-ai-logging-ts"
             VERSION="${BASH_REMATCH[2]}"
           elif [[ "$TAG" =~ (nyssa-ai-configuration|nyssa-ai-configuration-ts)/v(.+) ]]; then
             DIR="nyssa-ai-configuration-ts"
