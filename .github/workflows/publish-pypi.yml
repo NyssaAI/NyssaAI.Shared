@@ -57,5 +57,5 @@ jobs:
       - name: Publish package distributions to PyPI (Trusted Publishing OIDC)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: nyssa-ai-configuration-py/dist/
-          skip-existing: true
+          packages_dir: nyssa-ai-configuration-py/dist/
+          skip_existing: true
