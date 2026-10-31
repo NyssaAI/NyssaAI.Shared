@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Xunit;
 
 namespace NyssaAI.Configuration.UseCaseTests.fixtures;
 
@@ -15,7 +16,7 @@ public sealed class LinuxVmWorkstation : IDisposable
     public const string DefaultManifestPath = "/home/svc_acme/.nyssa-ai/config-manifest.json";
     private const string ImageName = "nyssa-config-vm-test:local";
 
-    private readonly string _containerId;
+    private readonly string? _containerId;
     private bool _disposed;
 
     public LinuxVmWorkstation()
@@ -24,11 +25,18 @@ public sealed class LinuxVmWorkstation : IDisposable
         var repoRoot = LocateRepoRoot();
         var hostBin = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-        _containerId = RunHostProcess(
-            "docker",
-            ["run", "-d", "--rm", "--tmpfs", "/tmp/keyrings:rw,exec,mode=0700", "-v", $"{repoRoot}:/repo:ro", "-v", $"{hostBin}:/host-bin:ro", ImageName, "sleep", "300"],
-            stdin: null
-        ).Trim();
+        try
+        {
+            _containerId = RunHostProcess(
+                "docker",
+                ["run", "-d", "--rm", "--tmpfs", "/tmp/keyrings:rw,exec,mode=0700", "-v", $"{repoRoot}:/repo:ro", "-v", $"{hostBin}:/host-bin:ro", ImageName, "sleep", "300"],
+                stdin: null
+            ).Trim();
+        }
+        catch (Exception ex)
+        {
+            Assert.Skip($"Failed to launch Docker VM test container: {ex.Message}");
+        }
 
         try
         {
@@ -195,6 +203,8 @@ public sealed class LinuxVmWorkstation : IDisposable
 
     private string ExecBash(string script)
     {
+        if (string.IsNullOrEmpty(_containerId))
+            throw new InvalidOperationException("Docker VM container is not running.");
         var preamble = "set -euo pipefail\nexport HOME=/home/svc_acme\nexport XDG_RUNTIME_DIR=/tmp/runtime\nexport DBUS_SESSION_BUS_ADDRESS=\"unix:path=/tmp/runtime/bus\"\n";
         return RunHostProcess("docker", ["exec", "-i", _containerId, "bash"], (preamble + script).Replace("\r\n", "\n", StringComparison.Ordinal));
     }
@@ -207,15 +217,22 @@ public sealed class LinuxVmWorkstation : IDisposable
         }
         catch
         {
-            const string dockerfile = """
-                FROM nyssa-pilot-warm:2026-10-12
-                RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                    dbus-x11 gnome-keyring libsecret-tools libsecret-1-0 && rm -rf /var/lib/apt/lists/* && \
-                    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh && \
-                    UV_PYTHON_INSTALL_DIR=/opt/python uv venv /opt/venv --python 3.13 && \
-                    uv pip install --python /opt/venv/bin/python cryptography
-                """;
-            RunHostProcess("docker", ["build", "-t", ImageName, "-"], dockerfile);
+            try
+            {
+                const string dockerfile = """
+                    FROM nyssa-pilot-warm:2026-10-12
+                    RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                        dbus-x11 gnome-keyring libsecret-tools libsecret-1-0 && rm -rf /var/lib/apt/lists/* && \
+                        curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh && \
+                        UV_PYTHON_INSTALL_DIR=/opt/python uv venv /opt/venv --python 3.13 && \
+                        uv pip install --python /opt/venv/bin/python cryptography
+                    """;
+                RunHostProcess("docker", ["build", "-t", ImageName, "-"], dockerfile);
+            }
+            catch (Exception ex)
+            {
+                Assert.Skip($"Docker or Linux VM test image '{ImageName}' is unavailable: {ex.Message}");
+            }
         }
     }
 
@@ -274,13 +291,16 @@ public sealed class LinuxVmWorkstation : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        try
+        if (!string.IsNullOrEmpty(_containerId))
         {
-            RunHostProcess("docker", ["rm", "-f", _containerId], stdin: null);
-        }
-        catch
-        {
-            // Container is started with --rm; best-effort forced removal on teardown.
+            try
+            {
+                RunHostProcess("docker", ["rm", "-f", _containerId], stdin: null);
+            }
+            catch
+            {
+                // Container is started with --rm; best-effort forced removal on teardown.
+            }
         }
     }
 }
