@@ -4,6 +4,7 @@
 //     +-- REFRESH_WINDOW_MS
 //     +-- authorize(namespace, key, options, signal)
 //     +-- deletePendingGrant(namespace, key)
+//     +-- extractGrantOptions(namespace, key, entry)
 //     +-- isOAuthGrantPayload(decrypted)
 //     +-- new(configurationDirectory, cipher, flowClient, browserLauncher, clock)
 //     `-- resolveGrantAccessToken(namespace, key, entry, persistEntry, signal)
@@ -50,6 +51,38 @@ export class OAuthTokenManager {
 
   public static isOAuthGrantPayload(decrypted: string): boolean {
     return OAuthGrantCodec.isOAuthGrantPayload(decrypted);
+  }
+
+  public extractGrantOptions(
+    namespace: string,
+    key: string,
+    entry: ConfigurationValue
+  ): Result<OAuthOptions> {
+    if (!this._cipher) {
+      return fail("Cannot decrypt OAuth grant: no cipher configured.", "Unavailable");
+    }
+    if (typeof entry.value !== "string") {
+      return fail(`Encrypted OAuth grant '${namespace}/${key}' must carry a string payload.`, "Validation");
+    }
+    const openRes = this._cipher.open(entry.value, namespace, key);
+    if (!openRes.ok) {
+      return openRes;
+    }
+    if (!OAuthGrantCodec.isOAuthGrantPayload(openRes.value)) {
+      return fail(`Entry '${namespace}/${key}' does not contain an OAuth grant.`, "Validation");
+    }
+    const grantRes = OAuthGrantCodec.decodeGrant(openRes.value, namespace, key);
+    if (!grantRes.ok) {
+      return grantRes;
+    }
+    const grant = grantRes.value;
+    return ok({
+      authorizationEndpoint: grant.authorizationEndpoint,
+      tokenEndpoint: grant.tokenEndpoint,
+      clientId: grant.clientId,
+      scopes: grant.scopes,
+      ...(grant.redirectPort !== undefined ? { redirectPort: grant.redirectPort } : {})
+    });
   }
 
   public async authorize(

@@ -64,6 +64,10 @@ public sealed class NyssaConfigurationOptionsTests
         services.AddNyssaConfiguration();
 
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IConfiguration));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IConfigurationReader));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IConfigurationWriter));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IConfigurationMaintainer));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IConfigurationOAuthWriter));
         Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IConfigurationExtensions));
     }
 

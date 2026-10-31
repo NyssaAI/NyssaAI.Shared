@@ -194,8 +194,8 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     >;
     expect(docOnDisk["oauthCred"]?.reauth_required).toBe(true);
 
-    // Re-run authorize() to recover
-    expect((await client.authorize("github", "oauthCred", oauthOpts)).ok).toBe(true);
+    // Re-run reauthorize() using stored endpoint metadata to recover
+    expect((await client.reauthorize("github", "oauthCred")).ok).toBe(true);
 
     const docAfterReauth = JSON.parse(
       fs.readFileSync(path.join(configDir, "github.json"), "utf8")
@@ -292,6 +292,14 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
 
     const fakeVaultFactory: IVaultProviderFactory = {
       kind: "azure-key-vault",
+      authorization() {
+        return ok({
+          authorizationEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+          tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+          clientId: "azure-cli",
+          scopes: ["https://vault.azure.net/.default"]
+        });
+      },
       create(_options, getCredential): Result<IVaultProvider> {
         return ok({
           name: "corpVault",
@@ -338,17 +346,8 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     if (!clientRes.ok) return;
     const client = clientRes.value;
 
-    // Authorize OAuth credential at "azure-auth/vaultGrant"
-    expect(
-      (
-        await client.authorize("azure-auth", "vaultGrant", {
-          authorizationEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-          tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-          clientId: "azure-cli",
-          scopes: ["https://vault.azure.net/.default"]
-        })
-      ).ok
-    ).toBe(true);
+    // Authorize OAuth credential for corpVault via authorizeProvider (stored at "azure-auth/vaultGrant")
+    expect((await client.authorizeProvider("corpVault")).ok).toBe(true);
 
     // Store a secret in corpVault -> resolves OAuth token from "azure-auth/vaultGrant"
     expect(

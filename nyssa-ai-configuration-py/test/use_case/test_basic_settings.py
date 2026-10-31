@@ -2,7 +2,7 @@
 # Public interface:
 # +-- test_aes_local_encrypts_on_disk_preserves_provider_and_never_logs_canary_secret(tmp_path)
 # +-- test_default_bootstrap_provisions_manifest_and_keyring_matching_platform_spec(tmp_path)
-# +-- test_list_keys_sorts_by_utf16_code_unit_ordinal_order(tmp_path)
+# +-- test_list_sorts_by_utf16_code_unit_ordinal_order(tmp_path)
 # `-- test_plaintext_crud_persists_across_fresh_client_and_rejects_provider_change(tmp_path)
 """Use-case tests for F-001 bootstrap, F-101 plaintext settings, and F-103 local AES-256-GCM secrets."""
 
@@ -11,8 +11,13 @@ from pathlib import Path
 
 from nyssa_ai_configuration import (
     BootstrapOptions,
+    Configuration,
     ConfigurationClient,
     ConfigurationLog,
+    ConfigurationMaintainer,
+    ConfigurationOAuthWriter,
+    ConfigurationReader,
+    ConfigurationWriter,
     KeyringInMemory,
 )
 
@@ -148,8 +153,8 @@ def test_aes_local_encrypts_on_disk_preserves_provider_and_never_logs_canary_sec
     assert any(json.loads(line)["operation"] == "store.set" for line in log_lines)
 
 
-def test_list_keys_sorts_by_utf16_code_unit_ordinal_order(tmp_path: Path) -> None:
-    """Verify list_keys uses UTF-16 code-unit ordinal order matching .NET StringComparer.Ordinal and JS."""
+def test_list_sorts_by_utf16_code_unit_ordinal_order(tmp_path: Path) -> None:
+    """Verify list uses UTF-16 code-unit ordinal order matching .NET StringComparer.Ordinal and JS."""
     created = ConfigurationClient.create(
         BootstrapOptions(
             application_name="nyssa-app",
@@ -160,16 +165,22 @@ def test_list_keys_sorts_by_utf16_code_unit_ordinal_order(tmp_path: Path) -> Non
     )
     assert created.ok
     client = created.value
+    reader: ConfigurationReader = client
+    writer: ConfigurationWriter = client
+    oauth_writer: ConfigurationOAuthWriter = client
+    maintainer: ConfigurationMaintainer = client
+    full_config: Configuration = client
+    assert reader is client and writer is client and oauth_writer is client and maintainer is client and full_config is client
 
     # In UTF-8 / Unicode code point order: U+E000 (57344) < U+1F600 (128512).
     # In UTF-16 code units: U+1F600 starts with surrogate 0xD83D (55357) < 0xE000 (57344).
     bmp_private_use = "\uE000"
     supplementary_emoji = "\U0001F600"
 
-    assert client.set("sorting", bmp_private_use, "bmp").ok
-    assert client.set("sorting", supplementary_emoji, "Astral").ok
-    assert client.set("sorting", "alpha", "first").ok
+    assert writer.set("sorting", bmp_private_use, "bmp").ok
+    assert writer.set("sorting", supplementary_emoji, "Astral").ok
+    assert writer.set("sorting", "alpha", "first").ok
 
-    keys_res = client.list_keys("sorting")
+    keys_res = reader.list("sorting")
     assert keys_res.ok
     assert keys_res.value == ["alpha", supplementary_emoji, bmp_private_use]

@@ -6,7 +6,7 @@
 #     +-- get(namespace, key)
 #     +-- get_as(namespace, key, target_type)
 #     +-- get_namespace(namespace, target_type)
-#     +-- list_keys(namespace)
+#     +-- list(namespace)
 #     +-- merge_settings(namespace, value)
 #     +-- move(namespace, key, destination_provider)
 #     +-- reauthorize(namespace, key, browser_launcher)
@@ -15,7 +15,9 @@
 #     +-- set(namespace, key, value, provider)
 #     +-- set_as(namespace, key, value, provider)
 #     `-- set_namespace(namespace, value)
-"""Public Configuration protocol matching IConfiguration and IConfigurationExtensions."""
+"""Public Configuration protocol unifying ConfigurationReader, ConfigurationWriter, ConfigurationOAuthWriter, and ConfigurationMaintainer."""
+
+from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Protocol
@@ -86,7 +88,7 @@ class Configuration(Protocol):
         """Decompose value and shallow-merge supplied top-level keys into namespace."""
         ...
 
-    def list_keys(self, namespace: str) -> Result[list[str]]:
+    def list(self, namespace: str) -> Result[list[str]]:
         """List all keys in namespace in UTF-16 code-unit ordinal order."""
         ...
 

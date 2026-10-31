@@ -5,7 +5,7 @@
 #     +-- get(namespace, key)
 #     +-- get_entry(namespace, key)
 #     +-- get_namespace(namespace)
-#     +-- list_keys(namespace)
+#     +-- list(namespace)
 #     +-- merge_settings(namespace, serialized)
 #     +-- move(namespace, key, destination_provider)
 #     +-- new(configuration_directory, lock_timeout_ms, cipher, vaults, credentials, oauth_provider, recovery_protector, logger, clock)
@@ -17,6 +17,8 @@
 #     +-- set_document_write_interceptor(interceptor)
 #     `-- set_namespace(namespace, serialized)
 """Core configuration store routing local, encrypted, OAuth, and cloud vault entries."""
+
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -197,7 +199,7 @@ class ConfigurationStore:
         self._log_outcome("store.set", out, started, dependency=provider or "local")
         return out
 
-    def list_keys(self, namespace: str) -> Result[list[str]]:
+    def list(self, namespace: str) -> Result[list[str]]:
         """Return all keys in namespace sorted in strict UTF-16 code-unit ordinal order."""
         valid = DirectorySafety.validate_segment(namespace, "namespace")
         if not valid.ok:

@@ -3,6 +3,7 @@
 // `-- ConfigurationClient
 //     +-- applicationName
 //     +-- authorize(namespace, key, options, signal)
+//     +-- authorizeProvider(providerName, signal)
 //     +-- configurationDirectory
 //     +-- get(namespace, key, signal)
 //     +-- getAs(namespace, key, signal)
@@ -11,7 +12,8 @@
 //     +-- list(namespace, signal)
 //     +-- mergeSettings(namespace, value, signal)
 //     +-- move(namespace, key, destinationProvider, signal)
-//     +-- recoverWrite(handle, signal)
+//     +-- reauthorize(namespace, key, signal)
+//     +-- recover(handle, signal)
 //     +-- remove(namespace, key, signal)
 //     +-- set(namespace, key, value, options, signal)
 //     +-- setAs(namespace, key, value, options, signal)
@@ -22,6 +24,11 @@ import * as crypto from "node:crypto";
 import { ok, fail, type Result } from "./results/Result.js";
 import { ConfigurationBootstrap } from "./ConfigurationBootstrap.js";
 import type { ConfigurationStore } from "./values/ConfigurationStore.js";
+import type { Configuration } from "./Configuration.js";
+import type { ConfigurationReader } from "./ConfigurationReader.js";
+import type { ConfigurationWriter } from "./ConfigurationWriter.js";
+import type { ConfigurationOAuthWriter } from "./ConfigurationOAuthWriter.js";
+import type { ConfigurationMaintainer } from "./ConfigurationMaintainer.js";
 import type { IConfiguration } from "./IConfiguration.js";
 import type { SetOptions } from "./SetOptions.js";
 import type { ConfigurationOptions } from "./ConfigurationOptions.js";
@@ -196,12 +203,24 @@ export class ConfigurationClient {
     });
   }
 
-  public async recoverWrite(
+  public async authorizeProvider(providerName: string, signal?: AbortSignal): Promise<Result<void>> {
+    return this.executeLogged("authorizeProvider", async () => {
+      return this._store.authorizeProvider(providerName, signal);
+    });
+  }
+
+  public async reauthorize(namespace: string, key: string, signal?: AbortSignal): Promise<Result<void>> {
+    return this.executeLogged("reauthorize", async () => {
+      return this._store.reauthorize(namespace, key, signal);
+    });
+  }
+
+  public async recover(
     handle: ConfigurationWriteRecoveryHandle,
     signal?: AbortSignal
   ): Promise<Result<void>> {
-    return this.executeLogged("recoverWrite", async () => {
-      return this._store.recoverWrite(handle, signal);
+    return this.executeLogged("recover", async () => {
+      return this._store.recover(handle, signal);
     });
   }
 
@@ -256,5 +275,15 @@ export class ConfigurationClient {
   }
 }
 
-const _typeCheck: IConfiguration = null as unknown as ConfigurationClient;
+const _typeCheck: Configuration = null as unknown as ConfigurationClient;
+const _typeCheckReader: ConfigurationReader = _typeCheck;
+const _typeCheckWriter: ConfigurationWriter = _typeCheck;
+const _typeCheckOAuth: ConfigurationOAuthWriter = _typeCheck;
+const _typeCheckMaintainer: ConfigurationMaintainer = _typeCheck;
+const _typeCheckLegacy: IConfiguration = _typeCheck;
 void _typeCheck;
+void _typeCheckReader;
+void _typeCheckWriter;
+void _typeCheckOAuth;
+void _typeCheckMaintainer;
+void _typeCheckLegacy;

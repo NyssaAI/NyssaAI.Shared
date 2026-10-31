@@ -135,7 +135,7 @@ describe("ConfigurationRecovery Public Use Cases (F-204)", () => {
 
     // Recover using imported handle once vault is healthy again
     failSecondVaultWrite = false;
-    const recoverRes = await client.recoverWrite(importedRes.value);
+    const recoverRes = await client.recover(importedRes.value);
     expect(recoverRes.ok).toBe(true);
 
     // Verify both vault secrets and local document are converged and journal is deleted
@@ -242,7 +242,7 @@ describe("ConfigurationRecovery Public Use Cases (F-204)", () => {
     );
 
     // Recovery detects SHA-256 mismatch against both expectedExistingSha256 and plannedNewSha256 -> Conflict
-    const conflictRes = await client.recoverWrite(handleRes.value);
+    const conflictRes = await client.recover(handleRes.value);
     expect(conflictRes.ok).toBe(false);
     if (!conflictRes.ok) {
       expect(conflictRes.category).toBe("Conflict");
@@ -254,7 +254,7 @@ describe("ConfigurationRecovery Public Use Cases (F-204)", () => {
     expect(ProtectedFileSystem.createFile(docPath, JSON.stringify(plannedDoc, null, 2)).ok).toBe(
       true
     );
-    const reconciledRes = await client.recoverWrite(handleRes.value);
+    const reconciledRes = await client.recover(handleRes.value);
     expect(reconciledRes.ok).toBe(true);
     expect(journalManager.hasWriteJournal("orders")).toBe(false);
   });

@@ -21,6 +21,13 @@ from nyssa_ai_configuration.cloud_key_vaults.types import (
 )
 from nyssa_ai_configuration.configuration import Configuration
 from nyssa_ai_configuration.configuration_client import ConfigurationClient
+from nyssa_ai_configuration.configuration_maintainer import ConfigurationMaintainer
+from nyssa_ai_configuration.configuration_oauth_writer import (
+    ConfigurationOauthWriter,
+    ConfigurationOauthWriter as ConfigurationOAuthWriter,
+)
+from nyssa_ai_configuration.configuration_reader import ConfigurationReader
+from nyssa_ai_configuration.configuration_writer import ConfigurationWriter
 from nyssa_ai_configuration.encryption.configuration_cipher import ConfigurationCipher
 from nyssa_ai_configuration.encryption.configuration_cipher_aes_gcm import (
     ConfigurationCipherAesGcm,
@@ -123,15 +130,19 @@ __all__ = [
     "ConfigurationLogOutcome",
     "ConfigurationLogRecord",
     "ConfigurationLogger",
+    "ConfigurationMaintainer",
     "ConfigurationManifestDocument",
     "ConfigurationManifestReader",
     "ConfigurationManifestWriter",
     "ConfigurationMove",
     "ConfigurationMover",
+    "ConfigurationOAuthWriter",
+    "ConfigurationOauthWriter",
     "ConfigurationOperationKind",
     "ConfigurationOperationProgress",
     "ConfigurationPointer",
     "ConfigurationPublicationState",
+    "ConfigurationReader",
     "ConfigurationRecoveryCoordinator",
     "ConfigurationRecoveryHandle",
     "ConfigurationRecoveryOutcome",
@@ -145,6 +156,7 @@ __all__ = [
     "ConfigurationStore",
     "ConfigurationValue",
     "ConfigurationValueCodec",
+    "ConfigurationWriter",
     "DirectorySafety",
     "Err",
     "ErrorCategory",

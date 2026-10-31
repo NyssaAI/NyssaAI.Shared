@@ -13,24 +13,28 @@ public sealed class PackageStructureTests
 
     private static readonly string[] InnerLayers = ["Application", "Infrastructure", "Api"];
 
-    /// <summary>SP9b: the only three files a source root may ever hold.</summary>
+    /// <summary>SP9b: the root contracts a source root may hold.</summary>
     private static readonly string[] AllowedRootContracts =
     [
         "IConfiguration.cs",
+        "IConfigurationReader.cs",
+        "IConfigurationWriter.cs",
+        "IConfigurationOAuthWriter.cs",
+        "IConfigurationMaintainer.cs",
         "IConfigurationExtensions.cs",
         "IConfigurationBootstrap.cs",
     ];
 
     /// <summary>
-    /// The contracts this package declares today - now all three, since the repository-root run
-    /// taught <c>Directory.Build.targets</c> a <c>BootstrapContractFile</c> property and
-    /// <c>IConfigurationBootstrap.cs</c> landed. Asserting the allow-set above rather than this
-    /// exact census is what stopped the test tracking the structure instead of constraining it:
-    /// the earlier form asserted the current two files and would have gone red on that arrival.
+    /// The contracts this package declares today.
     /// </summary>
     private static readonly string[] RequiredContracts =
     [
         "IConfiguration.cs",
+        "IConfigurationReader.cs",
+        "IConfigurationWriter.cs",
+        "IConfigurationOAuthWriter.cs",
+        "IConfigurationMaintainer.cs",
         "IConfigurationExtensions.cs",
     ];
 
@@ -121,8 +125,8 @@ public sealed class PackageStructureTests
     [Fact]
     public void ExtensionContract_SharesNoMemberWithTheClientContract()
     {
-        var primary = typeof(IConfiguration).GetMembers().Select(member => member.Name);
-        var extension = typeof(IConfigurationExtensions).GetMembers().Select(member => member.Name);
+        var primary = typeof(IConfiguration).GetInterfaces().Append(typeof(IConfiguration)).SelectMany(i => i.GetMembers()).Select(member => member.Name);
+        var extension = typeof(IConfigurationOAuthWriter).GetMembers().Select(member => member.Name);
 
         Assert.Empty(primary.Intersect(extension, StringComparer.Ordinal));
     }
@@ -135,7 +139,7 @@ public sealed class PackageStructureTests
     public void ExtensionContract_IsImplementedExplicitly()
     {
         var client = Package.GetTypes().Single(type => type.Name == "ConfigurationClient");
-        var map = client.GetInterfaceMap(typeof(IConfigurationExtensions));
+        var map = client.GetInterfaceMap(typeof(IConfigurationOAuthWriter));
 
         Assert.NotEmpty(map.TargetMethods);
         Assert.All(map.TargetMethods, method => Assert.True(method.IsPrivate, method.Name));

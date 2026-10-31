@@ -162,6 +162,10 @@ public static class ConfigurationServiceCollectionExtensions
         });
 
         services.TryAddScoped<IConfiguration>(provider => provider.GetRequiredService<ConfigurationClient>());
+        services.TryAddScoped<IConfigurationReader>(provider => provider.GetRequiredService<ConfigurationClient>());
+        services.TryAddScoped<IConfigurationWriter>(provider => provider.GetRequiredService<ConfigurationClient>());
+        services.TryAddScoped<IConfigurationMaintainer>(provider => provider.GetRequiredService<ConfigurationClient>());
+        services.TryAddScoped<IConfigurationOAuthWriter>(provider => provider.GetRequiredService<ConfigurationClient>());
         services.TryAddScoped<IConfigurationExtensions>(provider => provider.GetRequiredService<ConfigurationClient>());
 
         return services;

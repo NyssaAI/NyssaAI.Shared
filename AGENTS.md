@@ -1,3 +1,5 @@
+You communicate concisely and factually as possible. You explain the architectural / strategic ideas concisely and use bullet point lists to accentuate key points.
+
 # Development standards (csharp)
 
 Read `.nyssa-ai/dev-standards/csharp/rules/repo-standards.md`,

@@ -7,7 +7,7 @@
 #     +-- get(namespace, key)
 #     +-- get_as(namespace, key, target_type)
 #     +-- get_namespace(namespace, target_type)
-#     +-- list_keys(namespace)
+#     +-- list(namespace)
 #     +-- merge_settings(namespace, value)
 #     +-- move(namespace, key, destination_provider)
 #     +-- new(application_name, configuration_directory, lock_timeout_ms, store, vault_auth)
@@ -19,6 +19,8 @@
 #     +-- set_document_write_interceptor(interceptor)
 #     `-- set_namespace(namespace, value)
 """Bootstrap resolver and public ConfigurationClient facade."""
+
+from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 import dataclasses
@@ -279,9 +281,9 @@ class ConfigurationClient:
             return ConfigurationAttempt(result=fail(f"Failed to serialize namespace '{namespace}': {exc}", "Validation", exc))
         return self._store.merge_settings(namespace, serialized)
 
-    def list_keys(self, namespace: str) -> Result[list[str]]:
+    def list(self, namespace: str) -> Result[list[str]]:
         """List all keys in namespace in UTF-16 code-unit ordinal order."""
-        return self._store.list_keys(namespace)
+        return self._store.list(namespace)
 
     def remove(self, namespace: str, key: str) -> Result[ConfigurationRemoval]:
         """Remove (namespace, key) from its provider and local namespace file."""

@@ -231,20 +231,20 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
     }
 
     // Explicit, per SP10d: the extension surface stays public and documented, but a caller reaches
-    // it only by naming IConfigurationExtensions, which is the signal they are the second audience.
-    ValueTask<Result> IConfigurationExtensions.AuthorizeAsync(
+    // it only by naming IConfigurationOAuthWriter or IConfigurationExtensions, which is the signal they are the second audience.
+    ValueTask<Result> IConfigurationOAuthWriter.AuthorizeAsync(
         string @namespace,
         string key,
         OAuthOptions options,
         CancellationToken cancellationToken) =>
         _entries.AuthorizeAsync(@namespace, key, options, cancellationToken);
 
-    ValueTask<Result> IConfigurationExtensions.AuthorizeProviderAsync(
+    ValueTask<Result> IConfigurationOAuthWriter.AuthorizeProviderAsync(
         string provider,
         CancellationToken cancellationToken) =>
         _entries.AuthorizeProviderAsync(provider, cancellationToken);
 
-    ValueTask<Result> IConfigurationExtensions.ReauthorizeAsync(
+    ValueTask<Result> IConfigurationOAuthWriter.ReauthorizeAsync(
         string @namespace,
         string key,
         CancellationToken cancellationToken) =>

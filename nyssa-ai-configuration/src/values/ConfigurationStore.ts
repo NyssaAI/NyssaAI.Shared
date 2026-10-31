@@ -2,13 +2,15 @@
 // Public interface:
 // `-- ConfigurationStore
 //     +-- authorize(namespace, key, options, signal)
+//     +-- authorizeProvider(providerName, signal)
 //     +-- get(namespace, key, signal)
 //     +-- getNamespace(namespace, signal)
 //     +-- list(namespace, signal)
 //     +-- mergeSettings(namespace, value, signal)
 //     +-- move(namespace, key, destinationProvider, signal)
 //     +-- new(configurationDirectory, lockTimeoutMs, cipher, options)
-//     +-- recoverWrite(handle, signal)
+//     +-- reauthorize(namespace, key, signal)
+//     +-- recover(handle, signal)
 //     +-- remove(namespace, key, signal)
 //     +-- resolveVaultCredential(vaultName, signal)
 //     +-- set(namespace, key, value, encrypted, provider, signal)
@@ -38,6 +40,7 @@ import type { IBrowserLauncher } from "../oauth/IBrowserLauncher.js";
  */
 export class ConfigurationStore {
   private readonly _vaultCredentials: ReadonlyMap<string, { readonly namespace: string; readonly key: string }>;
+  private readonly _vaultAuth: ReadonlyMap<string, { readonly namespace: string; readonly key: string; readonly options?: OAuthOptions | undefined }>;
   private readonly _resolver: ConfigurationEntryResolver;
   private readonly _namespaceHandler: NamespaceDocumentHandler;
   private readonly _mover: ConfigurationMover;
@@ -49,6 +52,7 @@ export class ConfigurationStore {
     options?: {
       readonly vaultProviders?: ReadonlyMap<string, IVaultProvider> | undefined;
       readonly vaultCredentials?: ReadonlyMap<string, { readonly namespace: string; readonly key: string }> | undefined;
+      readonly vaultAuth?: ReadonlyMap<string, { readonly namespace: string; readonly key: string; readonly options?: OAuthOptions | undefined }> | undefined;
       readonly oauthClient?: IOAuthFlowClient | undefined;
       readonly browserLauncher?: IBrowserLauncher | undefined;
       readonly clock?: (() => number) | undefined;
@@ -56,24 +60,12 @@ export class ConfigurationStore {
   ) {
     const resolvedDir = path.resolve(configurationDirectory);
     const vaultProviders = options?.vaultProviders ?? new Map<string, IVaultProvider>();
-    this._vaultCredentials =
-      options?.vaultCredentials ?? new Map<string, { readonly namespace: string; readonly key: string }>();
-    const oauthManager = new OAuthTokenManager(
-      resolvedDir,
-      cipher,
-      options?.oauthClient,
-      options?.browserLauncher,
-      options?.clock
-    );
+    this._vaultCredentials = options?.vaultCredentials ?? new Map();
+    this._vaultAuth = options?.vaultAuth ?? new Map();
+    const oauthManager = new OAuthTokenManager(resolvedDir, cipher, options?.oauthClient, options?.browserLauncher, options?.clock);
     const journalManager = new PendingJournalManager(resolvedDir);
     this._resolver = new ConfigurationEntryResolver(
-      resolvedDir,
-      lockTimeoutMs,
-      cipher,
-      vaultProviders,
-      this._vaultCredentials,
-      oauthManager,
-      journalManager
+      resolvedDir, lockTimeoutMs, cipher, vaultProviders, this._vaultCredentials, oauthManager, journalManager
     );
     this._namespaceHandler = new NamespaceDocumentHandler(this._resolver);
     this._mover = new ConfigurationMover(this._resolver);
@@ -308,7 +300,42 @@ export class ConfigurationStore {
     }, signal);
   }
 
-  public async recoverWrite(
+  public async authorizeProvider(providerName: string, signal?: AbortSignal): Promise<Result<void>> {
+    signal?.throwIfAborted();
+    const info = this._vaultAuth.get(providerName);
+    if (!info) {
+      return fail(`Provider '${providerName}' is not configured with an OAuth credential.`, "Validation");
+    }
+    if (!info.options) {
+      return fail(`Provider '${providerName}' does not supply OAuth authorization options.`, "Validation");
+    }
+    return this.authorize(info.namespace, info.key, info.options, signal);
+  }
+
+  public async reauthorize(namespace: string, key: string, signal?: AbortSignal): Promise<Result<void>> {
+    signal?.throwIfAborted();
+    const validRes = this._resolver.validateNamespaceAndKey(namespace, key);
+    if (!validRes.ok) return validRes;
+
+    const replayRes = await this._resolver.replayPendingJournalsIfPresent(namespace, signal);
+    if (!replayRes.ok) return replayRes;
+
+    const doc = this._resolver.getDocument(namespace);
+    const readRes = await doc.read(signal);
+    if (!readRes.ok) return readRes;
+
+    const existing = readRes.value[key];
+    if (!existing) {
+      return fail(`No OAuth entry found at '${namespace}/${key}'.`, "NotFound");
+    }
+
+    const optsRes = this._resolver.oauthManager.extractGrantOptions(namespace, key, existing);
+    if (!optsRes.ok) return optsRes;
+
+    return this.authorize(namespace, key, optsRes.value, signal);
+  }
+
+  public async recover(
     handle: ConfigurationWriteRecoveryHandle,
     signal?: AbortSignal
   ): Promise<Result<void>> {

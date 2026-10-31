@@ -20,6 +20,7 @@ import { DirectorySafety } from "./fileSecurity/DirectorySafety.js";
 import type { ConfigurationOptions } from "./ConfigurationOptions.js";
 import type { IVaultProvider } from "./vault/IVaultProvider.js";
 import type { VaultOptions } from "./manifest/VaultOptions.js";
+import type { OAuthOptions } from "./oauth/OAuthOptions.js";
 import type { IConfigurationLogger } from "./logging/IConfigurationLogger.js";
 
 /**
@@ -110,6 +111,10 @@ export class ConfigurationBootstrap {
 
     const vaultProviders = new Map<string, IVaultProvider>();
     const vaultCredentials = new Map<string, { readonly namespace: string; readonly key: string }>();
+    const vaultAuth = new Map<
+      string,
+      { readonly namespace: string; readonly key: string; readonly options?: OAuthOptions | undefined }
+    >();
     let storeRef: ConfigurationStore | undefined;
 
     if (effectiveVault !== undefined) {
@@ -121,7 +126,10 @@ export class ConfigurationBootstrap {
       }
 
       if (effectiveVault.credential !== undefined && effectiveVault.credential.trim().length > 0) {
-        const parts = effectiveVault.credential.split("/");
+        const cleanedCred = effectiveVault.credential.startsWith("oauth://")
+          ? effectiveVault.credential.slice("oauth://".length)
+          : effectiveVault.credential;
+        const parts = cleanedCred.split("/");
         if (parts.length !== 2 || !parts[0] || !parts[1]) {
           return fail(
             `keyVault.credential '${effectiveVault.credential}' must be in 'namespace/key' format.`,
@@ -167,11 +175,29 @@ export class ConfigurationBootstrap {
       }
 
       vaultProviders.set(vaultName, providerRes.value);
+
+      const credAddress = vaultCredentials.get(vaultName);
+      if (credAddress !== undefined) {
+        let authOpts: OAuthOptions | undefined;
+        if (matchingFactory.authorization) {
+          const authRes = matchingFactory.authorization(normalizedVault);
+          if (!authRes.ok) {
+            return authRes;
+          }
+          authOpts = authRes.value;
+        }
+        vaultAuth.set(vaultName, {
+          namespace: credAddress.namespace,
+          key: credAddress.key,
+          ...(authOpts !== undefined ? { options: authOpts } : {})
+        });
+      }
     }
 
     const store = new ConfigurationStore(configDir, lockTimeoutMs, cipherRes.value, {
       vaultProviders,
       vaultCredentials,
+      vaultAuth,
       oauthClient: resolvedOptions.oauthClient,
       browserLauncher: resolvedOptions.browserLauncher,
       clock: resolvedOptions.clock

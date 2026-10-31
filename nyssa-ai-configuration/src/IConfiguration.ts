@@ -1,14 +1,16 @@
-// Responsibility: Public contract for reading, writing, listing, migrating, authorizing, and recovering configuration values.
+// Responsibility: Legacy I-prefixed compatibility alias for the Configuration contract.
 // Public interface:
 // `-- IConfiguration
 //     +-- authorize(namespace, key, options, signal)
+//     +-- authorizeProvider(providerName, signal)
 //     +-- get(namespace, key, signal)
 //     +-- getAs(namespace, key, signal)
 //     +-- getNamespace(namespace, signal)
 //     +-- list(namespace, signal)
 //     +-- mergeSettings(namespace, value, signal)
 //     +-- move(namespace, key, destinationProvider, signal)
-//     +-- recoverWrite(handle, signal)
+//     +-- reauthorize(namespace, key, signal)
+//     +-- recover(handle, signal)
 //     +-- remove(namespace, key, signal)
 //     +-- set(namespace, key, value, options, signal)
 //     +-- setAs(namespace, key, value, options, signal)
@@ -22,27 +24,12 @@ import type { OAuthOptions } from "./oauth/OAuthOptions.js";
 import type { ConfigurationWriteRecoveryHandle } from "./recovery/ConfigurationWriteRecoveryHandle.js";
 
 /**
- * IConfiguration provides application code with access to persistent settings, secrets, OAuth credentials, and recovery.
+ * @deprecated Prefer `Configuration` (or narrower `ConfigurationReader`, `ConfigurationWriter`, `ConfigurationOAuthWriter`, `ConfigurationMaintainer`).
  */
 export interface IConfiguration {
-  /**
-   * Reads a string or primitive configuration value.
-   */
   get(namespace: string, key: string, signal?: AbortSignal): Promise<Result<string>>;
-
-  /**
-   * Reads a typed object or primitive configuration value under a single key.
-   */
   getAs<T>(namespace: string, key: string, signal?: AbortSignal): Promise<Result<T>>;
-
-  /**
-   * Reads and assembles all keys in a namespace into a single typed object.
-   */
   getNamespace<T>(namespace: string, signal?: AbortSignal): Promise<Result<T>>;
-
-  /**
-   * Saves a string configuration value.
-   */
   set(
     namespace: string,
     key: string,
@@ -50,10 +37,6 @@ export interface IConfiguration {
     options?: SetOptions,
     signal?: AbortSignal
   ): Promise<Result<void>>;
-
-  /**
-   * Saves a typed object or primitive configuration value under a single key.
-   */
   setAs<T>(
     namespace: string,
     key: string,
@@ -61,49 +44,23 @@ export interface IConfiguration {
     options?: SetOptions,
     signal?: AbortSignal
   ): Promise<Result<void>>;
-
-  /**
-   * Replaces a namespace with the top-level properties of a typed object (preserving existing providers on surviving keys).
-   */
   setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
-
-  /**
-   * Merges the top-level properties of a typed object into an existing namespace without removing omitted keys.
-   */
   mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
-
-  /**
-   * Lists all keys in a namespace in strict ordinal code-unit order without decrypting values.
-   */
   list(namespace: string, signal?: AbortSignal): Promise<Result<readonly string[]>>;
-
-  /**
-   * Removes a configuration key from a namespace and its backing provider.
-   */
   remove(namespace: string, key: string, signal?: AbortSignal): Promise<Result<ConfigurationRemoval>>;
-
-  /**
-   * Migrates an existing configuration key to a new provider, writing to the destination first and withdrawing the source copy.
-   */
   move(
     namespace: string,
     key: string,
     destinationProvider: string,
     signal?: AbortSignal
   ): Promise<Result<ConfigurationMove>>;
-
-  /**
-   * Acquires and stores an OAuth 2.0 Authorization Code + PKCE grant under the specified namespace and key.
-   */
   authorize(
     namespace: string,
     key: string,
     options: OAuthOptions,
     signal?: AbortSignal
   ): Promise<Result<void>>;
-
-  /**
-   * Replays an interrupted multi-step write using its portable recovery handle.
-   */
-  recoverWrite(handle: ConfigurationWriteRecoveryHandle, signal?: AbortSignal): Promise<Result<void>>;
+  authorizeProvider(providerName: string, signal?: AbortSignal): Promise<Result<void>>;
+  reauthorize(namespace: string, key: string, signal?: AbortSignal): Promise<Result<void>>;
+  recover(handle: ConfigurationWriteRecoveryHandle, signal?: AbortSignal): Promise<Result<void>>;
 }
