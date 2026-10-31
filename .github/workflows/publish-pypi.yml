@@ -33,16 +33,18 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG##*/v}"
-          VERSION="${VERSION#v}"
-          python -c "
-          from pathlib import Path
+          export VERSION="${VERSION#v}"
+          python -c '
+          import os
           import re
-          p = Path('pyproject.toml')
-          text = p.read_text(encoding='utf-8')
-          text = re.sub(r'^version\s*=\s*\"[^\"]+\"', f'version = \"{VERSION}\"', text, count=1, flags=re.MULTILINE)
-          p.write_text(text, encoding='utf-8')
-          print(f'Pinned nyssa-ai-configuration (PyPI) to version {VERSION}')
-          "
+          from pathlib import Path
+          version = os.environ["VERSION"]
+          p = Path("pyproject.toml")
+          text = p.read_text(encoding="utf-8")
+          text = re.sub(r"^version\s*=\s*\"[^\"]+\"", f"version = \"{version}\"", text, count=1, flags=re.MULTILINE)
+          p.write_text(text, encoding="utf-8")
+          print(f"Pinned nyssa-ai-configuration (PyPI) to version {version}")
+          '
 
       - name: Run Python tests
         working-directory: nyssa-ai-configuration-py
