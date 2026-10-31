@@ -1,0 +1,59 @@
+name: Publish Python Package to PyPI
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+      - 'nyssa-ai-configuration-py/v[0-9]*'
+      - 'py/v[0-9]*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install build and test dependencies
+        run: |
+          python -m pip install --upgrade pip build
+          python -m pip install -e "nyssa-ai-configuration-py[dev]"
+
+      - name: Stamp pinned version from tag
+        working-directory: nyssa-ai-configuration-py
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG##*/v}"
+          VERSION="${VERSION#v}"
+          python -c "
+          from pathlib import Path
+          import re
+          p = Path('pyproject.toml')
+          text = p.read_text(encoding='utf-8')
+          text = re.sub(r'^version\s*=\s*\"[^\"]+\"', f'version = \"{VERSION}\"', text, count=1, flags=re.MULTILINE)
+          p.write_text(text, encoding='utf-8')
+          print(f'Pinned nyssa-ai-configuration (PyPI) to version {VERSION}')
+          "
+
+      - name: Run Python tests
+        working-directory: nyssa-ai-configuration-py
+        run: pytest
+
+      - name: Build wheel and source tarball
+        working-directory: nyssa-ai-configuration-py
+        run: python -m build
+
+      - name: Publish package distributions to PyPI (Trusted Publishing OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: nyssa-ai-configuration-py/dist/
+          skip-existing: true

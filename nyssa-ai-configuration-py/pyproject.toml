@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nyssa-ai-configuration"
+version = "0.3.1"
+description = "Secure, cross-process locked, AES-256-GCM encrypted configuration storage with cross-platform parity."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "NyssaAI", email = "oss@nyssa.ai" }
+]
+keywords = [
+    "configuration",
+    "security",
+    "secrets",
+    "encryption",
+    "aes-gcm",
+    "keyring"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "cryptography>=42.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.9.0",
+    "ruff>=0.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/NyssaAI/NyssaAI.Shared"
+Repository = "https://github.com/NyssaAI/NyssaAI.Shared.git"
+Issues = "https://github.com/NyssaAI/NyssaAI.Shared/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nyssa_ai_configuration"]
+
+[tool.pytest.ini_options]
+testpaths = ["test/unit", "test/use_case"]
+python_files = ["test_*.py", "*_test.py"]
+pythonpath = ["src"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+mypy_path = "src"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"

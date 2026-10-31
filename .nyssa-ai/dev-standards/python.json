@@ -20,7 +20,7 @@
         "python",
         "-m",
         "pytest",
-        "nyssa-ai-configuration-py/tests"
+        "nyssa-ai-configuration-py/test/unit"
       ]
     },
     "use_case": {
@@ -29,7 +29,7 @@
         "python",
         "-m",
         "pytest",
-        "nyssa-ai-configuration-py/tests"
+        "nyssa-ai-configuration-py/test/use_case"
       ]
     }
   },

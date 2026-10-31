@@ -3,21 +3,11 @@ name: Publish NuGet Packages
 on:
   push:
     tags:
-      - 'NyssaAI.*/v*'
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      target_project:
-        description: 'Specific package to publish (or "all")'
-        required: true
-        default: 'NyssaAI.Configuration'
-        type: choice
-        options:
-          - NyssaAI.Configuration
-          - NyssaAI.Result
-          - NyssaAI.Logging
-          - NyssaAI.Repository
-          - all
+      - 'v[0-9]*'
+      - 'NyssaAI.Result/v[0-9]*'
+      - 'NyssaAI.Configuration/v[0-9]*'
+      - 'NyssaAI.Logging/v[0-9]*'
+      - 'NyssaAI.Repository/v[0-9]*'
 
 permissions:
   contents: read
@@ -35,50 +25,74 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: Restore dependencies
-        run: dotnet restore NyssaAI.Shared.slnx --locked-mode
-
-      - name: Run verification test
-        shell: pwsh
-        run: ./test/verify-packages.ps1
-
-      - name: Pack target packages
-        id: pack
+      - name: Resolve target packages and stamp pinned version from tag
+        id: target
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path ./artifacts -Force | Out-Null
-          $target = "${{ github.event.inputs.target_project }}"
-          if ([string]::IsNullOrWhiteSpace($target)) {
-            $tag = "${{ github.ref_name }}"
-            if ($tag -match '^NyssaAI\.([^/]+)/v') {
-              $target = "NyssaAI.$($matches[1])"
-            } else {
-              $target = "all"
-            }
+          $tag = "${{ github.ref_name }}"
+          if ($tag -match '^NyssaAI\.([^/]+)/v(.+)$') {
+            $target = "NyssaAI.$($matches[1])"
+            $version = $matches[2]
+          } elseif ($tag -match '^v(.+)$') {
+            $target = "all"
+            $version = $matches[1]
+          } else {
+            throw "Unsupported tag format: $tag"
           }
 
-          if ($target -eq "all") {
-            $projects = @(
-              "NyssaAI.Result/src/NyssaAI.Result.csproj",
-              "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj",
-              "NyssaAI.Logging/src/NyssaAI.Logging.csproj",
-              "NyssaAI.Repository/src/NyssaAI.Repository.csproj"
-            )
-          } else {
-            # Ensure Result is packed/pushed first if packaging Configuration or Repository
-            if ($target -eq "NyssaAI.Configuration" -or $target -eq "NyssaAI.Repository") {
+          switch ($target) {
+            "all" {
               $projects = @(
                 "NyssaAI.Result/src/NyssaAI.Result.csproj",
-                "$target/src/$target.csproj"
+                "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj",
+                "NyssaAI.Logging/src/NyssaAI.Logging.csproj",
+                "NyssaAI.Repository/src/NyssaAI.Repository.csproj"
               )
-            } else {
+            }
+            "NyssaAI.Repository" {
+              $projects = @(
+                "NyssaAI.Result/src/NyssaAI.Result.csproj",
+                "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj",
+                "NyssaAI.Repository/src/NyssaAI.Repository.csproj"
+              )
+            }
+            "NyssaAI.Configuration" {
+              $projects = @(
+                "NyssaAI.Result/src/NyssaAI.Result.csproj",
+                "NyssaAI.Configuration/src/NyssaAI.Configuration.csproj"
+              )
+            }
+            default {
               $projects = @("$target/src/$target.csproj")
             }
           }
 
           foreach ($proj in $projects) {
+            $content = Get-Content -LiteralPath $proj -Raw
+            $updated = $content -replace '<Version>[^<]+</Version>', "<Version>$version</Version>"
+            Set-Content -LiteralPath $proj -Value $updated -NoNewline -Encoding UTF8
+            Write-Host "Pinned $proj to version $version"
+          }
+
+          "projects=$($projects -join ',')" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Restore dependencies
+        run: dotnet restore NyssaAI.Shared.slnx --locked-mode
+
+      - name: Run package verification test
+        shell: pwsh
+        run: ./test/verify-packages.ps1
+
+      - name: Pack target NuGet packages
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ./artifacts -Force | Out-Null
+          $projects = "${{ steps.target.outputs.projects }}" -split ','
+          foreach ($proj in $projects) {
             Write-Host "Packing $proj..."
             dotnet pack $proj -c Release -o ./artifacts --no-restore
+            if ($LASTEXITCODE -ne 0) { throw "Failed to pack $proj" }
           }
 
       - name: NuGet Login (OIDC Trusted Publishing)
