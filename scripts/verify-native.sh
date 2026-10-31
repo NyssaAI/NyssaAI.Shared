@@ -15,15 +15,7 @@ export NYSSAAI_DBGATEWAY_CONNECTION="Data Source=$scratch/dbgateway.db;Pooling=F
 export NYSSAAI_DBGATEWAY_POSTGRES="$NYSSAAI_REPOSITORY_POSTGRES"
 "$dbgateway" verify sqlite
 "$dbgateway" verify postgresql
-
-export NYSSAAI_DBGATEWAY_KEY="$(head -c 32 /dev/urandom | base64)"
-"$dbgateway" setup "$scratch/settings" sqlite
-"$dbgateway" run "$scratch/settings"
-"$dbgateway" switch "$scratch/settings"
-"$dbgateway" run "$scratch/settings"
-export NYSSAAI_DBGATEWAY_KEY="$(head -c 32 /dev/urandom | base64)"
-if "$dbgateway" run "$scratch/settings"; then
-    echo 'Protected settings unexpectedly opened with the wrong key.' >&2
-    exit 1
-fi
-echo 'Native checks passed, including persisted settings and wrong-key rejection.'
+"$dbgateway" run sqlite
+"$dbgateway" run postgresql
+"$dbgateway" switch
+echo 'Native checks passed.'

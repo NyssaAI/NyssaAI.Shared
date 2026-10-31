@@ -53,6 +53,9 @@ try {
     foreach ($tsPkg in $tsPackages) {
         Push-Location (Join-Path $repoRoot $tsPkg)
         try {
+            if (-not (Test-Path "node_modules")) {
+                npm ci
+            }
             npm run test
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }

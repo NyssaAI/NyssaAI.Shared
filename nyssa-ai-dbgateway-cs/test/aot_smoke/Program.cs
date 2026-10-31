@@ -18,15 +18,13 @@ internal static class Program
         {
             if (args.Length == 2 && args[0] == "verify")
                 return await VerifyProviderAsync(args[1]).ConfigureAwait(false);
-            if (args.Length < 2 || args[0] is not ("run" or "switch"))
-            {
-                Console.Error.WriteLine("Usage: verify <provider> | run <provider> | switch");
-                return 2;
-            }
-
-            if (args[0] == "switch")
+            if (args.Length == 1 && args[0] == "switch")
                 return await SwitchAsync().ConfigureAwait(false);
-            return await RunAsync(args[1]).ConfigureAwait(false);
+            if (args.Length == 2 && args[0] == "run")
+                return await RunAsync(args[1]).ConfigureAwait(false);
+
+            Console.Error.WriteLine("Usage: verify <provider> | run <provider> | switch");
+            return 2;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         {
