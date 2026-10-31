@@ -9,7 +9,6 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../use_case/Fixtures/ConfigurationHost.cs" Link="Fixtures/ConfigurationHost.cs" />
     <Compile Include="../use_case/Fixtures/DatabaseWorkspace.cs" Link="Fixtures/DatabaseWorkspace.cs" />
     <Compile Include="../use_case/Domain/TaskCommands.cs" Link="Domain/TaskCommands.cs" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />

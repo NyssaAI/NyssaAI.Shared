@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NyssaAI.DbGateway.Gateway;
 using NyssaAI.DbGateway.Migrations;
 using NyssaAI.DbGateway.Providers;
-using ConfigurationStore = NyssaAI.Configuration.IConfiguration;
 
 namespace NyssaAI.DbGateway.Configuration;
 
@@ -70,32 +69,6 @@ public static class DbGatewayServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
         var settings = configure() ?? throw new InvalidOperationException("The configuration factory returned no settings.");
-        return services.AddNyssaDbGateway(settings, providers, migrations);
-    }
-
-    /// <summary>Loads stored database gateway settings asynchronously, then registers the validated snapshot.</summary>
-    /// <param name="services">The host's service collection.</param>
-    /// <param name="configuration">An already-open <see cref="ConfigurationStore"/> borrowed only for this call.</param>
-    /// <param name="key">The settings key within <c>nyssa.dbgateway</c>.</param>
-    /// <param name="providers">Optional additional compiled provider registrations.</param>
-    /// <param name="migrations">Optional compiled migration catalog.</param>
-    /// <param name="cancellationToken">Cancels configuration loading and registration.</param>
-    /// <returns>The supplied service collection after registration.</returns>
-    public static async Task<IServiceCollection> AddNyssaDbGatewayAsync(
-        this IServiceCollection services,
-        ConfigurationStore configuration,
-        string key = "default",
-        IReadOnlyList<DbProviderRegistration>? providers = null,
-        MigrationCatalog? migrations = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-
-        cancellationToken.ThrowIfCancellationRequested();
-        var settings = await configuration.GetDbGatewayConfigurationAsync(key, cancellationToken).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
         return services.AddNyssaDbGateway(settings, providers, migrations);
     }
 }

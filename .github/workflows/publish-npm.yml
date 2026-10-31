@@ -6,6 +6,9 @@ on:
       - 'v[0-9]*'
       - 'nyssa-ai-configuration/v[0-9]*'
       - 'nyssa-ai-configuration-ts/v[0-9]*'
+      - 'nyssa-ai-dbgateway/v[0-9]*'
+      - 'nyssa-ai-dbgateway-ts/v[0-9]*'
+      - 'nyssa-ai-db-gateway/v[0-9]*'
       - 'npm/v[0-9]*'
 
 permissions:
@@ -16,12 +19,32 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: release
-    defaults:
-      run:
-        working-directory: nyssa-ai-configuration-ts
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Resolve target package and working directory
+        id: target
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" =~ (nyssa-ai-dbgateway|nyssa-ai-dbgateway-ts|nyssa-ai-db-gateway)/v(.+) ]]; then
+            DIR="nyssa-ai-dbgateway-ts"
+            VERSION="${BASH_REMATCH[2]}"
+          elif [[ "$TAG" =~ (nyssa-ai-configuration|nyssa-ai-configuration-ts)/v(.+) ]]; then
+            DIR="nyssa-ai-configuration-ts"
+            VERSION="${BASH_REMATCH[2]}"
+          elif [[ "$TAG" =~ v(.+) ]]; then
+            # Default single-project or generic tag
+            DIR="nyssa-ai-configuration-ts"
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "Unsupported tag format: $TAG" >&2
+            exit 1
+          fi
+          echo "pkg_dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved target directory $DIR for version $VERSION"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,20 +53,22 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
+        working-directory: ${{ steps.target.outputs.pkg_dir }}
         run: npm ci
 
       - name: Stamp pinned version from tag
+        working-directory: ${{ steps.target.outputs.pkg_dir }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG##*/v}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ steps.target.outputs.version }}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
-          echo "Pinned @nyssa-ai/configuration to version $VERSION"
+          echo "Pinned package in ${{ steps.target.outputs.pkg_dir }} to version $VERSION"
 
       - name: Build and run tests
+        working-directory: ${{ steps.target.outputs.pkg_dir }}
         run: |
           npm run build
           npm test
 
       - name: Publish to npm with OIDC Trusted Publishing
+        working-directory: ${{ steps.target.outputs.pkg_dir }}
         run: npm publish --provenance --access public

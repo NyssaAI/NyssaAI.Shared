@@ -22,10 +22,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../nyssa-ai-configuration-cs/src/NyssaAI.Configuration.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <InternalsVisibleTo Include="NyssaAI.DbGateway.Tests" />
     <None Include="../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>

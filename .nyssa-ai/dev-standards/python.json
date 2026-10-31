@@ -1,7 +1,9 @@
 {
   "revision": "fac7834c091d552a61d4cc814fdb7afeb413092c",
   "source_roots": [
-    "nyssa-ai-configuration-py/src"
+    "nyssa-ai-configuration-py/src",
+    "nyssa-ai-dbgateway-py/src",
+    "nyssa-ai-logging-py/src"
   ],
   "commands": {
     "build": {

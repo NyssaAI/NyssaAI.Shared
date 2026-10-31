@@ -45,6 +45,21 @@ try {
             Pop-Location
         }
     }
+
+    $tsPackages = @(
+        'nyssa-ai-configuration-ts',
+        'nyssa-ai-dbgateway-ts'
+    )
+    foreach ($tsPkg in $tsPackages) {
+        Push-Location (Join-Path $repoRoot $tsPkg)
+        try {
+            npm run test
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+        finally {
+            Pop-Location
+        }
+    }
 }
 finally {
     Stop-RepositoryPostgres $postgresFixture

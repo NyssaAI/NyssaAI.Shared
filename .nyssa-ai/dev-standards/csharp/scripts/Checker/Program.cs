@@ -66,11 +66,12 @@ internal static class Program
                 Report(file, null, "CS-PARSE", error.ToString());
             var syntax = tree.GetRoot();
             var types = syntax.DescendantNodes().OfType<BaseTypeDeclarationSyntax>().ToList();
+            var topLevelTypes = types.Where(t => !t.Ancestors().OfType<BaseTypeDeclarationSyntax>().Any()).ToList();
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
-            if (types.Count > 1)
+            if (topLevelTypes.Count > 1)
             {
                 var allowed = groups.TryGetValue(relative, out var reason) && !string.IsNullOrWhiteSpace(reason);
-                var namespaces = types.Select(t => string.Join('.', t.Ancestors()
+                var namespaces = topLevelTypes.Select(t => string.Join('.', t.Ancestors()
                     .OfType<BaseNamespaceDeclarationSyntax>().Reverse()
                     .Select(n => string.Concat(n.Name.DescendantTokens().Select(token => token.ValueText)))))
                     .Distinct().ToList();
@@ -78,12 +79,24 @@ internal static class Program
                     record.ParameterList is null && record.BaseList is null && record.TypeParameterList is null && !record.Ancestors().OfType<BaseTypeDeclarationSyntax>().Any() &&
                     record.Members.All(m => m is PropertyDeclarationSyntax property && property.ExpressionBody is null &&
                         property.AccessorList is not null && property.AccessorList.Accessors.All(a => a.Body is null && a.ExpressionBody is null));
-                if (!allowed || namespaces.Count != 1 || namespaces[0].Length == 0 || !types.All(Trivial))
+                if (!allowed || namespaces.Count != 1 || namespaces[0].Length == 0 || !topLevelTypes.All(Trivial))
                     Report(file, null, "CS-FILE", "Multiple types require a reviewed same-namespace simple DTO/enum grouping entry; classes/interfaces with behavior cannot be grouped.");
                 else usedGroups.Add(relative);
             }
-            else if (types.Count == 1 && Path.GetFileNameWithoutExtension(file) != types[0].Identifier.ValueText)
-                Report(file, types[0], "CS-FILE", $"Rename file for {types[0].Identifier.ValueText}.");
+            else if (topLevelTypes.Count == 1)
+            {
+                var expectedName = topLevelTypes[0].Identifier.ValueText;
+                var actualName = Path.GetFileNameWithoutExtension(file);
+                var isGeneric = topLevelTypes[0] is TypeDeclarationSyntax td && td.TypeParameterList is { Parameters.Count: > 0 };
+                var isPartial = topLevelTypes[0].Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword));
+
+                var matches = actualName == expectedName
+                    || (isGeneric && (actualName == $"{expectedName}OfT" || actualName == $"{expectedName}T" || actualName.StartsWith($"{expectedName}Of") || actualName.StartsWith($"{expectedName}.")))
+                    || (isPartial && actualName.StartsWith(expectedName, StringComparison.Ordinal));
+
+                if (!matches)
+                    Report(file, topLevelTypes[0], "CS-FILE", $"Rename file for {expectedName}.");
+            }
             foreach (var type in types)
             {
                 if (type is RecordDeclarationSyntax record && record.ParameterList is not null)

@@ -22,6 +22,8 @@ Conventional application libraries assume long-lived servers running inside trus
 | [nyssa-ai-configuration](nyssa-ai-configuration-py/README.md) | Python 3.12+ (`0.3.1`) | `ConfigurationClient` / `Configuration` | Full on-disk, lock-file, OAuth, cloud vault, and AES-256-GCM cryptographic parity with .NET and TypeScript. |
 | [NyssaAI.Logging](nyssa-ai-logging-cs/README.md) | .NET 10 (`0.2.1`) | Microsoft `ILogger<T>` | Native AOT rotating JSONL files, owner-only `0600`/`0700` and Windows DACL enforcement, independent `stderr`/`stdout` routing, and non-throwing fallback. |
 | [NyssaAI.DbGateway](nyssa-ai-dbgateway-cs/README.md) | .NET 10 (`0.1.0`) | `NyssaAI.DbGateway.IDbGateway` | Low-ceremony, AOT-safe typed SQL commands and queries with automatic parameter/row type coercion, transaction scopes, and paired migrations across SQLite and PostgreSQL. |
+| [@nyssa-ai/db-gateway](nyssa-ai-dbgateway-ts/README.md) | TypeScript / Node.js (`0.1.0`) | `DbGatewayClient` / `DbGateway` | Low-ceremony typed database gateway with automatic parameter coercion, transactions, and dual-engine migrations across SQLite and PostgreSQL matching NyssaAI.DbGateway. |
+| [nyssa-ai-dbgateway](nyssa-ai-dbgateway-py/README.md) | Python 3.12+ (`0.1.0`) | `DbGatewayClient` / `DbGateway` | Zero-ceremony, typed database gateway across SQLite and PostgreSQL matching NyssaAI.DbGateway. |
 | [NyssaAI.Result](nyssa-ai-result-cs/README.md) | .NET 10 (`0.2.1`) | `NyssaAI.Results.Result`, `Result<T>`, `Error`, `Guard` | Zero-dependency railway error composition with typed `ErrorCategory` classification and strict `UserMessage` vs. `TechnicalMessage` separation. |
 
 ## Component Capabilities
@@ -110,9 +112,9 @@ Each package owns its source, unit tests (`test/unit/`), use-case tests (`test/u
 
 `Directory.Packages.props` specifies direct .NET dependency versions. Committed `packages.lock.json` files pin the resolved dependency graph and package hashes; CI checks them with a locked restore. After an intentional dependency update, run `dotnet restore NyssaAI.Shared.slnx --force-evaluate` and review the lock-file changes alongside the version changes.
 
-.NET directories, projects, assemblies, and NuGet IDs use `NyssaAI.*` (`NyssaAI.Result` uses the root namespace `NyssaAI.Results`; the other .NET libraries match their package names). TypeScript publishes as `@nyssa-ai/configuration` on npm, and Python publishes as `nyssa-ai-configuration` on PyPI.
+.NET directories, projects, assemblies, and NuGet IDs use `NyssaAI.*` (`NyssaAI.Result` uses the root namespace `NyssaAI.Results`; the other .NET libraries match their package names). TypeScript publishes as `@nyssa-ai/configuration` and `@nyssa-ai/db-gateway` on npm, and Python publishes as `nyssa-ai-configuration` and `nyssa-ai-dbgateway` on PyPI.
 
-Release workflows publish via OIDC trusted publishing when matching version tags are pushed (`NyssaAI.<Package>/v<version>` for NuGet, `nyssa-ai-configuration/v<version>` or `npm/v<version>` for npm, `nyssa-ai-configuration-py/v<version>` or `py/v<version>` for PyPI, or `v<version>` across registries); CI build and pull-request workflows never publish packages.
+Release workflows publish via OIDC trusted publishing when matching version tags are pushed (`NyssaAI.<Package>/v<version>` for NuGet, `nyssa-ai-configuration/v<version>`, `nyssa-ai-dbgateway/v<version>`, or `npm/v<version>` for npm, `nyssa-ai-configuration-py/v<version>`, `nyssa-ai-dbgateway-py/v<version>`, `nyssa-ai-dbgateway/v<version>`, or `py/v<version>` for PyPI, or `v<version>` across registries); CI build and pull-request workflows never publish packages.
 
 ## Licensing
 
