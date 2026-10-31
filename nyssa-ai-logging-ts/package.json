@@ -1,6 +1,6 @@
 {
   "name": "@nyssa-ai/logging",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "description": "Lightweight, Native AOT-matching operational logging destinations with rotating JSON files and clean protocol streams",
   "type": "module",
   "main": "./dist/configuration/createNyssaLogging.js",
