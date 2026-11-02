@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import io
 import os
 from pathlib import Path
@@ -56,7 +56,7 @@ class LogFile:
         self._stream: TextIO | None = None
         self._bytes_written = 0
         self._rotation_retry_at_bytes = 0
-        self._reopen_retry_at: object | None = None
+        self._reopen_retry_at: datetime | None = None
         self._disposed = False
 
     def initialize(self) -> str | None:
@@ -87,10 +87,8 @@ class LogFile:
 
             try:
                 if self._stream is None:
-                    now = self._clock.now()
-                    if self._reopen_retry_at is not None and isinstance(self._reopen_retry_at, type(now)):
-                        if now < self._reopen_retry_at:
-                            return
+                    if self._reopen_retry_at is None or self._clock.now() < self._reopen_retry_at:
+                        return
 
                     self._try_reopen_after_failed_rotation()
                     if self._stream is None:
@@ -150,19 +148,19 @@ class LogFile:
                 older_path = f"{self._log_path}.{index}"
                 newer_path = f"{self._log_path}.{index + 1}"
 
-                if not os.path.exists(older_path):
+                if not os.path.isfile(older_path):
                     continue
 
-                if os.path.exists(newer_path):
+                if os.path.isfile(newer_path):
                     os.remove(newer_path)
 
                 os.rename(older_path, newer_path)
 
             archive_path = f"{self._log_path}.1"
-            if os.path.exists(archive_path):
+            if os.path.isfile(archive_path):
                 os.remove(archive_path)
 
-            if os.path.exists(self._log_path):
+            if os.path.isfile(self._log_path):
                 os.rename(self._log_path, archive_path)
 
             self._delete_expired_backups()
@@ -185,7 +183,7 @@ class LogFile:
 
         for index in range(1, self.BACKUP_RETENTION + 1):
             backup_path = os.path.join(directory, f"{base_name}.{index}")
-            if not os.path.exists(backup_path):
+            if not os.path.isfile(backup_path):
                 continue
 
             try:
@@ -199,10 +197,8 @@ class LogFile:
         try:
             self._stream = self._open_append(self._log_path)
             self._bytes_written = os.fstat(self._stream.fileno()).st_size
-            self._rotation_retry_at_bytes = self._bytes_written + _BYTES_PER_MEGABYTE
+            self._rotation_retry_at_bytes = self._bytes_written + self._rotation_trigger_bytes
             self._reopen_retry_at = None
         except Exception as ex:
             self._reopen_retry_at = self._clock.now() + _REOPEN_RETRY_DELAY
-            StderrDiagnostics.error(
-                self._log_path, f"failed to reopen log file after failed rotation: {ex}"
-            )
+            StderrDiagnostics.error(self._log_path, f"failed to reopen log file: {ex}")
