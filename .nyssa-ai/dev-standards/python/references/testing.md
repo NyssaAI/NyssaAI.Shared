@@ -3,7 +3,7 @@
 > [!IMPORTANT] Scope Directive
 > Defines the executable documentation and verification contract for PY-TEST in Python codebases. It governs unit test isolation, public use-case integration tests, fixture-owned Docker lifecycles, and KISS testing practices; it does NOT prescribe rigid test counts or enforce testing of trivial boilerplates.
 
-This document specifies **PY-TEST** in the [language rules](../../rules/python-standards.md).
+This document specifies **PY-TEST** in the [language rules](../rules/standards.md).
 These mandatory requirements express Jeremy Maynor's development style. Library mechanisms
 linked below are implementation guidance, not claims that the libraries mandate this policy.
 
@@ -109,8 +109,8 @@ blanket bans on legitimate contract tests, native fixtures and simple helpers.
 
 ## Current examples and limits
 
-The [pure examples](examples/README.md) demonstrate public value/formatter usage without Docker.
-The [PostgreSQL registration workflow](examples/persistence/README.md) adds runnable local use-case
+The [pure examples](../examples/README.md) demonstrate public value/formatter usage without Docker.
+The [PostgreSQL registration workflow](../examples/persistence/README.md) adds runnable local use-case
 tests for real persistence, fresh observation, dependency failure and fixture cleanup. Its README
 documents commands and bounded evidence. These tests do not establish crash durability or hosted
 monitoring.

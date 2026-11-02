@@ -38,7 +38,7 @@ demonstrates style and contract handling, not a production email service. It per
 network request or transaction; it makes no claims about those boundaries. Existing sample tests
 do not prove all design rules or the full language profile.
 
-Operational logging is specified in the [logging contract](../logging.md). These pure
+Operational logging is specified in the [logging contract](../references/logging.md). These pure
 value/formatter examples intentionally do not log internally. Their displayed values are tutorial
 output, not an approved operational event schema or evidence of production sink behavior.
 
@@ -50,7 +50,7 @@ This Python version applies `PY-FILE`, `PY-HEADER`, `PY-NAME` (`Protocol` withou
 
 ## Tests as how-to examples
 
-Follow the [testing contract](../testing.md). Tests use explicit public construction,
+Follow the [testing contract](../references/testing.md). Tests use explicit public construction,
 ordinary calls and direct assertions. Provider contract cases share the same behavioral checks;
 format-specific expectations have their own tests. Keep unit tests independent of Docker.
 When adding infrastructure-backed behavior, provide a separate use-case suite with disposable

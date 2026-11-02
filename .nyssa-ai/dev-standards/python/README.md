@@ -1,4 +1,4 @@
-# Python standards — 0.6.3
+# Python standards — 0.6.5
 
 > [!IMPORTANT] Scope Directive
 > Authoritative developer reference guide, testing contracts, and operational standards for PYTHON systems in dev-standards. It does NOT impose rules on unowned languages.
@@ -14,7 +14,7 @@ cohesion remain review decisions. No 98% reliability or agent-speed improvement 
 
 ## Testing and executable documentation
 
-The [testing contract](testing.md) requires fast unit tests, complete public use-case
+The [testing contract](references/testing.md) requires fast unit tests, complete public use-case
 coverage and real Docker-hosted dependencies for infrastructure-backed behavior. Tests teach the
 public API through simple, idiomatic Arrange / Act / Assert code. Use proper patterns where
 needed; prefer small duplication to abstractions that hide the scenario. Fixtures own infrastructure
@@ -26,14 +26,14 @@ and captured operational records. The structural checker cannot certify test qua
 
 ## Code smells and anti-patterns
 
-The [review catalog](code-smells.md) pairs production/test failure modes with their
+The [review catalog](references/code-smells.md) pairs production/test failure modes with their
 consequences, simplest corrections and valid counterexamples. Review only relevant entries;
 source evidence and rule authority determine findings, not a smell count. Structural checks do
 not establish these semantic properties.
 
 ## Mandatory operational logging
 
-The [logging contract](logging.md) requires useful evidence for early warning, diagnosis
+The [logging contract](references/logging.md) requires useful evidence for early warning, diagnosis
 and verification of fixes at operational boundaries. It covers structured outcomes, correlation,
 deployed version, degradation signals, safe causes, redaction and bounded sink-failure behavior.
 Each changed boundary needs captured-record tests and a short diagnostic recipe.

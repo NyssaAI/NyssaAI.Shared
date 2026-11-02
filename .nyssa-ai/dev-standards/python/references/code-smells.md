@@ -3,7 +3,7 @@
 > [!IMPORTANT] Scope Directive
 > Catalog of code smells and anti-patterns to assist code review under PY-REVIEW and PY-TEST. It defines observable signals, concrete architectural consequences, and minimal corrections; it does NOT authorize automatic refactoring or cosmetic churn based on smell labels alone.
 
-Review companion to **PY-REVIEW**, **PY-TEST** and the [language rules](../../rules/python-standards.md).
+Review companion to **PY-REVIEW**, **PY-TEST** and the [language rules](../rules/standards.md).
 Read entries relevant to the change; this catalog does not start another audit or workflow.
 
 ## How to judge and report
@@ -94,6 +94,13 @@ Bad examples: `importlib` auto-scanning for command handlers in business package
 **Violation of PY-WORKFLOW, PY-LOG, and PY-LIFETIME.**
 Bad examples: a Command/Query Handler, Application Service, or Repository class that calls `logging.getLogger()` directly inside methods without injection, instantiates its own database client, or executes workflows without an injected structured logger. Every action-taking class must receive its collaborators and structured logger through `__init__` Dependency Injection, emitting `Info`/`Warn`/`Error` at owned operational boundaries and `Debug`-level step telemetry (routed to diagnostic sinks such as Sentry or PostHog when debug mode is enabled).
 **Counterexample:** pure `@dataclass(frozen=True, slots=True)` domain values, parsers, and `types.py` DTOs remain dependency-free and logger-free; they return `Result[T, E]` so the owning handler or service can log the outcome.
+
+### DESIGN-09 — Concrete parameter default instantiation and implicit boundary exports
+
+**Violation of PY-BOUNDARY, PY-FILE, and PY-LIFETIME; assess SOLID-D and SOLID-O.**
+Bad examples: instantiating a concrete adapter as a default in a parameter signature (`def __init__(self, sender: SmtpSender = SmtpSender()) -> None:`), or omitting `__all__` and covering `Protocol` declarations from package `__init__.py`. Concrete adapter defaults execute at module import time, creating unintended shared singletons, triggering premature network/credential loading, and preventing callers from substituting alternative implementations without type mismatches. Omitting `__all__` or exporting only concrete classes leaks internal implementation details and fails strict type checking (`mypy --no-implicit-reexport`).
+**Correction:** Define a narrow `typing.Protocol` for the collaborator. Accept `sender: NotificationSender | None = None` in the constructor and instantiate the default adapter inside the constructor body when `sender is None`. Re-export the `Protocol`, default adapter, and entrypoint service explicitly via `__all__` in `__init__.py`.
+**Counterexample:** Pure DTO dataclasses with primitive default values (`timeout: float = 5.0`) or pure functions with immutable default sentinels are supported; `DESIGN-09` targets action-taking concrete adapters and I/O collaborators instantiated at import time.
 
 ## Use-case tests
 

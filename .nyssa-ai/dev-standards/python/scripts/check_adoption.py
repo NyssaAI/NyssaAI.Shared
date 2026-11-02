@@ -42,24 +42,34 @@ def authored_files(directory):
 
 
 def resolve_plugin_root(explicit_source=None):
-    candidates = []
     if explicit_source is not None:
-        candidates.append(Path(explicit_source).expanduser().resolve())
-    candidates.extend([
-        Path(__file__).resolve().parents[2],
-        Path.home() / '.gemini/config/plugins/dev-standards',
-        Path.home() / '.claude/plugins/dev-standards',
-        Path.home() / '.codex/plugins/dev-standards',
-        Path.home() / '.cursor/plugins/dev-standards',
-        Path.home() / '.agents/plugins/dev-standards',
-    ])
+        if not str(explicit_source).strip():
+            raise ValueError('invalid dev-standards plugin source: empty path')
+        candidates = [Path(explicit_source).expanduser().resolve()]
+    else:
+        candidates = [
+            Path(__file__).resolve().parents[2],
+            Path.home() / '.gemini/config/plugins/dev-standards',
+            Path.home() / '.claude/plugins/dev-standards',
+            Path.home() / '.codex/plugins/dev-standards',
+            Path.home() / '.cursor/plugins/dev-standards',
+            Path.home() / '.agents/plugins/dev-standards',
+        ]
+    required_files = (
+        'plugin.json',
+        'skills/dev-standards/rules/repo-standards.md',
+        'skills/dev-standards/rules/architecture-standards.md',
+        f'skills/dev-standards/rules/{LANGUAGE}-standards.md',
+        f'skills/dev-standards/references/{LANGUAGE}/README.md',
+        f'skills/dev-standards/references/{LANGUAGE}/adoption/AGENTS.fragment.md',
+        f'skills/dev-standards/references/{LANGUAGE}/adoption/repository.example.json',
+        f'src/{LANGUAGE}/check_adoption.py',
+    )
     for candidate in candidates:
-        if (
-            (candidate / f'skills/dev-standards/rules/{LANGUAGE}-standards.md').is_file()
-            and (candidate / f'skills/dev-standards/references/{LANGUAGE}/README.md').is_file()
-            and (candidate / f'src/{LANGUAGE}/check_adoption.py').is_file()
-        ):
+        if all((candidate / rel).is_file() for rel in required_files):
             return candidate
+    if explicit_source is not None:
+        raise ValueError(f'invalid dev-standards plugin source: {explicit_source}')
     raise ValueError('unable to locate dev-standards plugin source; pass --source /path/to/dev-standards')
 
 
@@ -67,6 +77,7 @@ def build_bundle_entries(plugin_root):
     references = plugin_root / f'skills/dev-standards/references/{LANGUAGE}'
     rules_dir = plugin_root / 'skills/dev-standards/rules'
     src_dir = plugin_root / f'src/{LANGUAGE}'
+    other_languages = tuple(lang for lang in ('csharp', 'go', 'python', 'typescript') if lang != LANGUAGE)
     entries = {}
 
     for file in authored_files(references):
@@ -78,20 +89,58 @@ def build_bundle_entries(plugin_root):
                 text.replace('../../rules/repo-standards.md', 'rules/repo-standards.md')
                 .replace('../../rules/architecture-standards.md', 'rules/architecture-standards.md')
                 .replace(f'../../rules/{LANGUAGE}-standards.md', 'rules/standards.md')
+                .replace('(testing.md)', '(references/testing.md)')
+                .replace('(logging.md)', '(references/logging.md)')
+                .replace('(code-smells.md)', '(references/code-smells.md)')
+                .replace(f'../../../../src/{LANGUAGE}/', 'scripts/')
                 .replace(f'src/{LANGUAGE}/', 'scripts/')
                 .encode('utf-8')
             )
         elif relative.parts[0] in {'adoption', 'examples'}:
             arcname = relative.as_posix()
-            content = file.read_bytes()
+            if file.suffix == '.md' and relative.parts[0] == 'examples':
+                text = file.read_text(encoding='utf-8')
+                content = (
+                    text.replace('(../logging.md)', '(../references/logging.md)')
+                    .replace('(../testing.md)', '(../references/testing.md)')
+                    .replace('(../code-smells.md)', '(../references/code-smells.md)')
+                    .encode('utf-8')
+                )
+            else:
+                content = file.read_bytes()
         else:
             arcname = (Path('references') / relative).as_posix()
-            content = file.read_bytes()
+            if file.suffix == '.md':
+                text = file.read_text(encoding='utf-8')
+                content = (
+                    text.replace(f'../../rules/{LANGUAGE}-standards.md', '../rules/standards.md')
+                    .replace('../../rules/repo-standards.md', '../rules/repo-standards.md')
+                    .replace('../../rules/architecture-standards.md', '../rules/architecture-standards.md')
+                    .replace('(examples/', '(../examples/')
+                    .encode('utf-8')
+                )
+            else:
+                content = file.read_bytes()
         entries[arcname] = content
 
-    entries['rules/repo-standards.md'] = (rules_dir / 'repo-standards.md').read_bytes()
-    entries['rules/architecture-standards.md'] = (rules_dir / 'architecture-standards.md').read_bytes()
-    entries['rules/standards.md'] = (rules_dir / f'{LANGUAGE}-standards.md').read_bytes()
+    for shared_rule in ('repo-standards.md', 'architecture-standards.md'):
+        rule_text = (rules_dir / shared_rule).read_text(encoding='utf-8').replace(
+            f'[`{LANGUAGE}-standards.md`]({LANGUAGE}-standards.md)',
+            '[`standards.md`](standards.md)',
+        )
+        for other in other_languages:
+            rule_text = rule_text.replace(
+                f'[`{other}-standards.md`]({other}-standards.md)',
+                f'`{other}-standards.md` (unadopted in this bundle)',
+            )
+        entries[f'rules/{shared_rule}'] = rule_text.encode('utf-8')
+
+    entries['rules/standards.md'] = (
+        (rules_dir / f'{LANGUAGE}-standards.md')
+        .read_text(encoding='utf-8')
+        .replace(f'../references/{LANGUAGE}/', '../references/')
+        .encode('utf-8')
+    )
     for file in authored_files(src_dir):
         arcname = (Path('scripts') / file.relative_to(src_dir)).as_posix()
         entries[arcname] = file.read_bytes()

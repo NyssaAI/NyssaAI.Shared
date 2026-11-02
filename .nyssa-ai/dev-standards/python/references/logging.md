@@ -3,7 +3,7 @@
 > [!IMPORTANT] Scope Directive
 > Defines the mandatory operational logging specification for PY-LOG in Python systems. It governs boundary ownership, structured outcome correlation, degradation signaling, and sink failure containment; it does NOT require a specific logging framework or impose logging on pure functions.
 
-This document specifies **PY-LOG** in the [language rules](../../rules/python-standards.md).
+This document specifies **PY-LOG** in the [language rules](../rules/standards.md).
 Its mandatory behavior is Jeremy Maynor's development standard. The implementation guidance below
 recommends mechanisms; it does not require a new framework or impose logging on pure functions.
 
@@ -149,6 +149,6 @@ The structural checker does not prove any of these runtime properties. The shipp
 examples do not implement an operational logging sink; their console output is demonstration output.
 Use target-repository behavior/integration tests and focused review to establish conformance.
 
-The [PostgreSQL registration example](examples/persistence/README.md) supplies captured
+The [PostgreSQL registration example](../examples/persistence/README.md) supplies captured
 serialized outcomes, degradation evidence and sink-loss tests. Its borrowed synchronous sink must
 return promptly; blocking sinks, remote delivery and deployed monitoring remain outside its evidence.

@@ -24,7 +24,7 @@ python .nyssa-ai/dev-standards/python/scripts/check_adoption.py . --sync
 
 ## Pinned layout
 
-Alternatively, choose an exact source commit and extract `dev-standards-python-0.6.3-source.tgz` into `.nyssa-ai/dev-standards/python` (for example, `tar -xzf dev-standards-python-0.6.3-source.tgz -C .nyssa-ai/dev-standards/python`). Do not copy `__pycache__`, `.temp`, `.pytest_cache` or other build outputs. Keep the rulebooks (`repo-standards.md`, `architecture-standards.md` and `standards.md`), references, examples and scripts together. Do not link a user's plugin cache, which can disappear or change independently of this repository.
+Alternatively, choose an exact source commit and extract `dev-standards-python-0.6.5-source.tgz` into `.nyssa-ai/dev-standards/python` (for example, `tar -xzf dev-standards-python-0.6.5-source.tgz -C .nyssa-ai/dev-standards/python`). Do not copy `__pycache__`, `.temp`, `.pytest_cache` or other build outputs. Keep the rulebooks (`repo-standards.md`, `architecture-standards.md` and `standards.md`), references, examples and scripts together. Do not link a user's plugin cache, which can disappear or change independently of this repository.
 
 ```text
 repository/

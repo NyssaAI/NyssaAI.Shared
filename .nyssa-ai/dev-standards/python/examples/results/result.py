@@ -2,15 +2,20 @@
 # Public interface:
 # +-- Err
 # |   +-- error
-# |   `-- ok
-# +-- Ok
+# |   +-- map(fn)
 # |   +-- ok
+# |   `-- then(fn)
+# +-- Ok
+# |   +-- map(fn)
+# |   +-- ok
+# |   +-- then(fn)
 # |   `-- value
 # +-- Result
 # +-- fail(error)
 # `-- ok(value)
 """Discriminated-union Result types for expected domain and operational outcomes."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -22,6 +27,14 @@ class Ok[T]:
     value: T
     ok: Literal[True] = True
 
+    def map[U](self, fn: Callable[[T], U]) -> "Ok[U]":
+        """Transform the contained value using a mapping function."""
+        return Ok(value=fn(self.value))
+
+    def then[U, E](self, fn: Callable[[T], "Result[U, E]"]) -> "Result[U, E]":
+        """Chain another fallible operation on the contained value."""
+        return fn(self.value)
+
 
 @dataclass(frozen=True, slots=True)
 class Err[E]:
@@ -29,6 +42,14 @@ class Err[E]:
 
     error: E
     ok: Literal[False] = False
+
+    def map[U](self, fn: object) -> "Err[E]":
+        """Propagate the existing failure without invoking the mapping function."""
+        return self
+
+    def then[U](self, fn: object) -> "Err[E]":
+        """Propagate the existing failure without invoking the chained operation."""
+        return self
 
 
 type Result[T, E] = Ok[T] | Err[E]
