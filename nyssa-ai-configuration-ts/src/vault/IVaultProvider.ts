@@ -7,7 +7,7 @@
 //     +-- recovery
 //     `-- setSecret(secretName, secretValue, signal)
 
-import { type Result } from "../results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 import type { CloudKeyVaultRecovery } from "./CloudKeyVaultRecovery.js";
 
 /**

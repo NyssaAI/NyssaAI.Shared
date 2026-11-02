@@ -6,7 +6,7 @@
 #     `-- new(token)
 """Opaque recovery handle wrapper preventing accidental token leakage in logs."""
 
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 
 class ConfigurationRecoveryHandle:

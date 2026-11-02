@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Final, Protocol
 
 from nyssa_ai_configuration.manifest.types import BootstrapOptions
-from nyssa_ai_configuration.results.result import Result, fail
+from nyssa_ai_result import Result, fail
 
 _SERVICE_NAME: Final[str] = "nyssa-ai-configuration"
 _KEY_BYTES: Final[int] = 32
@@ -111,6 +111,6 @@ def get_or_create_key(application_name: str, keyring: Keyring) -> Result[bytes]:
 
 
 def _ok_bytes(data: bytes) -> Result[bytes]:
-    from nyssa_ai_configuration.results.result import ok
+    from nyssa_ai_result import ok
 
     return ok(data)

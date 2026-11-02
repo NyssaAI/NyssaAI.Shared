@@ -57,7 +57,6 @@ jobs:
             }
             "configuration" {
               $projects = @(
-                "nyssa-ai-result-cs/src/NyssaAI.Result.csproj",
                 "nyssa-ai-configuration-cs/src/NyssaAI.Configuration.csproj"
               )
             }

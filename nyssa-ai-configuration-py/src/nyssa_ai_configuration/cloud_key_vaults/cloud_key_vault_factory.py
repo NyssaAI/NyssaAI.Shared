@@ -12,7 +12,7 @@ from nyssa_ai_configuration.cloud_key_vaults.access_token_source import AccessTo
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault import CloudKeyVault
 from nyssa_ai_configuration.manifest.types import VaultOptions
 from nyssa_ai_configuration.oauth.types import OAuthOptions
-from nyssa_ai_configuration.results.result import Result
+from nyssa_ai_result import Result
 
 
 class CloudKeyVaultFactory(Protocol):

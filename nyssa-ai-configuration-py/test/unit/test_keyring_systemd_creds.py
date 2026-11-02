@@ -9,7 +9,7 @@
 # +-- test_keyring_systemd_creds_get_single_fallback_file_uses_only_credential_file(tmp_path, monkeypatch)
 # +-- test_keyring_systemd_creds_is_available_reports_presence_and_absence_of_credentials_directory(tmp_path, monkeypatch)
 # +-- test_keyring_systemd_creds_rejects_invalid_service_or_account_addresses(tmp_path, monkeypatch)
-# `-- test_keyring_systemd_creds_set_and_delete_return_unsupported_error(tmp_path, monkeypatch)
+# `-- test_keyring_systemd_creds_set_and_delete_return_forbidden_error(tmp_path, monkeypatch)
 """Unit tests for KeyringSystemdCreds and systemd-creds bootstrap resolution."""
 
 import base64
@@ -196,10 +196,10 @@ def test_keyring_systemd_creds_rejects_invalid_service_or_account_addresses(
     assert ctrl_res.category == "Validation"
 
 
-def test_keyring_systemd_creds_set_and_delete_return_unsupported_error(
+def test_keyring_systemd_creds_set_and_delete_return_forbidden_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify KeyringSystemdCreds rejects set_key and delete_key with Unsupported."""
+    """Verify KeyringSystemdCreds rejects set_key and delete_key with Forbidden."""
     creds_dir = tmp_path / "credentials"
     creds_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(creds_dir))
@@ -207,12 +207,12 @@ def test_keyring_systemd_creds_set_and_delete_return_unsupported_error(
 
     set_res = keyring.set_key("nyssa-ai-configuration", "OrdersService", os.urandom(32))
     assert not set_res.ok
-    assert set_res.category == "Unsupported"
+    assert set_res.category == "Forbidden"
     assert set_res.message == KeyringSystemdCreds.IMMUTABLE_ERROR_MESSAGE
 
     del_res = keyring.delete_key("nyssa-ai-configuration", "OrdersService")
     assert not del_res.ok
-    assert del_res.category == "Unsupported"
+    assert del_res.category == "Forbidden"
     assert del_res.message == KeyringSystemdCreds.IMMUTABLE_ERROR_MESSAGE
 
 

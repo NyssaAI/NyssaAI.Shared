@@ -4,6 +4,12 @@
 """NyssaAI Configuration for Python."""
 
 from nyssa_ai_configuration.cloud_key_vaults.access_token_source import AccessTokenSource
+from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_bitwarden import (
+    CloudKeyVaultBitwarden,
+)
+from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_factory_bitwarden import (
+    CloudKeyVaultFactoryBitwarden,
+)
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault import CloudKeyVault
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_factory import (
     CloudKeyVaultFactory,
@@ -102,8 +108,7 @@ from nyssa_ai_configuration.recovery.types import (
     ConfigurationRecoveryStep,
     ConfigurationStepProgress,
 )
-from nyssa_ai_configuration.results.result import Err, Ok, Result, fail, fail_error, ok
-from nyssa_ai_configuration.results.types import ConfigurationError, ErrorCategory
+from nyssa_ai_result import Err, Error, ErrorCategory, Ok, Result, fail, fail_error, ok
 from nyssa_ai_configuration.values.configuration_document_local_file import (
     ConfigurationDocumentLocalFile,
 )
@@ -124,7 +129,9 @@ __all__ = [
     "BrowserLauncher",
     "CloudKeyVault",
     "CloudKeyVaultAction",
+    "CloudKeyVaultBitwarden",
     "CloudKeyVaultFactory",
+    "CloudKeyVaultFactoryBitwarden",
     "CloudKeyVaultOperation",
     "CloudKeyVaultPreparation",
     "CloudKeyVaultRecovery",
@@ -135,7 +142,6 @@ __all__ = [
     "ConfigurationCipherAesGcm",
     "ConfigurationClient",
     "ConfigurationDocumentLocalFile",
-    "ConfigurationError",
     "ConfigurationLog",
     "ConfigurationLogLevel",
     "ConfigurationLogOutcome",
@@ -170,6 +176,7 @@ __all__ = [
     "ConfigurationWriter",
     "DirectorySafety",
     "Err",
+    "Error",
     "ErrorCategory",
     "FileLock",
     "Keyring",

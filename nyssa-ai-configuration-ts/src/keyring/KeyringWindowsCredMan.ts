@@ -6,7 +6,7 @@
 //     `-- set(target, secret)
 
 import { execFileSync } from "node:child_process";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 
 /**
  * KeyringWindowsCredMan invokes Advapi32 CredReadW, CredWriteW, and CredDeleteW

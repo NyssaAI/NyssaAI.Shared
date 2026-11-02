@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Final
 
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _BASE64_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 _CONTROL_CHAR_RE: Final[re.Pattern[str]] = re.compile(r"[\x00-\x1f\x7f]")
@@ -79,12 +79,12 @@ class KeyringSystemdCreds:
     def set_key(self, service: str, account: str, secret: bytes) -> Result[None]:
         """Reject runtime writes because systemd credentials are immutable at runtime."""
         del service, account, secret
-        return fail(self.IMMUTABLE_ERROR_MESSAGE, "Unsupported")
+        return fail(self.IMMUTABLE_ERROR_MESSAGE, "Forbidden")
 
     def delete_key(self, service: str, account: str) -> Result[None]:
         """Reject runtime deletions because systemd credentials are immutable at runtime."""
         del service, account
-        return fail(self.IMMUTABLE_ERROR_MESSAGE, "Unsupported")
+        return fail(self.IMMUTABLE_ERROR_MESSAGE, "Forbidden")
 
     def _resolve_credential_file(self, credentials_dir: Path, service: str, account: str) -> Result[Path]:
         candidates: tuple[str, ...] = (

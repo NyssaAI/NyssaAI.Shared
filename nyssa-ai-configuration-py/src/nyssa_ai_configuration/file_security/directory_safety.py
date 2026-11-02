@@ -13,7 +13,7 @@ import subprocess
 import sys
 from typing import Final
 
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _MULTI_USER_IDENTITIES: Final[frozenset[str]] = frozenset(
     s.lower()

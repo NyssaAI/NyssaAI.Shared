@@ -154,7 +154,7 @@ describe("KeyringSystemdCreds", () => {
       expect(res.ok).toBe(false);
       if (!res.ok) {
         expect(res.category).toBe("Validation");
-        expect(res.error.length).toBeGreaterThan(0);
+        expect(res.message.length).toBeGreaterThan(0);
       }
     }
   );
@@ -172,16 +172,16 @@ describe("KeyringSystemdCreds", () => {
     // Assert
     expect(setRes.ok).toBe(false);
     if (!setRes.ok) {
-      expect(setRes.category).toBe("Unsupported");
-      expect(setRes.error).toBe(
+      expect(setRes.category).toBe("Forbidden");
+      expect(setRes.message).toBe(
         "systemd-creds is immutable at runtime; credentials must be provisioned via systemd service configuration."
       );
     }
 
     expect(delRes.ok).toBe(false);
     if (!delRes.ok) {
-      expect(delRes.category).toBe("Unsupported");
-      expect(delRes.error).toBe(
+      expect(delRes.category).toBe("Forbidden");
+      expect(delRes.message).toBe(
         "systemd-creds is immutable at runtime; credentials must be provisioned via systemd service configuration."
       );
     }

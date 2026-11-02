@@ -12,7 +12,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ProtectedFileSystem } from "../fileSecurity/ProtectedFileSystem.js";
 import { OAuthGrantCodec } from "./OAuthGrantCodec.js";
 import type { IConfigurationCipher } from "../encryption/IConfigurationCipher.js";
@@ -141,7 +141,7 @@ export class OAuthTokenManager {
     }
 
     if (exchangeRes.value.returnedState !== undefined && exchangeRes.value.returnedState !== state) {
-      return fail("oauth: state parameter mismatch on authorization callback", "Unauthorized");
+      return fail("oauth: state parameter mismatch on authorization callback", "Forbidden");
     }
 
     const nowMs = this._clock();
@@ -198,7 +198,7 @@ export class OAuthTokenManager {
     if (activeEntry.reauth_required === true) {
       return fail(
         `oauth: credential '${namespace}/${key}' requires interactive re-authorization; call authorize('${namespace}', '${key}', options).`,
-        "Unauthorized"
+        "Forbidden"
       );
     }
 
@@ -238,7 +238,7 @@ export class OAuthTokenManager {
     signal?.throwIfAborted();
 
     if (!refreshRes.ok) {
-      if (refreshRes.error.includes("invalid_grant") || refreshRes.category === "Unauthorized") {
+      if (refreshRes.message.includes("invalid_grant") || refreshRes.category === "Forbidden") {
         const markedEntry: ConfigurationValue = {
           ...activeEntry,
           reauth_required: true
@@ -246,7 +246,7 @@ export class OAuthTokenManager {
         await persistEntry(markedEntry);
         return fail(
           `oauth: refresh token for '${namespace}/${key}' was rejected (invalid_grant); interactive re-authorization is required.`,
-          "Unauthorized"
+          "Forbidden"
         );
       }
       return refreshRes;

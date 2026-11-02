@@ -12,7 +12,7 @@
 //     `-- seal(value, namespace, key)
 
 import * as crypto from "node:crypto";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { IConfigurationCipher } from "./IConfigurationCipher.js";
 
 /**

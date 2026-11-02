@@ -13,7 +13,7 @@ from typing import Final
 
 from nyssa_ai_configuration.file_security.directory_safety import DirectorySafety
 from nyssa_ai_configuration.file_security.protected_file_system import ProtectedFileSystem
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _KEY_FILENAME: Final[str] = ".nyssa-key"
 

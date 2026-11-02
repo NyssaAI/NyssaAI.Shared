@@ -7,7 +7,7 @@
 //     +-- new(token)
 //     `-- toString()
 
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 
 /**
  * ConfigurationRecoveryHandle wraps an opaque, AEAD-sealed recovery token persisted only via explicit export().

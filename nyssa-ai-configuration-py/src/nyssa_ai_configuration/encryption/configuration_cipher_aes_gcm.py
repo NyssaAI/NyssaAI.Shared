@@ -15,7 +15,7 @@ from typing import Final
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _FORMAT_VERSION: Final[int] = 2
 _NONCE_LENGTH: Final[int] = 12

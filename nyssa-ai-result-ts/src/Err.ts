@@ -1,6 +1,8 @@
 // Responsibility: Represent the failed arm of a railway-oriented Result discriminated union.
 // Public interface:
 // `-- Err
+//     +-- andThen(nextOperation)
+//     +-- andThenAsync(nextOperation)
 //     +-- category
 //     +-- error
 //     +-- errors
@@ -13,13 +15,12 @@
 //     +-- ok
 //     +-- resolve(onSuccess, onFailure)
 //     +-- resolveAsync(onSuccess, onFailure)
-//     +-- then(nextOperation)
-//     +-- thenAsync(nextOperation)
 //     +-- throwIfError()
 //     +-- transform(transformation)
 //     +-- transformAsync(transformation)
 //     +-- tryGetValue()
-//     `-- unwrap()
+//     +-- unwrap()
+//     `-- value
 
 import { Error } from "./Error.js";
 import { ErrorCategory } from "./ErrorCategory.js";
@@ -41,22 +42,28 @@ export class Err<E = Error> {
       this._errors = Object.freeze([...allErrors]);
     } else if (error instanceof Error) {
       this._errors = Object.freeze([error]);
-    } else if (Array.isArray(error)) {
-      this._errors = Error.atLeastOne(error as readonly Error[]);
-    } else if (typeof error === "object" && error !== null && "message" in error) {
+    } else if (typeof error === "string") {
+      this._errors = Object.freeze([Error.fromMessage(error)]);
+    } else if (
+      typeof error === "object" &&
+      error !== null &&
+      "userMessage" in error &&
+      typeof (error as { readonly userMessage?: unknown }).userMessage === "string"
+    ) {
       const candidate = error as {
-        readonly message?: unknown;
-        readonly category?: unknown;
-        readonly causeType?: unknown;
+        readonly userMessage: string;
+        readonly technicalMessage?: string | null;
+        readonly category?: ErrorCategory | string;
+        readonly causeType?: string | null;
       };
-      const msg = String(candidate.message ?? "");
-      const cat =
-        typeof candidate.category === "string"
-          ? candidate.category
-          : ErrorCategory.Unexpected;
-      const causeType =
-        typeof candidate.causeType === "string" ? candidate.causeType : null;
-      this._errors = Object.freeze([Error.fromMessages(msg, msg, cat, causeType)]);
+      this._errors = Object.freeze([
+        Error.fromMessages(
+          candidate.userMessage,
+          candidate.technicalMessage ?? candidate.userMessage,
+          candidate.category ?? ErrorCategory.Unexpected,
+          candidate.causeType ?? null
+        ),
+      ]);
     } else {
       this._errors = Object.freeze([Error.fromMessage(String(error))]);
     }
@@ -98,6 +105,13 @@ export class Err<E = Error> {
     return String(this.error);
   }
 
+  /**
+   * Safe undefined accessor for uniform property access across union arms.
+   */
+  public get value(): undefined {
+    return undefined;
+  }
+
   /** Explicitly throws a ResultException carrying all structured errors. */
   public throwIfError(): never {
     throw new ResultException(this._errors);
@@ -114,22 +128,7 @@ export class Err<E = Error> {
   }
 
   /** Short-circuits and propagates this Err without executing nextOperation. */
-  public then<U, F = E>(nextOperation: (value: never) => Result<U, F>): Err<E>;
-  public then(
-    nextOperation: (value: {
-      readonly ok: false;
-      readonly error: E;
-      readonly isSuccess: false;
-      readonly isFailure: true;
-      readonly errors: readonly Error[];
-      readonly category: ErrorCategory | string;
-      readonly message: string;
-      throwIfError(): never;
-      unwrap(): never;
-      tryGetValue(): readonly [false, undefined];
-    }) => unknown
-  ): unknown;
-  public then<U, F = E>(nextOperation: (value: never) => Result<U, F>): unknown {
+  public andThen<U, F = E>(nextOperation: (value: never) => Result<U, F>): Err<E> {
     if (typeof nextOperation !== "function") {
       throw new TypeError("nextOperation cannot be null or undefined");
     }
@@ -137,7 +136,7 @@ export class Err<E = Error> {
   }
 
   /** Short-circuits and propagates this Err asynchronously without executing nextOperation. */
-  public thenAsync<U, F = E>(
+  public andThenAsync<U, F = E>(
     nextOperation: (value: never) => PromiseLike<Result<U, F>> | Result<U, F>
   ): Promise<Err<E>> {
     if (typeof nextOperation !== "function") {
@@ -198,29 +197,3 @@ export class Err<E = Error> {
     return await onFailure(this._errors);
   }
 }
-
-const resolvingErr = new WeakSet<object>();
-
-Object.defineProperty(Err.prototype, "then", {
-  configurable: true,
-  enumerable: false,
-  get(this: Err<unknown>) {
-    if (resolvingErr.has(this)) {
-      resolvingErr.delete(this);
-      return undefined;
-    }
-    return <U, F = unknown>(
-      nextOperation: (value: never) => Result<U, F>,
-      onRejected?: unknown
-    ): unknown => {
-      if (typeof onRejected === "function") {
-        resolvingErr.add(this);
-        return (nextOperation as (v: unknown) => unknown)(this);
-      }
-      if (typeof nextOperation !== "function") {
-        throw new TypeError("nextOperation cannot be null or undefined");
-      }
-      return this;
-    };
-  },
-});

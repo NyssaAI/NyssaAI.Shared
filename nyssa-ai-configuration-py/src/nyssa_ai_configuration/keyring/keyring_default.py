@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Final
 
 from nyssa_ai_configuration.keyring.keyring_systemd_creds import KeyringSystemdCreds
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _MAX_ADDRESS_LENGTH: Final[int] = 1024
 _CONTROL_CHAR_RE: Final[re.Pattern[str]] = re.compile(r"[\x00-\x1f\x7f]")

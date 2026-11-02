@@ -3,6 +3,8 @@
 // +-- Err
 // +-- Ok
 // +-- Result
+// |   +-- andThen(nextOperation)
+// |   +-- andThenAsync(nextOperation)
 // |   +-- category
 // |   +-- error
 // |   +-- errors
@@ -14,14 +16,13 @@
 // |   +-- ok
 // |   +-- resolve(onSuccess, onFailure)
 // |   +-- resolveAsync(onSuccess, onFailure)
-// |   +-- then(nextOperation)
-// |   +-- thenAsync(nextOperation)
 // |   +-- throwIfError()
 // |   +-- transform(transformation)
 // |   +-- transformAsync(transformation)
 // |   +-- tryGetValue()
 // |   +-- unwrap()
 // |   `-- value
+// +-- andThen(result, nextOperation)
 // +-- fail(errorOrErrors, category, cause)
 // +-- failError(error)
 // +-- ok(value)
@@ -214,6 +215,19 @@ export function tryAsync<T>(
   })() as Promise<Result<T, Error>>;
 }
 
+/**
+ * Chains a fallible operation on a Result instance.
+ */
+export function andThen<T, U, E = Error, F = E>(
+  result: Result<T, E>,
+  nextOperation: (value: T) => Result<U, F>
+): Result<U, E | F> {
+  if (result.ok) {
+    return nextOperation(result.value);
+  }
+  return result as unknown as Result<U, E | F>;
+}
+
 const resultCompanion = Object.freeze({
   ok,
   fail,
@@ -223,6 +237,7 @@ const resultCompanion = Object.freeze({
   try: try_,
   try_,
   tryAsync,
+  andThen,
 });
 
 /**
@@ -246,23 +261,8 @@ export type Result<T, E = Error> =
       throwIfError(): T;
       unwrap(): T;
       tryGetValue(): readonly [true, T];
-      then<U, F = E>(nextOperation: (value: T) => Result<U, F>): Result<U, E | F>;
-      then(
-        nextOperation: (value: {
-          readonly ok: true;
-          readonly value: T;
-          readonly isSuccess: true;
-          readonly isFailure: false;
-          readonly errors: readonly Error[];
-          readonly error: undefined;
-          readonly category: ErrorCategory | string;
-          readonly message: string;
-          throwIfError(): T;
-          unwrap(): T;
-          tryGetValue(): readonly [true, T];
-        }) => unknown
-      ): unknown;
-      thenAsync<U, F = E>(
+      andThen<U, F = E>(nextOperation: (value: T) => Result<U, F>): Result<U, E | F>;
+      andThenAsync<U, F = E>(
         nextOperation: (value: T) => PromiseLike<Result<U, F>> | Result<U, F>
       ): Promise<Result<U, E | F>>;
       transform<U>(transformation: (value: T) => U): Result<U, E>;
@@ -293,38 +293,24 @@ export type Result<T, E = Error> =
       throwIfError(): never;
       unwrap(): never;
       tryGetValue(): readonly [false, undefined];
-      then<U, F = E>(nextOperation: (value: T) => Result<U, F>): Result<U, E | F>;
-      then(
-        nextOperation: (value: {
-          readonly ok: false;
-          readonly error: E;
-          readonly isSuccess: false;
-          readonly isFailure: true;
-          readonly errors: readonly Error[];
-          readonly category: ErrorCategory | string;
-          readonly message: string;
-          throwIfError(): never;
-          unwrap(): never;
-          tryGetValue(): readonly [false, undefined];
-        }) => unknown
-      ): unknown;
-      thenAsync<U, F = E>(
-        nextOperation: (value: T) => PromiseLike<Result<U, F>> | Result<U, F>
+      andThen<U, F = E>(nextOperation: (value: never) => Result<U, F>): Result<U, E | F>;
+      andThenAsync<U, F = E>(
+        nextOperation: (value: never) => PromiseLike<Result<U, F>> | Result<U, F>
       ): Promise<Result<U, E | F>>;
-      transform<U>(transformation: (value: T) => U): Result<U, E>;
-      map<U>(transformation: (value: T) => U): Result<U, E>;
+      transform<U>(transformation: (value: never) => U): Result<U, E>;
+      map<U>(transformation: (value: never) => U): Result<U, E>;
       transformAsync<U>(
-        transformation: (value: T) => PromiseLike<U> | U
+        transformation: (value: never) => PromiseLike<U> | U
       ): Promise<Result<U, E>>;
       mapAsync<U>(
-        transformation: (value: T) => PromiseLike<U> | U
+        transformation: (value: never) => PromiseLike<U> | U
       ): Promise<Result<U, E>>;
       resolve<R>(
-        onSuccess: (value: T) => R,
+        onSuccess: (value: never) => R,
         onFailure: (errors: readonly Error[]) => R
       ): R;
       resolveAsync<R>(
-        onSuccess: (value: T) => PromiseLike<R> | R,
+        onSuccess: (value: never) => PromiseLike<R> | R,
         onFailure: (errors: readonly Error[]) => PromiseLike<R> | R
       ): Promise<R>;
     };

@@ -4,7 +4,7 @@
 //     +-- open(value, namespace, key)
 //     `-- seal(value, namespace, key)
 
-import { type Result } from "../results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 
 /**
  * IConfigurationCipher encrypts and decrypts configuration entries with authenticated metadata.

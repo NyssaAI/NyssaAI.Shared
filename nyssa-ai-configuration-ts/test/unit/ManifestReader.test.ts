@@ -157,8 +157,8 @@ describe("ConfigurationManifestReader and Writer", () => {
     expect(readRes.ok).toBe(false);
     if (!readRes.ok) {
       expect(readRes.category).toBe("Forbidden");
-      expect(readRes.error).toContain("is readable by");
-      expect(readRes.error).not.toContain("fictional");
+      expect(readRes.message).toContain("is readable by");
+      expect(readRes.message).not.toContain("fictional");
     }
   });
 

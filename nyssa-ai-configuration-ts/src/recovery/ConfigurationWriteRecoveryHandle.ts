@@ -7,7 +7,7 @@
 //     +-- new(token)
 //     `-- toString()
 
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ConfigurationRecoveryHandle } from "./ConfigurationRecoveryHandle.js";
 
 /**

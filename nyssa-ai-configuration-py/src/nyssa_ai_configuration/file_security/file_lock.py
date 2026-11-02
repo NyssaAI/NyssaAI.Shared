@@ -19,7 +19,7 @@ else:
     import fcntl
 
 from nyssa_ai_configuration.logging.configuration_logger import ConfigurationLogger
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _IN_PROCESS_LOCKS_GUARD = threading.Lock()
 _IN_PROCESS_LOCKS: dict[str, threading.Lock] = {}

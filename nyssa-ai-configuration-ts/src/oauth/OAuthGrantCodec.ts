@@ -7,7 +7,7 @@
 //     +-- isOAuthGrantPayload(decrypted)
 //     `-- validateOptions(options)
 
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { OAuthOptions } from "./OAuthOptions.js";
 
 /**

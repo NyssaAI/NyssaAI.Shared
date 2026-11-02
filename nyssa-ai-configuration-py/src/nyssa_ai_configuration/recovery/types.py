@@ -65,7 +65,7 @@ from nyssa_ai_configuration.cloud_key_vaults.types import (
 from nyssa_ai_configuration.recovery.configuration_recovery_handle import (
     ConfigurationRecoveryHandle,
 )
-from nyssa_ai_configuration.results.result import Result
+from nyssa_ai_result import Result
 from nyssa_ai_configuration.values.types import ConfigurationValue
 
 type ConfigurationOperationKind = Literal["Move", "Replace", "Merge"]

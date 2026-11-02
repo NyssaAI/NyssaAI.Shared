@@ -7,7 +7,7 @@ import { ConfigurationEntryResolver } from "../../src/values/ConfigurationEntryR
 import { ConfigurationCipherAesGcm } from "../../src/encryption/ConfigurationCipherAesGcm.js";
 import { OAuthTokenManager } from "../../src/oauth/OAuthTokenManager.js";
 import { PendingJournalManager } from "../../src/recovery/PendingJournalManager.js";
-import { ok } from "../../src/results/Result.js";
+import { ok } from "@nyssa-ai/result";
 import type { IVaultProvider } from "../../src/vault/IVaultProvider.js";
 
 describe("ConfigurationValueEnvelope", () => {

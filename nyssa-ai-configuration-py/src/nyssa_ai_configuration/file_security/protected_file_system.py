@@ -12,7 +12,7 @@ import sys
 from typing import Final
 import uuid
 
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _POSIX_DIR_MODE: Final[int] = 0o700
 _POSIX_FILE_MODE: Final[int] = 0o600

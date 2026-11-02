@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { KeyringWindowsCredMan } from "./KeyringWindowsCredMan.js";
 import { KeyringSystemdCreds } from "./KeyringSystemdCreds.js";
 import type { IKeyring } from "./IKeyring.js";

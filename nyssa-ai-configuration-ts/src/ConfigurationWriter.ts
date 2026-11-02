@@ -7,7 +7,8 @@
 //     +-- setAs(namespace, key, value, options, signal)
 //     `-- setNamespace(namespace, value, signal)
 
-import { type Result } from "./results/Result.js";
+import { type Result } from "@nyssa-ai/result";
+import type { ConfigurationAttempt } from "./values/ConfigurationAttempt.js";
 import type { SetOptions } from "./SetOptions.js";
 import type { ConfigurationRemoval } from "./values/ConfigurationRemoval.js";
 
@@ -40,12 +41,12 @@ export interface ConfigurationWriter {
   /**
    * Replaces a namespace with the top-level properties of a typed object (preserving existing providers on surviving keys).
    */
-  setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
+  setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>>;
 
   /**
    * Merges the top-level properties of a typed object into an existing namespace without removing omitted keys.
    */
-  mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
+  mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>>;
 
   /**
    * Removes a configuration key from a namespace and its backing provider.

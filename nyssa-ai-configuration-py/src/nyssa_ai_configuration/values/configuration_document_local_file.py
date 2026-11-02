@@ -15,7 +15,7 @@ from nyssa_ai_configuration.file_security.directory_safety import DirectorySafet
 from nyssa_ai_configuration.file_security.file_lock import FileLock
 from nyssa_ai_configuration.file_security.protected_file_system import ProtectedFileSystem
 from nyssa_ai_configuration.logging.configuration_logger import ConfigurationLogger
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 from nyssa_ai_configuration.values.configuration_value_codec import (
     ConfigurationValueCodec,
 )

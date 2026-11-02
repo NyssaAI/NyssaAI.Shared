@@ -10,7 +10,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { IKeyring } from "./IKeyring.js";
 
 /**
@@ -100,7 +100,7 @@ export class KeyringSystemdCreds {
     void account;
     void secret;
     signal?.throwIfAborted();
-    return fail(KeyringSystemdCreds.IMMUTABLE_ERROR_MESSAGE, "Unsupported");
+    return fail(KeyringSystemdCreds.IMMUTABLE_ERROR_MESSAGE, "Forbidden");
   }
 
   /**
@@ -110,7 +110,7 @@ export class KeyringSystemdCreds {
     void service;
     void account;
     signal?.throwIfAborted();
-    return fail(KeyringSystemdCreds.IMMUTABLE_ERROR_MESSAGE, "Unsupported");
+    return fail(KeyringSystemdCreds.IMMUTABLE_ERROR_MESSAGE, "Forbidden");
   }
 
   private resolveCredentialFile(

@@ -1,6 +1,8 @@
 // Responsibility: Represent the successful arm of a railway-oriented Result discriminated union.
 // Public interface:
 // `-- Ok
+//     +-- andThen(nextOperation)
+//     +-- andThenAsync(nextOperation)
 //     +-- category
 //     +-- error
 //     +-- errors
@@ -13,8 +15,6 @@
 //     +-- ok
 //     +-- resolve(onSuccess, onFailure)
 //     +-- resolveAsync(onSuccess, onFailure)
-//     +-- then(nextOperation)
-//     +-- thenAsync(nextOperation)
 //     +-- throwIfError()
 //     +-- transform(transformation)
 //     +-- transformAsync(transformation)
@@ -82,36 +82,21 @@ export class Ok<T> {
 
   /**
    * Monadic bind chaining the success value into the next Result-returning operation.
+   * Named andThen to prevent ECMAScript Promise/Thenable collisions and compiler Awaited unwrapping.
    * Pure combinator: does not wrap in try/catch; programmer defects bubble immediately.
    */
-  public then<U, E = Error>(nextOperation: (value: T) => Result<U, E>): Result<U, E>;
-  public then(
-    nextOperation: (value: {
-      readonly ok: true;
-      readonly value: T;
-      readonly isSuccess: true;
-      readonly isFailure: false;
-      readonly errors: readonly Error[];
-      readonly error: undefined;
-      readonly category: ErrorCategory | string;
-      readonly message: string;
-      throwIfError(): T;
-      unwrap(): T;
-      tryGetValue(): readonly [true, T];
-    }) => unknown
-  ): unknown;
-  public then(nextOperation: (value: never) => unknown): unknown {
+  public andThen<U, E = Error>(nextOperation: (value: T) => Result<U, E>): Result<U, E> {
     if (typeof nextOperation !== "function") {
       throw new TypeError("nextOperation cannot be null or undefined");
     }
-    return (nextOperation as (value: T) => unknown)(this.value);
+    return nextOperation(this.value);
   }
 
   /**
    * Asynchronous monadic bind chaining the success value into an async Result-returning operation.
    * Pure combinator: does not wrap in try/catch; programmer defects bubble immediately.
    */
-  public thenAsync<U, E = Error>(
+  public andThenAsync<U, E = Error>(
     nextOperation: (value: T) => PromiseLike<Result<U, E>> | Result<U, E>
   ): Promise<Result<U, E>> {
     return (async (): Promise<unknown> => {
@@ -182,29 +167,3 @@ export class Ok<T> {
     return await onSuccess(this.value);
   }
 }
-
-const resolvingOk = new WeakSet<object>();
-
-Object.defineProperty(Ok.prototype, "then", {
-  configurable: true,
-  enumerable: false,
-  get(this: Ok<unknown>) {
-    if (resolvingOk.has(this)) {
-      resolvingOk.delete(this);
-      return undefined;
-    }
-    return <U, E = Error>(
-      nextOperation: (value: unknown) => Result<U, E>,
-      onRejected?: unknown
-    ): unknown => {
-      if (typeof onRejected === "function") {
-        resolvingOk.add(this);
-        return (nextOperation as (v: unknown) => unknown)(this);
-      }
-      if (typeof nextOperation !== "function") {
-        throw new TypeError("nextOperation cannot be null or undefined");
-      }
-      return nextOperation(this.value);
-    };
-  },
-});

@@ -19,7 +19,7 @@ from nyssa_ai_configuration.manifest.configuration_manifest_reader import (
     ConfigurationManifestReader,
 )
 from nyssa_ai_configuration.manifest.types import ApplicationManifestEntry, VaultOptions
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 _DEFAULT_LOCK_TIMEOUT_MS: Final[int] = 10000
 _SUPPORTED_VERSION: Final[int] = 1

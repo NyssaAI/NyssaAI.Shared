@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
 import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
-import { ok, fail, type Result } from "../../src/results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { IBrowserLauncher } from "../../src/oauth/IBrowserLauncher.js";
 import type { IOAuthFlowClient } from "../../src/oauth/IOAuthFlowClient.js";
 import type { IVaultProvider } from "../../src/vault/IVaultProvider.js";
@@ -153,7 +153,7 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
           readonly expiresInSeconds: number;
         }>
       > {
-        return fail("invalid_grant: refresh token has been revoked", "Unauthorized");
+        return fail("invalid_grant: refresh token has been revoked", "Forbidden");
       }
     };
 
@@ -184,7 +184,7 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     const expiredRes = await client.get("github", "oauthCred");
     expect(expiredRes.ok).toBe(false);
     if (!expiredRes.ok) {
-      expect(expiredRes.category).toBe("Unauthorized");
+      expect(expiredRes.category).toBe("Forbidden");
     }
 
     // Verify reauth_required is persisted on the entry in github.json

@@ -78,11 +78,11 @@ describe("ProtectedFileSystem and DirectorySafety", () => {
     expect(verifyRes.ok).toBe(false);
     if (!verifyRes.ok) {
       expect(verifyRes.category).toBe("Forbidden");
-      expect(verifyRes.error).toContain("writable by");
+      expect(verifyRes.message).toContain("writable by");
       if (process.platform === "win32") {
-        expect(verifyRes.error).toContain("icacls");
+        expect(verifyRes.message).toContain("icacls");
       } else {
-        expect(verifyRes.error).toContain("chmod");
+        expect(verifyRes.message).toContain("chmod");
       }
     }
   });
@@ -101,11 +101,11 @@ describe("ProtectedFileSystem and DirectorySafety", () => {
     expect(verifyRes.ok).toBe(false);
     if (!verifyRes.ok) {
       expect(verifyRes.category).toBe("Forbidden");
-      expect(verifyRes.error).toContain("is readable by");
+      expect(verifyRes.message).toContain("is readable by");
       if (process.platform === "win32") {
-        expect(verifyRes.error).toContain("icacls");
+        expect(verifyRes.message).toContain("icacls");
       } else {
-        expect(verifyRes.error).toContain("chmod 600");
+        expect(verifyRes.message).toContain("chmod 600");
       }
     }
   });

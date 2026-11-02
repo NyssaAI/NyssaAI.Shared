@@ -8,6 +8,7 @@ using NyssaAI.Results;
 
 using NyssaAI.Configuration.Manifest;
 using NyssaAI.Configuration.CloudKeyVaults;
+using NyssaAI.Configuration.CloudKeyVaults.Bitwarden;
 using NyssaAI.Configuration.Contracts;
 using NyssaAI.Configuration.Encryption;
 using NyssaAI.Configuration.FileSecurity;
@@ -171,6 +172,19 @@ public static class ConfigurationServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>Registers the built-in Bitwarden Secrets Manager (<c>bws</c>) cloud key vault factory.</summary>
+    /// <param name="services">The container to register with.</param>
+    /// <param name="factory">Optional pre-configured Bitwarden vault factory.</param>
+    public static IServiceCollection AddBitwardenSecretsVault(
+        this IServiceCollection services,
+        CloudKeyVaultFactoryBitwarden? factory = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ICloudKeyVaultFactory>(
+            factory ?? new CloudKeyVaultFactoryBitwarden()));
+        return services;
+    }
+
     // What a failure anywhere in the composition becomes: the resolve that asked for the
     // configuration fails, naming every technical message, because there is no configuration to
     // hand back and no honest way to carry on without one.
@@ -267,7 +281,11 @@ public static class ConfigurationServiceCollectionExtensions
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
         if (!factories.TryGetValue(entry.Kind, out var factory))
-            return Result.Failure(VaultKindUnregistered(name, entry.Kind, factories.Keys));
+        {
+            if (entry.Kind is not (CloudKeyVaultFactoryBitwarden.DefaultKind or CloudKeyVaultFactoryBitwarden.ShortKind or CloudKeyVaultFactoryBitwarden.LegacyKind))
+                return Result.Failure(VaultKindUnregistered(name, entry.Kind, factories.Keys));
+            factory = new CloudKeyVaultFactoryBitwarden(entry.Kind);
+        }
 
         IAccessTokenSource? tokens = null;
         if (entry.Credential is not null)
@@ -275,18 +293,13 @@ public static class ConfigurationServiceCollectionExtensions
             var address = ConfigurationPointer.Parse(name, entry.Credential);
             if (address.IsFailure)
                 return Result.Failure(VaultCredentialInvalid(name, entry.Credential));
-
             var authorization = factory.Authorization(entry);
             if (authorization is null)
                 return Result.Failure(ConfigurationStore.ProviderNotAuthorizing(name));
-
             tokens = new AccessTokenSource(name, storeReference);
             credentials.Add(new ProviderCredential
             {
-                Provider = name,
-                Namespace = address.Value.Namespace,
-                Key = address.Value.Key,
-                Authorization = authorization,
+                Provider = name, Namespace = address.Value.Namespace, Key = address.Value.Key, Authorization = authorization,
             });
         }
 
@@ -329,17 +342,7 @@ public static class ConfigurationServiceCollectionExtensions
     private sealed class Owned : IDisposable
     {
         private readonly List<IDisposable> _items = [];
-
-        public T Add<T>(T item) where T : IDisposable
-        {
-            _items.Add(item);
-            return item;
-        }
-
-        public void Dispose()
-        {
-            foreach (var item in _items)
-                item.Dispose();
-        }
+        public T Add<T>(T item) where T : IDisposable { _items.Add(item); return item; }
+        public void Dispose() { foreach (var item in _items) item.Dispose(); }
     }
 }

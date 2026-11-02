@@ -21,7 +21,7 @@ from nyssa_ai_configuration.logging.configuration_logger import ConfigurationLog
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
 from nyssa_ai_configuration.oauth.oauth_flow_client import OauthFlowClient
 from nyssa_ai_configuration.oauth.types import OAuthHeldGrant, OAuthOptions, OAuthToken
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 from nyssa_ai_configuration.values.configuration_document_local_file import (
     ConfigurationDocumentLocalFile,
 )

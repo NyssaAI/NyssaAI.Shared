@@ -16,7 +16,8 @@
 //     +-- setAs(namespace, key, value, options, signal)
 //     `-- setNamespace(namespace, value, signal)
 
-import { type Result } from "./results/Result.js";
+import { type Result } from "@nyssa-ai/result";
+import type { ConfigurationAttempt } from "./values/ConfigurationAttempt.js";
 import type { SetOptions } from "./SetOptions.js";
 import type { ConfigurationRemoval } from "./values/ConfigurationRemoval.js";
 import type { ConfigurationMove } from "./values/ConfigurationMove.js";
@@ -45,8 +46,8 @@ export interface IConfiguration {
     options?: SetOptions,
     signal?: AbortSignal
   ): Promise<Result<void>>;
-  setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
-  mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
+  setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>>;
+  mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>>;
   list(namespace: string, signal?: AbortSignal): Promise<Result<readonly string[]>>;
   remove(namespace: string, key: string, signal?: AbortSignal): Promise<Result<ConfigurationRemoval>>;
   move(
@@ -54,7 +55,7 @@ export interface IConfiguration {
     key: string,
     destinationProvider: string,
     signal?: AbortSignal
-  ): Promise<Result<ConfigurationMove>>;
+  ): Promise<ConfigurationAttempt<ConfigurationMove>>;
   authorize(
     namespace: string,
     key: string,

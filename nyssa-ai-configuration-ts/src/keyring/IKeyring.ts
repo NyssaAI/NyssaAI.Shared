@@ -5,7 +5,7 @@
 //     +-- get(service, account, signal)
 //     `-- set(service, account, secret, signal)
 
-import { type Result } from "../results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 
 /**
  * IKeyring manages secure storage for the application's master cryptographic key.

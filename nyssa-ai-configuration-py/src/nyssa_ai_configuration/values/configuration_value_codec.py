@@ -11,7 +11,7 @@
 from collections.abc import Mapping
 import json
 
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 from nyssa_ai_configuration.values.types import ConfigurationValue
 
 

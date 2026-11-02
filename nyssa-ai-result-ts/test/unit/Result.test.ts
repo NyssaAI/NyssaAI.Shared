@@ -99,10 +99,10 @@ describe("Result core state and pure combinators", () => {
 
     // Act
     const chainedOk = initialOk
-      .then((v) => ok(v * 2))
+      .andThen((v) => ok(v * 2))
       .transform((v) => `Result: ${v}`);
     const chainedFail = initialFail
-      .then((v) => {
+      .andThen((v) => {
         calledOnFailure = true;
         return ok(v * 2);
       })
@@ -123,7 +123,7 @@ describe("Result core state and pure combinators", () => {
 
     // Act & Assert
     expect(() =>
-      success.then(() => {
+      success.andThen(() => {
         throw new ReferenceError("Defect in then callback");
       })
     ).toThrow(ReferenceError);

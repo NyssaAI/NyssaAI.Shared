@@ -4,7 +4,7 @@
 //     +-- format(ms)
 //     `-- parse(value)
 
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 
 /**
  * TimeSpanParser validates and parses .NET TimeSpan string representations.

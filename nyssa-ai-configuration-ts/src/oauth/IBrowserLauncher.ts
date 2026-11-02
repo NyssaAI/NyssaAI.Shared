@@ -3,7 +3,7 @@
 // `-- IBrowserLauncher
 //     `-- openUrl(url, signal)
 
-import { type Result } from "../results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 
 /**
  * IBrowserLauncher opens an HTTPS authorization URL in the user's browser.

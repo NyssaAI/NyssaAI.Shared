@@ -5,7 +5,7 @@ import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
 import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
 import { ProtectedFileSystem } from "../../src/fileSecurity/ProtectedFileSystem.js";
-import { ok, fail, type Result } from "../../src/results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { IVaultProvider } from "../../src/vault/IVaultProvider.js";
 import type { IVaultProviderFactory } from "../../src/vault/IVaultProviderFactory.js";
 import type { VaultOptions } from "../../src/manifest/VaultOptions.js";

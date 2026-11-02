@@ -46,7 +46,7 @@ from nyssa_ai_configuration.recovery.types import (
     ConfigurationMove,
     ConfigurationRecoveryOutcome,
 )
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 from nyssa_ai_configuration.values.configuration_document_local_file import (
     ConfigurationDocumentLocalFile,
 )

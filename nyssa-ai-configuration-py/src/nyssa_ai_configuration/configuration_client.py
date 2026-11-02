@@ -28,6 +28,9 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_factory_bitwarden import (
+    CloudKeyVaultFactoryBitwarden,
+)
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault import CloudKeyVault
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_factory import (
     CloudKeyVaultFactory,
@@ -65,7 +68,7 @@ from nyssa_ai_configuration.recovery.types import (
     ConfigurationMove,
     ConfigurationRecoveryOutcome,
 )
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 from nyssa_ai_configuration.values.configuration_store import ConfigurationStore
 from nyssa_ai_configuration.values.types import ConfigurationRemoval
 
@@ -179,7 +182,9 @@ class ConfigurationClient:
                 return store_box[0].resolve_vault_credential(self._vault_name)
 
         if vault_opt is not None:
-            factory = next((f for f in vault_factories if f.kind == vault_opt.kind), None)
+            factory: CloudKeyVaultFactory | None = next((f for f in vault_factories if f.kind == vault_opt.kind), None)
+            if factory is None and vault_opt.kind in ("bitwarden-secrets", "bws", "bitwarden"):
+                factory = CloudKeyVaultFactoryBitwarden(vault_opt.kind)
             if factory is None:
                 return fail(f"No CloudKeyVaultFactory registered for kind '{vault_opt.kind}'.", "Validation")
             tok_src: _StoreTokenSource | None = None

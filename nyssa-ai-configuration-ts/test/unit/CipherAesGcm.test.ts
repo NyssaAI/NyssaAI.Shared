@@ -75,7 +75,7 @@ describe("ConfigurationCipherAesGcm", () => {
     const openedByB = cipherB.value.open(sealedByA.value, "mail", "password");
     expect(openedByB.ok).toBe(false);
     if (!openedByB.ok) {
-      expect(openedByB.error).not.toContain("user-a-private-secret");
+      expect(openedByB.message).not.toContain("user-a-private-secret");
     }
   });
 });

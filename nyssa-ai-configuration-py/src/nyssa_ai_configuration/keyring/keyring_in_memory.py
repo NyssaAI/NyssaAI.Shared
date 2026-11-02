@@ -9,7 +9,7 @@
 
 from collections.abc import Mapping
 
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 
 class KeyringInMemory:

@@ -10,7 +10,7 @@ from typing import Protocol
 
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
 from nyssa_ai_configuration.oauth.types import OAuthOptions
-from nyssa_ai_configuration.results.result import Result
+from nyssa_ai_result import Result
 
 
 class ConfigurationOauthWriter(Protocol):

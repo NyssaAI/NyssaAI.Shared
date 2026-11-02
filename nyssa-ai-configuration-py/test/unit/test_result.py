@@ -5,7 +5,7 @@
 # `-- test_ok_creates_successful_result_with_value()
 """Unit tests for Result, Ok, Err, and ConfigurationError."""
 
-from nyssa_ai_configuration.results.result import Err, Ok, Result, fail, ok
+from nyssa_ai_result import Err, Ok, Result, fail, ok
 
 
 def test_ok_creates_successful_result_with_value() -> None:

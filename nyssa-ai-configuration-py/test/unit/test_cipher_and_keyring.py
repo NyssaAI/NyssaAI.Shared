@@ -16,7 +16,7 @@ from nyssa_ai_configuration.encryption.configuration_cipher_aes_gcm import (
 from nyssa_ai_configuration.keyring.keyring import get_or_create_key
 from nyssa_ai_configuration.keyring.keyring_in_memory import KeyringInMemory
 from nyssa_ai_configuration.keyring.keyring_protected_file import KeyringProtectedFile
-from nyssa_ai_configuration.results.result import Result, fail
+from nyssa_ai_result import Result, fail
 
 
 def test_cipher_aes_gcm_round_trips_and_rejects_transplanted_ciphertext() -> None:

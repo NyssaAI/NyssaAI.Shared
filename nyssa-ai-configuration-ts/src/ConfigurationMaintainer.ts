@@ -4,7 +4,8 @@
 //     +-- move(namespace, key, destinationProvider, signal)
 //     `-- recover(handle, signal)
 
-import { type Result } from "./results/Result.js";
+import { type Result } from "@nyssa-ai/result";
+import type { ConfigurationAttempt } from "./values/ConfigurationAttempt.js";
 import type { ConfigurationMove } from "./values/ConfigurationMove.js";
 import type { ConfigurationRecoveryHandle } from "./recovery/ConfigurationRecoveryHandle.js";
 import type { ConfigurationRecoveryOutcome } from "./recovery/Types.js";
@@ -21,7 +22,7 @@ export interface ConfigurationMaintainer {
     key: string,
     destinationProvider: string,
     signal?: AbortSignal
-  ): Promise<Result<ConfigurationMove>>;
+  ): Promise<ConfigurationAttempt<ConfigurationMove>>;
 
   /**
    * Replays an interrupted multi-step write using its portable recovery handle.

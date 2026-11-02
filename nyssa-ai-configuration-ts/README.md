@@ -135,7 +135,7 @@ import { KeyringOsPlatform } from "@nyssa-ai/configuration/keyring/KeyringOsPlat
 import { KeyringSystemdCreds } from "@nyssa-ai/configuration/keyring/KeyringSystemdCreds";
 import { ConfigurationWriteRecoveryHandle } from "@nyssa-ai/configuration/recovery/ConfigurationWriteRecoveryHandle";
 import type { IConfiguration } from "@nyssa-ai/configuration/IConfiguration";
-import type { Result } from "@nyssa-ai/configuration/results/Result";
+import type { Result } from "@nyssa-ai/result";
 ```
 
 ## Licensing

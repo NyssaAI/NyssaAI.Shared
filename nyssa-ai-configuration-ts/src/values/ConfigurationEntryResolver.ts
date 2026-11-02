@@ -19,7 +19,7 @@
 //     `-- vaultProviders
 
 import * as path from "node:path";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ConfigurationDocumentLocalFile } from "./ConfigurationDocumentLocalFile.js";
 import { OAuthTokenManager } from "../oauth/OAuthTokenManager.js";
 import { PendingJournalManager } from "../recovery/PendingJournalManager.js";

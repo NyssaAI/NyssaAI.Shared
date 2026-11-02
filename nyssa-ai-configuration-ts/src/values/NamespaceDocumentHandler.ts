@@ -7,7 +7,8 @@
 //     `-- setNamespace(namespace, value, signal)
 
 import * as crypto from "node:crypto";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
+import { ConfigurationAttempt } from "./ConfigurationAttempt.js";
 import { ConfigurationDocumentLocalFile } from "./ConfigurationDocumentLocalFile.js";
 import type { ConfigurationEntryResolver } from "./ConfigurationEntryResolver.js";
 import type { ConfigurationValue } from "./ConfigurationValue.js";
@@ -97,11 +98,11 @@ export class NamespaceDocumentHandler {
     return ok(assembled as T);
   }
 
-  public async setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>> {
+  public async setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>> {
     return this.writeNamespaceInternal(namespace, value, true, signal);
   }
 
-  public async mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>> {
+  public async mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>> {
     return this.writeNamespaceInternal(namespace, value, false, signal);
   }
 
@@ -110,39 +111,43 @@ export class NamespaceDocumentHandler {
     value: T,
     replace: boolean,
     signal?: AbortSignal
-  ): Promise<Result<void>> {
+  ): Promise<ConfigurationAttempt<void>> {
     signal?.throwIfAborted();
     const validNs = ConfigurationDocumentLocalFile.validateSegment(namespace, "namespace");
-    if (!validNs.ok) return validNs;
+    if (!validNs.ok) return new ConfigurationAttempt(validNs);
 
     if (value === undefined) {
-      return fail("Namespace value cannot be undefined.", "Validation");
+      return new ConfigurationAttempt(fail("Namespace value cannot be undefined.", "Validation"));
     }
 
     const isPlainObject = typeof value === "object" && value !== null && !Array.isArray(value);
     if (!replace && !isPlainObject) {
-      return fail(
-        "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
-        "Validation"
+      return new ConfigurationAttempt(
+        fail(
+          "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
+          "Validation"
+        )
       );
     }
 
     const replayRes = await this._resolver.replayPendingJournalsIfPresent(namespace, signal);
-    if (!replayRes.ok) return replayRes;
+    if (!replayRes.ok) return new ConfigurationAttempt(replayRes);
 
     const incomingEntries: Array<[string, unknown]> = [];
     if (isPlainObject) {
       const obj = value as Record<string, unknown>;
       if (Object.prototype.hasOwnProperty.call(obj, NamespaceDocumentHandler.LEGACY_SETTINGS_KEY)) {
-        return fail(
-          "Namespace settings require valid JSON properties without duplicate names or the reserved namespaceSettings name.",
-          "Validation"
+        return new ConfigurationAttempt(
+          fail(
+            "Namespace settings require valid JSON properties without duplicate names or the reserved namespaceSettings name.",
+            "Validation"
+          )
         );
       }
       for (const [propKey, propVal] of Object.entries(obj)) {
         if (propVal === undefined) continue;
         const keyValid = ConfigurationDocumentLocalFile.validateSegment(propKey, "key");
-        if (!keyValid.ok) return keyValid;
+        if (!keyValid.ok) return new ConfigurationAttempt(keyValid);
         incomingEntries.push([propKey, propVal]);
       }
     }
@@ -242,7 +247,7 @@ export class NamespaceDocumentHandler {
     }, signal);
 
     if (!stateSnapshot) {
-      return modRes;
+      return new ConfigurationAttempt(modRes);
     }
 
     const pubState: ConfigurationPublicationState = modRes.ok
@@ -254,12 +259,7 @@ export class NamespaceDocumentHandler {
       ...stateSnapshot,
       publication: pubState
     };
-    const out = this._recovery.outcome(finalState);
-
-    if (modRes.ok) {
-      return ok(undefined, out.progress, out.recoveryHandle);
-    }
-    return fail(modRes.error, modRes.category ?? "Unavailable", out.recoveryHandle, out.progress);
+    return this._recovery.attempt(modRes.ok ? ok(undefined) : modRes, finalState);
   }
 
   private mergeLegacyProperties(

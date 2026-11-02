@@ -124,7 +124,7 @@ describe("BasicSettings Public Use Cases (F-101)", () => {
     expect(conflictRes.ok).toBe(false);
     if (!conflictRes.ok) {
       expect(conflictRes.category).toBe("Conflict");
-      expect(conflictRes.error).toContain("use move");
+      expect(conflictRes.message).toContain("use move");
     }
   });
 });

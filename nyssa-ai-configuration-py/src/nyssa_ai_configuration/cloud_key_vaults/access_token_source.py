@@ -6,7 +6,7 @@
 
 from typing import Protocol
 
-from nyssa_ai_configuration.results.result import Result
+from nyssa_ai_result import Result
 
 
 class AccessTokenSource(Protocol):

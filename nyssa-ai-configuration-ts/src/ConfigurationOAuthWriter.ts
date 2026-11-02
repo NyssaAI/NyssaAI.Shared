@@ -5,7 +5,7 @@
 //     +-- authorizeProvider(providerName, signal)
 //     `-- reauthorize(namespace, key, signal)
 
-import { type Result } from "./results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
 
 /**

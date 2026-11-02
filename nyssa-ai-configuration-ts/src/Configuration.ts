@@ -16,7 +16,8 @@
 //     +-- setAs(namespace, key, value, options, signal)
 //     `-- setNamespace(namespace, value, signal)
 
-import { type Result } from "./results/Result.js";
+import { type Result } from "@nyssa-ai/result";
+import type { ConfigurationAttempt } from "./values/ConfigurationAttempt.js";
 import type { SetOptions } from "./SetOptions.js";
 import type { ConfigurationRemoval } from "./values/ConfigurationRemoval.js";
 import type { ConfigurationMove } from "./values/ConfigurationMove.js";
@@ -68,12 +69,12 @@ export interface Configuration {
   /**
    * Replaces a namespace with the top-level properties of a typed object (preserving existing providers on surviving keys).
    */
-  setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
+  setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>>;
 
   /**
    * Merges the top-level properties of a typed object into an existing namespace without removing omitted keys.
    */
-  mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>>;
+  mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>>;
 
   /**
    * Lists all keys in a namespace in strict ordinal code-unit order without decrypting values.
@@ -93,7 +94,7 @@ export interface Configuration {
     key: string,
     destinationProvider: string,
     signal?: AbortSignal
-  ): Promise<Result<ConfigurationMove>>;
+  ): Promise<ConfigurationAttempt<ConfigurationMove>>;
 
   /**
    * Acquires and stores an OAuth 2.0 Authorization Code + PKCE grant under the specified namespace and key.

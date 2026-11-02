@@ -6,7 +6,7 @@
 //     +-- reconcile(operation, preparation, signal)
 //     `-- storeIdentity
 
-import { type Result } from "../results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 import type {
   CloudKeyVaultOperation,
   CloudKeyVaultPreparation,

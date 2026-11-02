@@ -9,7 +9,7 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ConfigurationCipherAesGcm } from "../encryption/ConfigurationCipherAesGcm.js";
 import { ConfigurationRecoveryHandle } from "./ConfigurationRecoveryHandle.js";
 import type {
@@ -62,7 +62,7 @@ export class ConfigurationRecoveryTokenProtector {
     const cipherRes = ConfigurationCipherAesGcm.create(derived);
     derived.fill(0);
     if (!cipherRes.ok) {
-      throw new Error(cipherRes.error);
+      throw new globalThis.Error(cipherRes.message);
     }
     this._cipher = cipherRes.value;
     this._application = applicationName;

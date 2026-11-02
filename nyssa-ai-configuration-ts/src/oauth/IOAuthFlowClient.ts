@@ -4,7 +4,7 @@
 //     +-- authorizeCode(request, signal)
 //     `-- refreshToken(request, signal)
 
-import { type Result } from "../results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 
 /**
  * IOAuthFlowClient abstracts the loopback redirect capture and HTTPS token endpoint exchanges.

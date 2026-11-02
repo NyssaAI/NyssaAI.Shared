@@ -1,6 +1,7 @@
 // Responsibility: Coordinate two-phase prepare, execute, reconcile, and recover operations across local documents and cloud vaults.
 // Public interface:
 // `-- ConfigurationRecoveryCoordinator
+//     +-- attempt(result, state)
 //     +-- cleanupSteps(steps, signal)
 //     +-- new(resolver, protector)
 //     +-- outcome(state)
@@ -9,23 +10,17 @@
 //     `-- writeSteps(steps, proposed, signal)
 
 import * as crypto from "node:crypto";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
+import { ConfigurationAttempt } from "../values/ConfigurationAttempt.js";
 import type { ConfigurationEntryResolver } from "../values/ConfigurationEntryResolver.js";
 import type { ConfigurationRecoveryTokenProtector } from "./ConfigurationRecoveryTokenProtector.js";
 import type { ConfigurationRecoveryHandle } from "./ConfigurationRecoveryHandle.js";
 import type {
-  ConfigurationOperationProgress,
-  ConfigurationPublicationState,
-  ConfigurationRecoveryOutcome,
-  ConfigurationRecoveryState,
-  ConfigurationRecoveryStatus,
-  ConfigurationRecoveryStep
+  ConfigurationOperationProgress, ConfigurationPublicationState, ConfigurationRecoveryOutcome,
+  ConfigurationRecoveryState, ConfigurationRecoveryStatus, ConfigurationRecoveryStep
 } from "./Types.js";
 import type {
-  CloudKeyVaultAction,
-  CloudKeyVaultOperation,
-  CloudKeyVaultPreparation,
-  ConfigurationPointer
+  CloudKeyVaultAction, CloudKeyVaultOperation, CloudKeyVaultPreparation, ConfigurationPointer
 } from "../vault/Types.js";
 import type { ConfigurationValue } from "../values/ConfigurationValue.js";
 
@@ -141,6 +136,14 @@ export class ConfigurationRecoveryCoordinator {
       if (sealed.ok) recoveryHandle = sealed.value;
     }
     return { status, progress, ...(recoveryHandle !== undefined ? { recoveryHandle } : {}) };
+  }
+
+  public attempt<T>(result: Result<T>, state?: ConfigurationRecoveryState | undefined): ConfigurationAttempt<T> {
+    if (state === undefined) {
+      return new ConfigurationAttempt(result);
+    }
+    const outcome = this.outcome(state);
+    return new ConfigurationAttempt(result, outcome.progress, outcome.recoveryHandle);
   }
 
   public async recover(

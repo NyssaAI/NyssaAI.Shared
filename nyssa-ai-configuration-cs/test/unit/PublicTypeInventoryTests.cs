@@ -17,6 +17,8 @@ public sealed class PublicTypeInventoryTests
             "NyssaAI.Configuration.Client.NyssaConfigurationOptions",
             "NyssaAI.Configuration.Client.OAuthOptions",
             "NyssaAI.Configuration.Client.VaultOptions",
+            "NyssaAI.Configuration.CloudKeyVaults.Bitwarden.CloudKeyVaultBitwarden",
+            "NyssaAI.Configuration.CloudKeyVaults.Bitwarden.CloudKeyVaultFactoryBitwarden",
             "NyssaAI.Configuration.CloudKeyVaults.CloudKeyVaultAction",
             "NyssaAI.Configuration.CloudKeyVaults.CloudKeyVaultEffect",
             "NyssaAI.Configuration.CloudKeyVaults.CloudKeyVaultOperation",

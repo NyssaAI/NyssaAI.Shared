@@ -13,7 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { DirectorySafety } from "../fileSecurity/DirectorySafety.js";
 import { TimeSpanParser } from "./TimeSpanParser.js";
 import type { ConfigurationManifest } from "./ConfigurationManifest.js";

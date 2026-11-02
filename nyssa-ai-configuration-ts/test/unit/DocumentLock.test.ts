@@ -7,7 +7,7 @@ import { ConfigurationStore } from "../../src/values/ConfigurationStore.js";
 import { ConfigurationDocumentLocalFile } from "../../src/values/ConfigurationDocumentLocalFile.js";
 import { ConfigurationCipherAesGcm } from "../../src/encryption/ConfigurationCipherAesGcm.js";
 import { ProtectedFileSystem } from "../../src/fileSecurity/ProtectedFileSystem.js";
-import { ok } from "../../src/results/Result.js";
+import { ok } from "@nyssa-ai/result";
 
 describe("ConfigurationStore and Document Locking", () => {
   let tempDir: string;

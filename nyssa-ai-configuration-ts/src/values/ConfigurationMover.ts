@@ -5,7 +5,8 @@
 //     `-- new(resolver, recoveryCoordinator)
 
 import * as crypto from "node:crypto";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
+import { ConfigurationAttempt } from "./ConfigurationAttempt.js";
 import type { ConfigurationEntryResolver } from "./ConfigurationEntryResolver.js";
 import type { ConfigurationMove } from "./ConfigurationMove.js";
 import type { ConfigurationRecoveryCoordinator } from "../recovery/ConfigurationRecoveryCoordinator.js";
@@ -33,26 +34,26 @@ export class ConfigurationMover {
     key: string,
     destinationProvider: string,
     signal?: AbortSignal
-  ): Promise<Result<ConfigurationMove>> {
+  ): Promise<ConfigurationAttempt<ConfigurationMove>> {
     signal?.throwIfAborted();
     const validRes = this._resolver.validateNamespaceAndKey(namespace, key);
     if (!validRes.ok) {
-      return validRes;
+      return new ConfigurationAttempt<ConfigurationMove>(validRes as unknown as Result<ConfigurationMove>);
     }
 
     const replayRes = await this._resolver.replayPendingJournalsIfPresent(namespace, signal);
     if (!replayRes.ok) {
-      return replayRes;
+      return new ConfigurationAttempt<ConfigurationMove>(replayRes as unknown as Result<ConfigurationMove>);
     }
 
     const targetProvider = this._resolver.canonicalProvider(destinationProvider);
     if (targetProvider === "oauth") {
-      return fail("Cannot move an entry to the 'oauth' provider.", "Validation");
+      return new ConfigurationAttempt<ConfigurationMove>(fail("Cannot move an entry to the 'oauth' provider.", "Validation"));
     }
 
     const circularRes = this._resolver.checkCircularCredential(targetProvider, namespace, key);
     if (!circularRes.ok) {
-      return circularRes;
+      return new ConfigurationAttempt<ConfigurationMove>(circularRes as unknown as Result<ConfigurationMove>);
     }
 
     if (
@@ -60,7 +61,7 @@ export class ConfigurationMover {
       targetProvider !== "aesLocal" &&
       !this._resolver.vaultProviders.has(targetProvider)
     ) {
-      return fail(`Configuration provider '${targetProvider}' is not registered.`, "Validation");
+      return new ConfigurationAttempt<ConfigurationMove>(fail(`Configuration provider '${targetProvider}' is not registered.`, "Validation"));
     }
 
     const doc = this._resolver.getDocument(namespace);
@@ -172,9 +173,9 @@ export class ConfigurationMover {
 
     if (!stateSnapshot) {
       if (modRes.ok) {
-        return ok({ sourceValueRemains: false });
+        return new ConfigurationAttempt(ok({ sourceValueRemains: false }));
       }
-      return modRes;
+      return new ConfigurationAttempt<ConfigurationMove>(modRes as unknown as Result<ConfigurationMove>);
     }
 
     if (!modRes.ok) {
@@ -183,12 +184,11 @@ export class ConfigurationMover {
         ...stateSnapshot,
         publication: pubState
       };
-      const out = this._recovery.outcome(failedState);
-      return fail(modRes.error, modRes.category ?? "Unavailable", out.recoveryHandle, out.progress);
+      return this._recovery.attempt(modRes as unknown as Result<ConfigurationMove>, failedState);
     }
 
     if (wasNoOp) {
-      return ok({ sourceValueRemains: false });
+      return new ConfigurationAttempt(ok({ sourceValueRemains: false }));
     }
 
     const stepsMut = [...stateSnapshot.steps];
@@ -203,7 +203,7 @@ export class ConfigurationMover {
     const out = this._recovery.outcome(publishedState);
     const remSteps = stepsMut.filter((s) => s.operation.action === "Remove");
     const sourceValueRemains = remSteps.some((s) => s.state !== "Applied");
-    const sourceDeleteError = !cleanRes.ok ? cleanRes.error : undefined;
+    const sourceDeleteError = !cleanRes.ok ? cleanRes.message : undefined;
 
     const moveVal: ConfigurationMove = {
       sourceValueRemains,
@@ -211,8 +211,8 @@ export class ConfigurationMover {
       ...(sourceValueRemains ? { progress: out.progress } : {}),
       ...(out.recoveryHandle !== undefined ? { recoveryHandle: out.recoveryHandle } : {})
     };
-    return ok(
-      moveVal,
+    return new ConfigurationAttempt(
+      ok(moveVal),
       sourceValueRemains ? out.progress : undefined,
       out.recoveryHandle
     );

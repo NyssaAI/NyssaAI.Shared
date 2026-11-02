@@ -5,7 +5,7 @@
 //     +-- create(options, getCredential)
 //     `-- kind
 
-import { type Result } from "../results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 import type { VaultOptions } from "../manifest/VaultOptions.js";
 import type { IVaultProvider } from "./IVaultProvider.js";
 import type { OAuthOptions } from "../oauth/OAuthOptions.js";

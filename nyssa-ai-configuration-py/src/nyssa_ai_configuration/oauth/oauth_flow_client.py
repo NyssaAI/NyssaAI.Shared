@@ -23,7 +23,7 @@ import webbrowser
 
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
 from nyssa_ai_configuration.oauth.types import OAuthOptions, OAuthToken
-from nyssa_ai_configuration.results.result import Result, fail, ok
+from nyssa_ai_result import Result, fail, ok
 
 
 def _default_http_post(url: str, form_data: Mapping[str, str]) -> Result[tuple[int, str]]:

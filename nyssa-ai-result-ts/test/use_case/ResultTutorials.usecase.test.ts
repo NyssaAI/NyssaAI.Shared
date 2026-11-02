@@ -29,10 +29,10 @@ describe("Result use-case tutorials", () => {
     const validateRequest = (req: UserRegistrationRequest): Result<UserRegistrationRequest> =>
       Guard.against
         .nullOrWhitespace(req.username, "username")
-        .then(() =>
+        .andThen(() =>
           Guard.against.patternMismatch(req.email, /^[^@]+@[^@]+\.[^@]+$/, "email")
         )
-        .then(() => Guard.against.outOfRange(req.age, 18, 120, "age"))
+        .andThen(() => Guard.against.outOfRange(req.age, 18, 120, "age"))
         .transform(() => req);
 
     const checkUniqueness = (req: UserRegistrationRequest): Result<UserRegistrationRequest> => {
@@ -56,7 +56,7 @@ describe("Result use-case tutorials", () => {
       });
 
     const registerPipeline = (req: UserRegistrationRequest): Result<RegisteredUser> =>
-      validateRequest(req).then(checkUniqueness).then(persistUser);
+      validateRequest(req).andThen(checkUniqueness).andThen(persistUser);
 
     // Act
     const resultOk = registerPipeline({
@@ -135,6 +135,6 @@ describe("Result use-case tutorials", () => {
     };
 
     // Act & Assert
-    expect(() => ok(10).then(brokenBusinessLogic)).toThrow(TypeError);
+    expect(() => ok(10).andThen(brokenBusinessLogic)).toThrow(TypeError);
   });
 });

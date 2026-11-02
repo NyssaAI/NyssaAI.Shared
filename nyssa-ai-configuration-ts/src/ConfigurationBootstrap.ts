@@ -7,7 +7,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ok, fail, type Result } from "./results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ConfigurationManifestReader } from "./manifest/ConfigurationManifestReader.js";
 import { ConfigurationManifestWriter } from "./manifest/ConfigurationManifestWriter.js";
 import { KeyringDefault } from "./keyring/KeyringDefault.js";
@@ -21,9 +21,11 @@ import { ConfigurationDocumentLocalFile } from "./values/ConfigurationDocumentLo
 import { NullConfigurationLogger } from "./logging/NullConfigurationLogger.js";
 import { ProtectedFileSystem } from "./fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "./fileSecurity/DirectorySafety.js";
+import { VaultProviderFactoryBitwarden } from "./vault/bitwarden/VaultProviderFactoryBitwarden.js";
 import type { ConfigurationOptions } from "./ConfigurationOptions.js";
 import type { IKeyring } from "./keyring/IKeyring.js";
 import type { IVaultProvider } from "./vault/IVaultProvider.js";
+import type { IVaultProviderFactory } from "./vault/IVaultProviderFactory.js";
 import type { VaultOptions } from "./manifest/VaultOptions.js";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
 import type { IConfigurationLogger } from "./logging/IConfigurationLogger.js";
@@ -155,7 +157,15 @@ export class ConfigurationBootstrap {
       }
 
       const factories = resolvedOptions.vaultFactories ?? [];
-      const matchingFactory = factories.find((f) => f.kind === effectiveVault.kind);
+      let matchingFactory: IVaultProviderFactory | undefined = factories.find((f) => f.kind === effectiveVault.kind);
+      if (
+        !matchingFactory &&
+        (effectiveVault.kind === VaultProviderFactoryBitwarden.DEFAULT_KIND ||
+          effectiveVault.kind === VaultProviderFactoryBitwarden.SHORT_KIND ||
+          effectiveVault.kind === VaultProviderFactoryBitwarden.LEGACY_KIND)
+      ) {
+        matchingFactory = new VaultProviderFactoryBitwarden(effectiveVault.kind);
+      }
       if (!matchingFactory) {
         return fail(
           `No IVaultProviderFactory registered for vault kind '${effectiveVault.kind}'.`,

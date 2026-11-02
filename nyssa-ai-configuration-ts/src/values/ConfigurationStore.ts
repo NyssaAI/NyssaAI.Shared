@@ -18,7 +18,8 @@
 //     `-- setNamespace(namespace, value, signal)
 
 import * as path from "node:path";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
+import type { ConfigurationAttempt } from "./ConfigurationAttempt.js";
 import { ConfigurationDocumentLocalFile } from "./ConfigurationDocumentLocalFile.js";
 import { ConfigurationEntryResolver } from "./ConfigurationEntryResolver.js";
 import { NamespaceDocumentHandler } from "./NamespaceDocumentHandler.js";
@@ -258,7 +259,7 @@ export class ConfigurationStore {
     key: string,
     destinationProvider: string,
     signal?: AbortSignal
-  ): Promise<Result<ConfigurationMove>> {
+  ): Promise<ConfigurationAttempt<ConfigurationMove>> {
     return this._mover.move(namespace, key, destinationProvider, signal);
   }
 
@@ -266,11 +267,11 @@ export class ConfigurationStore {
     return this._namespaceHandler.getNamespace<T>(namespace, signal);
   }
 
-  public async setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>> {
+  public async setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>> {
     return this._namespaceHandler.setNamespace<T>(namespace, value, signal);
   }
 
-  public async mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>> {
+  public async mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>> {
     return this._namespaceHandler.mergeSettings<T>(namespace, value, signal);
   }
 
@@ -341,10 +342,7 @@ export class ConfigurationStore {
     return this.authorize(namespace, key, optsRes.value, signal);
   }
 
-  public async recover(
-    handle: ConfigurationRecoveryHandle,
-    signal?: AbortSignal
-  ): Promise<Result<ConfigurationRecoveryOutcome>> {
+  public async recover(handle: ConfigurationRecoveryHandle, signal?: AbortSignal): Promise<Result<ConfigurationRecoveryOutcome>> {
     return this._recoveryCoordinator.recover(handle, signal);
   }
 }

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
 import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
-import { ok, fail, type Result } from "../../src/results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { IVaultProvider } from "../../src/vault/IVaultProvider.js";
 import type { IVaultProviderFactory } from "../../src/vault/IVaultProviderFactory.js";
 
@@ -163,7 +163,7 @@ describe("VaultProvider Public Use Cases (F-203)", () => {
     expect(circularWrite.ok).toBe(false);
     if (!circularWrite.ok) {
       expect(circularWrite.category).toBe("Conflict");
-      expect(circularWrite.error).toContain("circular credential");
+      expect(circularWrite.message).toContain("circular credential");
     }
   });
 });

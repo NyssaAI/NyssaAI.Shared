@@ -6,7 +6,7 @@
 //     +-- getNamespace(namespace, signal)
 //     `-- list(namespace, signal)
 
-import { type Result } from "./results/Result.js";
+import { type Result } from "@nyssa-ai/result";
 
 /**
  * ConfigurationReader provides read-only access to settings, secrets, and OAuth access tokens.

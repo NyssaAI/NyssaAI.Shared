@@ -7,7 +7,7 @@
 //     +-- setUnreachable(unreachable)
 //     `-- writes
 
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { IKeyring } from "./IKeyring.js";
 
 /**

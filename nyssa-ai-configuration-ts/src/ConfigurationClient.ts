@@ -21,7 +21,8 @@
 //     `-- setNamespace(namespace, value, signal)
 
 import * as crypto from "node:crypto";
-import { ok, fail, type Result } from "./results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
+import { ConfigurationAttempt } from "./values/ConfigurationAttempt.js";
 import { ConfigurationBootstrap } from "./ConfigurationBootstrap.js";
 import type { ConfigurationStore } from "./values/ConfigurationStore.js";
 import type { Configuration } from "./Configuration.js";
@@ -154,13 +155,13 @@ export class ConfigurationClient {
     });
   }
 
-  public async setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>> {
+  public async setNamespace<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>> {
     return this.executeLogged("setNamespace", async () => {
       return this._store.setNamespace<T>(namespace, value, signal);
     });
   }
 
-  public async mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<Result<void>> {
+  public async mergeSettings<T>(namespace: string, value: T, signal?: AbortSignal): Promise<ConfigurationAttempt<void>> {
     return this.executeLogged("mergeSettings", async () => {
       return this._store.mergeSettings<T>(namespace, value, signal);
     });
@@ -187,7 +188,7 @@ export class ConfigurationClient {
     key: string,
     destinationProvider: string,
     signal?: AbortSignal
-  ): Promise<Result<ConfigurationMove>> {
+  ): Promise<ConfigurationAttempt<ConfigurationMove>> {
     return this.executeLogged("move", async () => {
       return this._store.move(namespace, key, destinationProvider, signal);
     });
@@ -225,7 +226,10 @@ export class ConfigurationClient {
     });
   }
 
-  private async executeLogged<T>(operation: string, action: () => Promise<Result<T>>): Promise<Result<T>> {
+  private async executeLogged<T extends { readonly ok: boolean; readonly error?: unknown }>(
+    operation: string,
+    action: () => Promise<T>
+  ): Promise<T> {
     const start = performance.now();
     const correlationId = crypto.randomUUID();
 
@@ -234,6 +238,7 @@ export class ConfigurationClient {
       const durationMs = Math.round(performance.now() - start);
 
       const level: LogRecord["level"] = result.ok ? "info" : "warn";
+      const errStr = typeof result.error === "string" ? result.error : String(result.error ?? "");
       this.safeLog({
         timestamp: new Date().toISOString(),
         level,
@@ -243,7 +248,7 @@ export class ConfigurationClient {
         operation,
         correlationId,
         durationMs,
-        ...(result.ok ? {} : { error: result.error })
+        ...(result.ok ? {} : { error: errStr })
       });
 
       return result;

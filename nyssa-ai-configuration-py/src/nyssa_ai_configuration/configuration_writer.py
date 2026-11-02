@@ -11,7 +11,7 @@
 from typing import Protocol
 
 from nyssa_ai_configuration.recovery.types import ConfigurationAttempt
-from nyssa_ai_configuration.results.result import Result
+from nyssa_ai_result import Result
 from nyssa_ai_configuration.values.types import ConfigurationRemoval
 
 

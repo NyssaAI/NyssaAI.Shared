@@ -9,7 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ok, fail, type Result } from "../results/Result.js";
+import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ProtectedFileSystem } from "../fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "../fileSecurity/DirectorySafety.js";
 import type { IKeyring } from "./IKeyring.js";
