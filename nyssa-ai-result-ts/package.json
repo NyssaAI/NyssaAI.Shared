@@ -1,6 +1,6 @@
 {
   "name": "@nyssa-ai/result",
-  "version": "0.1.1",
+  "version": "0.2.2",
   "description": "Railway-oriented Result discriminated union with pure combinators and explicit exception boundaries matching NyssaAI.Result",
   "type": "module",
   "main": "./dist/index.js",
