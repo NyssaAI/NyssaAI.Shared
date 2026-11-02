@@ -11,6 +11,8 @@ on:
       - 'nyssa-ai-db-gateway/v[0-9]*'
       - 'nyssa-ai-logging/v[0-9]*'
       - 'nyssa-ai-logging-ts/v[0-9]*'
+      - 'nyssa-ai-result/v[0-9]*'
+      - 'nyssa-ai-result-ts/v[0-9]*'
       - 'npm/v[0-9]*'
 
 permissions:
@@ -35,6 +37,9 @@ jobs:
             VERSION="${BASH_REMATCH[2]}"
           elif [[ "$TAG" =~ (nyssa-ai-logging|nyssa-ai-logging-ts)/v(.+) ]]; then
             DIR="nyssa-ai-logging-ts"
+            VERSION="${BASH_REMATCH[2]}"
+          elif [[ "$TAG" =~ (nyssa-ai-result|nyssa-ai-result-ts)/v(.+) ]]; then
+            DIR="nyssa-ai-result-ts"
             VERSION="${BASH_REMATCH[2]}"
           elif [[ "$TAG" =~ (nyssa-ai-configuration|nyssa-ai-configuration-ts)/v(.+) ]]; then
             DIR="nyssa-ai-configuration-ts"

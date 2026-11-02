@@ -10,6 +10,8 @@ on:
       - 'nyssa-ai-dbgateway-py/v[0-9]*'
       - 'nyssa-ai-logging/v[0-9]*'
       - 'nyssa-ai-logging-py/v[0-9]*'
+      - 'nyssa-ai-result/v[0-9]*'
+      - 'nyssa-ai-result-py/v[0-9]*'
       - 'py/v[0-9]*'
 
 permissions:
@@ -35,11 +37,14 @@ jobs:
           elif [[ "$TAG" =~ ^(nyssa-ai-logging|nyssa-ai-logging-py)/v(.+)$ ]]; then
             DIRS="nyssa-ai-logging-py"
             VERSION="${BASH_REMATCH[2]}"
+          elif [[ "$TAG" =~ ^(nyssa-ai-result|nyssa-ai-result-py)/v(.+)$ ]]; then
+            DIRS="nyssa-ai-result-py"
+            VERSION="${BASH_REMATCH[2]}"
           elif [[ "$TAG" =~ ^(nyssa-ai-configuration|nyssa-ai-configuration-py)/v(.+)$ ]]; then
             DIRS="nyssa-ai-configuration-py"
             VERSION="${BASH_REMATCH[2]}"
           elif [[ "$TAG" =~ ^(py/)?v(.+)$ ]]; then
-            DIRS="nyssa-ai-configuration-py nyssa-ai-dbgateway-py nyssa-ai-logging-py"
+            DIRS="nyssa-ai-result-py nyssa-ai-configuration-py nyssa-ai-dbgateway-py nyssa-ai-logging-py"
             VERSION="${BASH_REMATCH[2]}"
           else
             echo "Unsupported tag format: $TAG" >&2
