@@ -1,6 +1,6 @@
 # NyssaAI.Result (TypeScript)
 
-`nyssa-ai-result` gives TypeScript applications a consistent way to report whether an operation succeeded and, when it did not, what went wrong. A function returns `Result<T, E>` holding either the successful payload (`Ok<T>`) or structured errors (`Err<E>`).
+`@nyssa-ai/result` gives TypeScript applications a consistent way to report whether an operation succeeded and, when it did not, what went wrong. A function returns `Result<T, E>` holding either the successful payload (`Ok<T>`) or structured errors (`Err<E>`).
 
 The library implements Railway-Oriented Programming (ROP) with pure combinators and explicit exception boundaries, adhering to Jeremy Maynor's `dev-standards` (v0.6.3).
 
@@ -28,7 +28,7 @@ Volatile, external fallible boundaries catch exceptions and convert them into st
 ## Quickstart
 
 ```typescript
-import { Error, ErrorCategory, Guard, Result, ok, fail, try_ } from "nyssa-ai-result";
+import { Error, ErrorCategory, Guard, Result, ok, fail, try_ } from "@nyssa-ai/result";
 
 // 1. Success and Failure factories
 const resOk = Result.ok(42);

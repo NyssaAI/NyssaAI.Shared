@@ -10,7 +10,7 @@
 // +-- fail(error, category, recoveryHandle, progress)
 // `-- ok(value, progress, recoveryHandle)
 
-import { failError, ok as sharedOk } from "nyssa-ai-result";
+import { failError, ok as sharedOk } from "@nyssa-ai/result";
 import type { ConfigurationRecoveryHandle } from "../recovery/ConfigurationRecoveryHandle.js";
 import type { ConfigurationOperationProgress } from "../recovery/Types.js";
 
