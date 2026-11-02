@@ -160,8 +160,9 @@ class LogFile:
             if os.path.isfile(archive_path):
                 os.remove(archive_path)
 
-            if os.path.isfile(self._log_path):
-                os.rename(self._log_path, archive_path)
+            if os.path.exists(self._log_path) and not os.path.isfile(self._log_path):
+                raise OSError(f"Log path is not a regular file: {self._log_path}")
+            os.rename(self._log_path, archive_path)
 
             self._delete_expired_backups()
 
