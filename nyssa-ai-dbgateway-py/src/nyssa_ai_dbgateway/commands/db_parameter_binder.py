@@ -22,7 +22,9 @@ class DbParameterBinder:
 
     def add(self, name: str, value: object) -> None:
         """Add parameter, stripping leading '@' or ':' if present."""
-        clean_name = name.lstrip("@:")
+        clean_name = name.strip().lstrip("@:").strip()
+        if not clean_name:
+            raise ValueError("Parameter name cannot be empty.")
         self._values[clean_name] = value
 
     def add_many(self, parameters: Mapping[str, object]) -> None:

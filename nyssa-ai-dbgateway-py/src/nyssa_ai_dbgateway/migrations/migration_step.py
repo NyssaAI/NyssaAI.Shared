@@ -1,7 +1,7 @@
 # Responsibility: Define migration step record with universal or dialect-specific SQL and SHA-256 fingerprint.
 # Public interface:
 # `-- MigrationStep
-#     +-- compute_fingerprint()
+#     +-- compute_fingerprint(dialect)
 #     +-- down_sql
 #     +-- get_down_sql(dialect)
 #     +-- get_up_sql(dialect)
@@ -68,14 +68,10 @@ class MigrationStep:
             return self.postgres_down_sql
         return self.down_sql
 
-    def compute_fingerprint(self) -> str:
-        """Compute SHA-256 fingerprint exactly matching C# and TypeScript."""
-        up = self.up_sql if self.up_sql is not None else f"{self.sqlite_up_sql or ''};{self.postgres_up_sql or ''}"
-        down = self.down_sql if self.down_sql is not None else (
-            f"{self.sqlite_down_sql or ''};{self.postgres_down_sql or ''}"
-            if (self.sqlite_down_sql is not None or self.postgres_down_sql is not None)
-            else None
-        )
-        down_len = len(down) if down is not None else -1
-        raw = f"{self.number}:{len(up)}:{up}:{down_len}:{down or ''}"
+    def compute_fingerprint(self, dialect: DbDialect = "sqlite") -> str:
+        """Compute SHA-256 fingerprint matching C# and TypeScript."""
+        up_sql = self.get_up_sql(dialect)
+        down_sql = self.get_down_sql(dialect)
+        down_len = len(down_sql) if down_sql is not None else -1
+        raw = f"{self.number}:{len(up_sql)}:{up_sql}:{down_len}:{down_sql or ''}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest().lower()

@@ -1,5 +1,7 @@
 # Responsibility: Unit test parameter binding, placeholder rewriting, and value coercion.
 # Public interface:
+# +-- test_db_parameter_binder_invalid_name_raises_error()
+# +-- test_db_parameter_binder_missing_parameter_raises_error()
 # +-- test_db_parameter_binder_postgres_ordering()
 # +-- test_db_parameter_binder_sqlite_coercion()
 # +-- test_rewrite_sql_parameters_ignores_literals_and_comments()
@@ -9,6 +11,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
+import pytest
 from nyssa_ai_dbgateway.commands.db_parameter_binder import DbParameterBinder
 from nyssa_ai_dbgateway.commands.rewrite_sql_parameters import rewrite_sql_parameters
 
@@ -27,15 +30,24 @@ def test_rewrite_sql_parameters_ignores_literals_and_comments() -> None:
     assert params == ["real_param"]
 
 
+def test_db_parameter_binder_invalid_name_raises_error() -> None:
+    binder = DbParameterBinder()
+    for invalid in ("", "   ", "@", "  @  ", ":"):
+        with pytest.raises(ValueError, match="Parameter name cannot be empty"):
+            binder.add(invalid, "val")
+
+
 def test_db_parameter_binder_sqlite_coercion() -> None:
     binder = DbParameterBinder()
-    binder.add("active", True)
+    binder.add("  @active  ", True)
     binder.add("inactive", False)
     binder.add("amount", Decimal("19.99"))
     uid = UUID("12345678-1234-5678-1234-567812345678")
     binder.add("id", uid)
     now = datetime(2026, 10, 31, 12, 0, 0, tzinfo=timezone.utc)
     binder.add("created", now)
+    binder.add("blob", bytearray([1, 2, 3]))
+    binder.add("empty", None)
 
     sqlite_dict = binder.to_sqlite_dict()
     assert sqlite_dict["active"] == 1
@@ -43,6 +55,8 @@ def test_db_parameter_binder_sqlite_coercion() -> None:
     assert sqlite_dict["amount"] == "19.99"
     assert sqlite_dict["id"] == str(uid)
     assert "2026-10-31" in str(sqlite_dict["created"])
+    assert sqlite_dict["blob"] == b"\x01\x02\x03"
+    assert sqlite_dict["empty"] is None
 
 
 def test_db_parameter_binder_postgres_ordering() -> None:
@@ -53,3 +67,11 @@ def test_db_parameter_binder_postgres_ordering() -> None:
 
     pg_vals = binder.to_postgres_values(["a", "c", "b"])
     assert pg_vals == [1, 3, 2]
+
+
+def test_db_parameter_binder_missing_parameter_raises_error() -> None:
+    binder = DbParameterBinder()
+    binder.add("id", 1)
+    _, params = rewrite_sql_parameters("SELECT * FROM items WHERE id = @id AND missing = @missing")
+    with pytest.raises(ValueError, match="Missing parameter value for 'missing'"):
+        binder.to_postgres_values(params)

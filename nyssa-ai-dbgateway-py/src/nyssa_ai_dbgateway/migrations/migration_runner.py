@@ -65,7 +65,7 @@ class MigrationRunner:
                 if strict:
                     raise ValueError(f"Applied migration step {num} is missing from catalog.")
                 continue
-            expected_fp = step.compute_fingerprint()
+            expected_fp = step.compute_fingerprint(self._provider.dialect)
             if fp != expected_fp:
                 raise ValueError(
                     f"Migration step {num} fingerprint mismatch. Database: {fp}, Catalog: {expected_fp}."
@@ -95,7 +95,7 @@ class MigrationRunner:
             # Verify integrity
             for num, fp in history:
                 step = self._catalog.get_step(num)
-                if step is not None and step.compute_fingerprint() != fp:
+                if step is not None and step.compute_fingerprint(dialect) != fp:
                     raise ValueError(f"Corrupted migration history on step {num}.")
 
             applied: list[int] = []
@@ -109,7 +109,7 @@ class MigrationRunner:
                     if step is None:
                         raise ValueError(f"Missing migration step {step_num}.")
                     up_sql = step.get_up_sql(dialect)
-                    fp = step.compute_fingerprint()
+                    fp = step.compute_fingerprint(dialect)
 
                     conn.begin_transaction()
                     try:
