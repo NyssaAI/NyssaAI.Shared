@@ -45,6 +45,13 @@ class DbTransactionScope:
         self._timeout = command_timeout_seconds
         self._logger = logger
         self._completed = False
+        self._failed = False
+
+    def _ensure_active(self) -> None:
+        if self._completed:
+            raise RuntimeError("The transaction has already completed.")
+        if self._failed:
+            raise RuntimeError("The transaction failed and must be rolled back.")
 
     @property
     def database_provider(self) -> str:
@@ -59,6 +66,7 @@ class DbTransactionScope:
         command_or_sql: DbCommand[object] | DbNonQuery | str,
         params: Mapping[str, object] | Sequence[object] | None = None,
     ) -> object:
+        self._ensure_active()
         started = time.monotonic()
         try:
             if isinstance(command_or_sql, str):
@@ -71,6 +79,7 @@ class DbTransactionScope:
                 self._logger.debug("tx.execute", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"})
             return res
         except Exception as err:
+            self._failed = True
             if self._logger:
                 self._logger.error("tx.execute", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
             raise
@@ -84,6 +93,7 @@ class DbTransactionScope:
         sql: str,
         params: Mapping[str, object] | Sequence[object] | None = None,
     ) -> object:
+        self._ensure_active()
         started = time.monotonic()
         try:
             res = DbCommandExecutor.execute_scalar(self._conn, self._dialect, self._timeout, sql, params)
@@ -91,6 +101,7 @@ class DbTransactionScope:
                 self._logger.debug("tx.scalar", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"})
             return res
         except Exception as err:
+            self._failed = True
             if self._logger:
                 self._logger.error("tx.scalar", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
             raise
@@ -100,6 +111,7 @@ class DbTransactionScope:
         query_or_sql: DbQuery[object] | str,
         params: Mapping[str, object] | Sequence[object] | None = None,
     ) -> list[object]:
+        self._ensure_active()
         started = time.monotonic()
         try:
             if isinstance(query_or_sql, str):
@@ -110,6 +122,7 @@ class DbTransactionScope:
                 self._logger.debug("tx.query", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success", "count": len(rows)})
             return rows
         except Exception as err:
+            self._failed = True
             if self._logger:
                 self._logger.error("tx.query", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
             raise
@@ -123,9 +136,13 @@ class DbTransactionScope:
         return rows[0] if rows else None
 
     def commit(self) -> None:
-        if not self._completed:
+        self._ensure_active()
+        try:
             self._conn.commit()
             self._completed = True
+        except Exception:
+            self._failed = True
+            raise
 
     def rollback(self) -> None:
         if not self._completed:
@@ -142,9 +159,10 @@ class DbTransactionScope:
         exc_tb: TracebackType | None,
     ) -> None:
         try:
-            if exc_type is not None:
-                self.rollback()
-            else:
-                self.commit()
+            if not self._completed:
+                if exc_type is not None or self._failed:
+                    self.rollback()
+                else:
+                    self.commit()
         finally:
             self._conn.close()
