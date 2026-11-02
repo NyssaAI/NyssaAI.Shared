@@ -116,12 +116,11 @@ public sealed class ResultCancellationTests
     }
 
     [Fact]
-    public async Task ThenAsync_WhenTheOperationTimesOut_ReportsUnavailable()
+    public async Task ThenAsync_WhenTheOperationTimesOut_BubblesExceptionImmediately()
     {
-        var result = await Result<int>.Success(1)
-            .ThenAsync<int>(_ => throw new TaskCanceledException("t", new TimeoutException()));
-
-        Assert.Equal(ErrorCategory.Unavailable, Assert.Single(result.Errors).Category);
+        await Assert.ThrowsAsync<TaskCanceledException>(() =>
+            Result<int>.Success(1)
+                .ThenAsync<int>(_ => throw new TaskCanceledException("t", new TimeoutException())));
     }
 
     [Fact]

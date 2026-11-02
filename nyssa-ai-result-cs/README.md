@@ -153,7 +153,9 @@ var message = total.Resolve(
 
 `ThenAsync`, `TransformAsync`, and `ResolveAsync` accept callbacks that return `Task`. Call them on the result after awaiting the operation that produced it. A non-generic `Result` can also acquire a value through `ToGeneric(() => value)`; the callback runs only on success.
 
-Exceptions from `Then`, `Transform`, and `ToGeneric` callbacks become failures, except for `OutOfMemoryException`. `ThenAsync` and `TransformAsync` follow the same rule. Exceptions from `Resolve` callbacks propagate to the caller, as do exceptions from custom `Try` error handlers.
+Monadic chaining methods (`Then`, `ThenAsync`, `Transform`, `TransformAsync`) behave as **pure combinators** rather than defensive exception catchers. They follow the core architectural invariant: **fail fast on programmer defects; use `Result` for expected operational outcomes.** Unexpected exceptions (e.g., `NullReferenceException`, `ArgumentException`, coding bugs) bubble immediately rather than converting into silent `Result.Failure` values. Passing a null delegate throws `ArgumentNullException`.
+
+Exceptions from `Resolve` callbacks propagate to the caller, as do exceptions from custom `Try` error handlers. Exceptions from `ToGeneric` callbacks become failures, except for `OutOfMemoryException`.
 
 ## Validate input with Guard
 
@@ -218,6 +220,19 @@ var result = Result.Try(() => File.ReadAllText(path),
     exception => Error.FromException(exception, "Could not read the file."));
 ```
 
+Overloads accepting both a custom error handler and a `CancellationToken` allow combining specific database or network error mappings with caller cancellation tracking:
+
+```csharp
+var result = await Result.TryAsync(
+    token => ordersDb.SaveAsync(order, token),
+    ex => ex switch
+    {
+        DbException dbEx when dbEx.IsTransient => Error.FromMessages("Database unavailable.", dbEx.Message, ErrorCategory.Unavailable),
+        _ => Error.FromMessage(ex.Message, ErrorCategory.Unexpected)
+    },
+    cancellationToken);
+```
+
 `Error.FromException` describes one exception. `Error.FromExceptions` expands aggregate exceptions into separate errors and preserves the original errors carried by a `ResultException`, including one inside an aggregate. These factories copy the diagnostic messages and available stack traces; they do not retain the exception object. An exception that has never been thrown normally has no stack trace to copy.
 
 The default `Try` methods use this translation automatically. `OutOfMemoryException` propagates. A custom handler controls its own translation, but cancellation is classified before that handler is called.
@@ -260,7 +275,7 @@ var order = await orders.FindAsync(id).UnwrapAsync();
 
 `ResultException.Errors` retains all the original errors in a read-only snapshot. Its `Message` contains their user messages. Technical messages and captured stack text remain available through `Errors`, and the exception captures its own stack when thrown.
 
-Default `Try` calls and result-producing composition methods can convert a `ResultException` back to its original errors. This lets code return to result-based handling after an explicitly chosen throwing call.
+Default `Try` calls can convert a `ResultException` back to its original errors. This lets code return to result-based handling after an explicitly chosen throwing call.
 
 ## How the library is organized
 

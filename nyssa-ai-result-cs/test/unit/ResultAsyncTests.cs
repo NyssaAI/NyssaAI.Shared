@@ -33,23 +33,29 @@ public sealed class ResultAsyncTests
     }
 
     [Fact]
-    public async Task ThenAsync_WhenTheOperationThrows_ReturnsAFailure()
+    public async Task ThenAsync_WhenTheOperationThrows_BubblesExceptionImmediately()
     {
-        var result = await Result<int>.Success(1)
-            .ThenAsync<string>(_ => throw new InvalidOperationException("boom"));
-
-        Assert.True(result.IsFailure);
-        Assert.Contains("boom", Assert.Single(result.Errors).TechnicalMessage, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Result<int>.Success(1).ThenAsync<string>(_ => throw new InvalidOperationException("boom")));
     }
 
     [Fact]
-    public async Task ThenAsync_WhenTheOperationIsCancelled_ReportsCanceled()
+    public async Task ThenAsync_WhenTheOperationIsCancelled_BubblesExceptionImmediately()
     {
-        var result = await Result<int>.Success(1)
-            .ThenAsync<string>(_ => throw new OperationCanceledException(new CancellationToken(canceled: true)));
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            Result<int>.Success(1).ThenAsync<string>(_ => throw new OperationCanceledException(new CancellationToken(canceled: true))));
+    }
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(ErrorCategory.Canceled, Assert.Single(result.Errors).Category);
+    [Fact]
+    public async Task ThenAsync_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result<int>.Success(1);
+        var failure = Result<int>.Failure("error");
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            success.ThenAsync<string>((Func<int, Task<Result<string>>>)null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            failure.ThenAsync<string>((Func<int, Task<Result<string>>>)null!));
     }
 
     [Fact]
@@ -73,13 +79,22 @@ public sealed class ResultAsyncTests
     }
 
     [Fact]
-    public async Task TransformAsync_WhenTheProjectionThrows_CapturesTheException()
+    public async Task TransformAsync_WhenTheProjectionThrows_BubblesExceptionImmediately()
     {
-        var result = await Result<int>.Success(5)
-            .TransformAsync<int>(_ => throw new InvalidOperationException("projection"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Result<int>.Success(5).TransformAsync<int>(_ => throw new InvalidOperationException("projection")));
+    }
 
-        Assert.True(result.IsFailure);
-        Assert.Contains("projection", Assert.Single(result.Errors).TechnicalMessage, StringComparison.Ordinal);
+    [Fact]
+    public async Task TransformAsync_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result<int>.Success(5);
+        var failure = Result<int>.Failure("error");
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            success.TransformAsync<int>((Func<int, Task<int>>)null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            failure.TransformAsync<int>((Func<int, Task<int>>)null!));
     }
 
     [Fact]
@@ -214,17 +229,21 @@ public sealed class ResultAsyncTests
     }
 
     [Fact]
-    public async Task ThenAsync_WhenTheNonGenericContinuationThrows_ReturnsAFailure()
+    public async Task ThenAsync_WhenTheNonGenericContinuationThrows_BubblesExceptionImmediately()
     {
-        // Held in a typed local so overload resolution lands on ThenAsync(Func<Task<Result>>): a
-        // lambda whose body only throws offers nothing to infer TNext from, so written inline it
-        // would pick that overload by omission rather than by intent.
         Func<Task<Result>> throwing = () => throw new InvalidOperationException("boom");
 
-        var result = await Result.Success().ThenAsync(throwing);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Result.Success().ThenAsync(throwing));
+    }
 
-        Assert.True(result.IsFailure);
-        Assert.Contains("boom", Assert.Single(result.Errors).TechnicalMessage, StringComparison.Ordinal);
+    [Fact]
+    public async Task ThenAsync_NonGeneric_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result.Success();
+        var failure = Result.Failure("error");
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => success.ThenAsync((Func<Task<Result>>)null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => failure.ThenAsync((Func<Task<Result>>)null!));
     }
 
     [Fact]
@@ -245,13 +264,20 @@ public sealed class ResultAsyncTests
     }
 
     [Fact]
-    public async Task ThenAsync_WhenTheValueContinuationThrows_ReturnsAFailure()
+    public async Task ThenAsync_WhenTheValueContinuationThrows_BubblesExceptionImmediately()
     {
-        var result = await Result.Success()
-            .ThenAsync<int>(() => throw new InvalidOperationException("boom"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Result.Success().ThenAsync<int>(() => throw new InvalidOperationException("boom")));
+    }
 
-        Assert.True(result.IsFailure);
-        Assert.Contains("boom", Assert.Single(result.Errors).TechnicalMessage, StringComparison.Ordinal);
+    [Fact]
+    public async Task ThenAsync_NonGenericLifting_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result.Success();
+        var failure = Result.Failure("error");
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => success.ThenAsync<int>((Func<Task<Result<int>>>)null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => failure.ThenAsync<int>((Func<Task<Result<int>>>)null!));
     }
 
     [Fact]

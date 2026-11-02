@@ -95,19 +95,15 @@ public sealed record Result<TPayload>
     /// </summary>
     /// <param name="nextOperation">The operation to run on the success value.</param>
     /// <typeparam name="TNext">The payload type produced by the next operation.</typeparam>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="nextOperation"/> is null.</exception>
     public Result<TNext> Then<TNext>(Func<TPayload, Result<TNext>> nextOperation)
     {
+        ArgumentNullException.ThrowIfNull(nextOperation);
+
         if (IsFailure)
             return Result<TNext>.Propagate(Errors);
 
-        try
-        {
-            return nextOperation(Value);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return Result<TNext>.Propagate(Error.FromCaught(ex));
-        }
+        return nextOperation(Value);
     }
 
     /// <summary>
@@ -116,20 +112,16 @@ public sealed record Result<TPayload>
     /// </summary>
     /// <param name="nextOperation">The asynchronous operation to run on the success value.</param>
     /// <typeparam name="TNext">The payload type produced by the next operation.</typeparam>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="nextOperation"/> is null.</exception>
     public async Task<Result<TNext>> ThenAsync<TNext>(
         Func<TPayload, Task<Result<TNext>>> nextOperation)
     {
+        ArgumentNullException.ThrowIfNull(nextOperation);
+
         if (IsFailure)
             return Result<TNext>.Propagate(Errors);
 
-        try
-        {
-            return await nextOperation(Value).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return Result<TNext>.Propagate(Error.FromCaught(ex));
-        }
+        return await nextOperation(Value).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -138,19 +130,15 @@ public sealed record Result<TPayload>
     /// </summary>
     /// <param name="transformation">The projection to apply to the success value.</param>
     /// <typeparam name="TOut">The projected payload type.</typeparam>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="transformation"/> is null.</exception>
     public Result<TOut> Transform<TOut>(Func<TPayload, TOut> transformation)
     {
+        ArgumentNullException.ThrowIfNull(transformation);
+
         if (IsFailure)
             return Result<TOut>.Propagate(Errors);
 
-        try
-        {
-            return Result<TOut>.Success(transformation(Value));
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return Result<TOut>.Propagate(Error.FromCaught(ex));
-        }
+        return Result<TOut>.Success(transformation(Value));
     }
 
     /// <summary>
@@ -159,20 +147,16 @@ public sealed record Result<TPayload>
     /// </summary>
     /// <param name="transformation">The asynchronous projection to apply to the success value.</param>
     /// <typeparam name="TOut">The projected payload type.</typeparam>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="transformation"/> is null.</exception>
     public async Task<Result<TOut>> TransformAsync<TOut>(Func<TPayload, Task<TOut>> transformation)
     {
+        ArgumentNullException.ThrowIfNull(transformation);
+
         if (IsFailure)
             return Result<TOut>.Propagate(Errors);
 
-        try
-        {
-            var value = await transformation(Value).ConfigureAwait(false);
-            return Result<TOut>.Success(value);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return Result<TOut>.Propagate(Error.FromCaught(ex));
-        }
+        var value = await transformation(Value).ConfigureAwait(false);
+        return Result<TOut>.Success(value);
     }
 
     /// <summary>

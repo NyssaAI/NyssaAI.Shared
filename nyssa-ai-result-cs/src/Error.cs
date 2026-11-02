@@ -230,9 +230,9 @@ public sealed record Error
     }
 
     /// <summary>
-    /// Translates any caught exception under the single policy every <c>Try</c> and composition
-    /// operator shares: a cancellation is classified with <see cref="FromCancellation"/>, anything
-    /// else with <see cref="FromExceptions(Exception, string, ErrorCategory)"/>.
+    /// Translates any caught exception under the single policy default <c>Try</c> factories and
+    /// explicit exception boundaries use: a cancellation is classified with <see cref="FromCancellation"/>,
+    /// anything else with <see cref="FromExceptions(Exception, string, ErrorCategory)"/>.
     /// </summary>
     internal static IReadOnlyList<Error> FromCaught(Exception? exception, CancellationToken? callerToken = null) =>
         exception is OperationCanceledException canceled

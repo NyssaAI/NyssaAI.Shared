@@ -90,16 +90,22 @@ public sealed class ResultGenericTests
     }
 
     [Fact]
-    public void Then_WhenOperationThrows_CapturesException()
+    public void Then_WhenOperationThrows_BubblesExceptionImmediately()
     {
         var result = Result<int>.Success(5);
 
-        var final = result.Then<int>(_ =>
-            throw new InvalidOperationException("Operation failed"));
+        Assert.Throws<InvalidOperationException>(() =>
+            result.Then<int>(_ => throw new InvalidOperationException("Operation failed")));
+    }
 
-        Assert.False(final.IsSuccess);
-        Assert.Equal("An unexpected error occurred", final.Errors[0].UserMessage);
-        Assert.Contains("Operation failed", final.Errors[0].TechnicalMessage, StringComparison.Ordinal);
+    [Fact]
+    public void Then_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result<int>.Success(5);
+        var failure = Result<int>.Failure("error");
+
+        Assert.Throws<ArgumentNullException>(() => success.Then<string>((Func<int, Result<string>>)null!));
+        Assert.Throws<ArgumentNullException>(() => failure.Then<string>((Func<int, Result<string>>)null!));
     }
 
     [Fact]
@@ -320,12 +326,22 @@ public sealed class ResultGenericTests
     }
 
     [Fact]
-    public void Transform_WhenTheProjectionThrows_CapturesTheException()
+    public void Transform_WhenTheProjectionThrows_BubblesExceptionImmediately()
     {
-        var result = Result<int>.Success(5).Transform<int>(_ => throw new InvalidOperationException("projection"));
+        var result = Result<int>.Success(5);
 
-        Assert.True(result.IsFailure);
-        Assert.Contains("projection", Assert.Single(result.Errors).TechnicalMessage, StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() =>
+            result.Transform<int>(_ => throw new InvalidOperationException("projection")));
+    }
+
+    [Fact]
+    public void Transform_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result<int>.Success(5);
+        var failure = Result<int>.Failure("error");
+
+        Assert.Throws<ArgumentNullException>(() => success.Transform<string>((Func<int, string>)null!));
+        Assert.Throws<ArgumentNullException>(() => failure.Transform<string>((Func<int, string>)null!));
     }
 
     [Fact]

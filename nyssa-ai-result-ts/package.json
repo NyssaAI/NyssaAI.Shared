@@ -1,0 +1,50 @@
+{
+  "name": "nyssa-ai-result",
+  "version": "0.1.0",
+  "description": "Railway-oriented Result discriminated union with pure combinators and explicit exception boundaries matching NyssaAI.Result",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./*": {
+      "import": "./dist/*.js",
+      "types": "./dist/*.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('./dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc && node -e \"const fs = require('node:fs'); fs.appendFileSync('./dist/index.d.ts', '\\nexport type { ErrorCategory } from \\'./ErrorCategory.js\\';\\nexport type { Error } from \\'./Error.js\\';\\nexport type { ResultException } from \\'./ResultException.js\\';\\nexport type { Ok } from \\'./Ok.js\\';\\nexport type { Err } from \\'./Err.js\\';\\nexport type { Result } from \\'./Result.js\\';\\nexport type { Guard } from \\'./Guard.js\\';\\n'); fs.appendFileSync('./dist/Result.d.ts', '\\nexport type { Ok } from \\'./Ok.js\\';\\nexport type { Err } from \\'./Err.js\\';\\n');\"",
+    "prepack": "npm run build",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:usecase": "vitest run test/use_case",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NyssaAI/NyssaAI.Shared.git",
+    "directory": "nyssa-ai-result-ts"
+  },
+  "keywords": [
+    "result",
+    "railway-oriented-programming",
+    "error-handling",
+    "discriminated-union",
+    "guard"
+  ],
+  "author": "NyssaAI",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

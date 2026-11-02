@@ -70,19 +70,15 @@ public sealed partial record Result
     /// Chains this result into the next operation, known traditionally as the monadic <c>bind</c>.
     /// </summary>
     /// <param name="nextOperation">The operation to run when this result succeeded.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="nextOperation"/> is null.</exception>
     public Result Then(Func<Result> nextOperation)
     {
+        ArgumentNullException.ThrowIfNull(nextOperation);
+
         if (IsFailure)
             return this;
 
-        try
-        {
-            return nextOperation();
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return new(Error.FromCaught(ex));
-        }
+        return nextOperation();
     }
 
     /// <summary>
@@ -91,19 +87,15 @@ public sealed partial record Result
     /// </summary>
     /// <param name="nextOperation">The operation to run when this result succeeded.</param>
     /// <typeparam name="TNext">The payload type produced by the next operation.</typeparam>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="nextOperation"/> is null.</exception>
     public Result<TNext> Then<TNext>(Func<Result<TNext>> nextOperation)
     {
+        ArgumentNullException.ThrowIfNull(nextOperation);
+
         if (IsFailure)
             return Result<TNext>.Propagate(Errors);
 
-        try
-        {
-            return nextOperation();
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return Result<TNext>.Propagate(Error.FromCaught(ex));
-        }
+        return nextOperation();
     }
 
     /// <summary>
@@ -111,19 +103,15 @@ public sealed partial record Result
     /// <see cref="Then(Func{Result})"/>, known traditionally as the monadic <c>bind</c>.
     /// </summary>
     /// <param name="nextOperation">The asynchronous operation to run when this result succeeded.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="nextOperation"/> is null.</exception>
     public async Task<Result> ThenAsync(Func<Task<Result>> nextOperation)
     {
+        ArgumentNullException.ThrowIfNull(nextOperation);
+
         if (IsFailure)
             return this;
 
-        try
-        {
-            return await nextOperation().ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return new(Error.FromCaught(ex));
-        }
+        return await nextOperation().ConfigureAwait(false);
     }
 
     /// <summary>
@@ -132,19 +120,15 @@ public sealed partial record Result
     /// </summary>
     /// <param name="nextOperation">The asynchronous operation to run when this result succeeded.</param>
     /// <typeparam name="TNext">The payload type produced by the next operation.</typeparam>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="nextOperation"/> is null.</exception>
     public async Task<Result<TNext>> ThenAsync<TNext>(Func<Task<Result<TNext>>> nextOperation)
     {
+        ArgumentNullException.ThrowIfNull(nextOperation);
+
         if (IsFailure)
             return Result<TNext>.Propagate(Errors);
 
-        try
-        {
-            return await nextOperation().ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return Result<TNext>.Propagate(Error.FromCaught(ex));
-        }
+        return await nextOperation().ConfigureAwait(false);
     }
 
     /// <summary>

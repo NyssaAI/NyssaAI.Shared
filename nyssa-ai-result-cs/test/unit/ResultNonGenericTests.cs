@@ -274,12 +274,37 @@ public sealed class ResultNonGenericTests
     }
 
     [Fact]
-    public void Then_WhenTheOperationThrows_CapturesTheException()
+    public void Then_WhenTheOperationThrows_BubblesExceptionImmediately()
     {
-        var result = Result.Success().Then(() => throw new InvalidOperationException("next"));
+        Assert.Throws<InvalidOperationException>(() =>
+            Result.Success().Then(() => throw new InvalidOperationException("next")));
+    }
 
-        Assert.True(result.IsFailure);
-        Assert.Contains("next", Assert.Single(result.Errors).TechnicalMessage, StringComparison.Ordinal);
+    [Fact]
+    public void Then_GenericOverload_WhenTheOperationThrows_BubblesExceptionImmediately()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            Result.Success().Then<int>(() => throw new InvalidOperationException("next")));
+    }
+
+    [Fact]
+    public void Then_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result.Success();
+        var failure = Result.Failure("error");
+
+        Assert.Throws<ArgumentNullException>(() => success.Then((Func<Result>)null!));
+        Assert.Throws<ArgumentNullException>(() => failure.Then((Func<Result>)null!));
+    }
+
+    [Fact]
+    public void Then_GenericOverload_WithNullDelegate_ThrowsArgumentNullException()
+    {
+        var success = Result.Success();
+        var failure = Result.Failure("error");
+
+        Assert.Throws<ArgumentNullException>(() => success.Then<int>((Func<Result<int>>)null!));
+        Assert.Throws<ArgumentNullException>(() => failure.Then<int>((Func<Result<int>>)null!));
     }
 
     [Fact]

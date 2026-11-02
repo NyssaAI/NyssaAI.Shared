@@ -17,10 +17,7 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs an action that may throw, translating any exception into a failure. The token is passed
-    /// to the action and used to tell the caller's own cancellation from an internal timeout.
-    /// </summary>
+    /// <summary>Runs an action that may throw, translating any exception into a failure with caller cancellation evidence.</summary>
     /// <param name="action">The action to run.</param>
     /// <param name="cancellationToken">The caller's token.</param>
     public static Result Try(Action<CancellationToken> action, CancellationToken cancellationToken)
@@ -51,10 +48,7 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs a function that may throw, translating any exception into a failure. The token is passed
-    /// to the function and used to tell the caller's own cancellation from an internal timeout.
-    /// </summary>
+    /// <summary>Runs a function that may throw, translating any exception into a failure with caller cancellation evidence.</summary>
     /// <param name="func">The function to run.</param>
     /// <param name="cancellationToken">The caller's token.</param>
     /// <typeparam name="T">The payload type the function produces.</typeparam>
@@ -70,12 +64,9 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs an action that may throw, mapping any exception with the given handler. A cancellation
-    /// is classified before the handler is consulted; a handler that returns null yields a sentinel error.
-    /// </summary>
+    /// <summary>Runs an action that may throw, mapping any non-cancellation exception with the given handler.</summary>
     /// <param name="action">The action to run.</param>
-    /// <param name="errorHandler">Translates a thrown exception into an error.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
     public static Result Try(Action action, Func<Exception, Error> errorHandler)
     {
         try
@@ -93,12 +84,31 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs a function that may throw, mapping any exception with the given handler. A cancellation
-    /// is classified before the handler is consulted; a handler that returns null yields a sentinel error.
-    /// </summary>
+    /// <summary>Runs an action that may throw, mapping exceptions with the given handler and using caller cancellation evidence.</summary>
+    /// <param name="action">The action to run.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
+    /// <param name="cancellationToken">The caller's token.</param>
+    public static Result Try(
+        Action<CancellationToken> action, Func<Exception, Error> errorHandler, CancellationToken cancellationToken)
+    {
+        try
+        {
+            action(cancellationToken);
+            return Success();
+        }
+        catch (OperationCanceledException canceled)
+        {
+            return Failure(Error.FromCancellation(canceled, cancellationToken));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return Failure(errorHandler(ex));
+        }
+    }
+
+    /// <summary>Runs a function that may throw, mapping any non-cancellation exception with the given handler.</summary>
     /// <param name="func">The function to run.</param>
-    /// <param name="errorHandler">Translates a thrown exception into an error.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
     /// <typeparam name="T">The payload type the function produces.</typeparam>
     public static Result<T> Try<T>(Func<T> func, Func<Exception, Error> errorHandler)
     {
@@ -109,6 +119,28 @@ public sealed partial record Result
         catch (OperationCanceledException canceled)
         {
             return Result<T>.Failure(Error.FromCancellation(canceled));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return Result<T>.Failure(errorHandler(ex));
+        }
+    }
+
+    /// <summary>Runs a function that may throw, mapping exceptions with the given handler and using caller cancellation evidence.</summary>
+    /// <param name="func">The function to run.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
+    /// <param name="cancellationToken">The caller's token.</param>
+    /// <typeparam name="T">The payload type the function produces.</typeparam>
+    public static Result<T> Try<T>(
+        Func<CancellationToken, T> func, Func<Exception, Error> errorHandler, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Result<T>.Success(func(cancellationToken));
+        }
+        catch (OperationCanceledException canceled)
+        {
+            return Result<T>.Failure(Error.FromCancellation(canceled, cancellationToken));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -131,16 +163,10 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs an asynchronous action that may throw, translating any exception into a failure. The
-    /// token is passed to the action and used to tell the caller's own cancellation from an
-    /// internal timeout.
-    /// </summary>
+    /// <summary>Runs an asynchronous action that may throw, translating exceptions with caller cancellation evidence.</summary>
     /// <param name="action">The asynchronous action to run.</param>
     /// <param name="cancellationToken">The caller's token.</param>
-    public static async Task<Result> TryAsync(
-        Func<CancellationToken, Task> action,
-        CancellationToken cancellationToken)
+    public static async Task<Result> TryAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken)
     {
         try
         {
@@ -169,17 +195,12 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs an asynchronous function that may throw, translating any exception into a failure. The
-    /// token is passed to the function and used to tell the caller's own cancellation from an
-    /// internal timeout.
-    /// </summary>
+    /// <summary>Runs an asynchronous function that may throw, translating exceptions with caller cancellation evidence.</summary>
     /// <param name="func">The asynchronous function to run.</param>
     /// <param name="cancellationToken">The caller's token.</param>
     /// <typeparam name="T">The payload type the function produces.</typeparam>
     public static async Task<Result<T>> TryAsync<T>(
-        Func<CancellationToken, Task<T>> func,
-        CancellationToken cancellationToken)
+        Func<CancellationToken, Task<T>> func, CancellationToken cancellationToken)
     {
         try
         {
@@ -192,13 +213,9 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs an asynchronous action that may throw, mapping any exception with the handler. A
-    /// cancellation is classified before the handler is consulted; a handler that returns null
-    /// yields a sentinel error.
-    /// </summary>
+    /// <summary>Runs an asynchronous action that may throw, mapping any non-cancellation exception with the handler.</summary>
     /// <param name="action">The asynchronous action to run.</param>
-    /// <param name="errorHandler">Translates a thrown exception into an error.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
     public static async Task<Result> TryAsync(Func<Task> action, Func<Exception, Error> errorHandler)
     {
         try
@@ -216,17 +233,33 @@ public sealed partial record Result
         }
     }
 
-    /// <summary>
-    /// Runs an asynchronous function that may throw, mapping any exception with the handler. A
-    /// cancellation is classified before the handler is consulted; a handler that returns null
-    /// yields a sentinel error.
-    /// </summary>
+    /// <summary>Runs an asynchronous action that may throw, mapping exceptions with handler and caller cancellation evidence.</summary>
+    /// <param name="action">The asynchronous action to run.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
+    /// <param name="cancellationToken">The caller's token.</param>
+    public static async Task<Result> TryAsync(
+        Func<CancellationToken, Task> action, Func<Exception, Error> errorHandler, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await action(cancellationToken).ConfigureAwait(false);
+            return Success();
+        }
+        catch (OperationCanceledException canceled)
+        {
+            return Failure(Error.FromCancellation(canceled, cancellationToken));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return Failure(errorHandler(ex));
+        }
+    }
+
+    /// <summary>Runs an asynchronous function that may throw, mapping any non-cancellation exception with the handler.</summary>
     /// <param name="func">The asynchronous function to run.</param>
-    /// <param name="errorHandler">Translates a thrown exception into an error.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
     /// <typeparam name="T">The payload type the function produces.</typeparam>
-    public static async Task<Result<T>> TryAsync<T>(
-        Func<Task<T>> func,
-        Func<Exception, Error> errorHandler)
+    public static async Task<Result<T>> TryAsync<T>(Func<Task<T>> func, Func<Exception, Error> errorHandler)
     {
         try
         {
@@ -236,6 +269,29 @@ public sealed partial record Result
         catch (OperationCanceledException canceled)
         {
             return Result<T>.Failure(Error.FromCancellation(canceled));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return Result<T>.Failure(errorHandler(ex));
+        }
+    }
+
+    /// <summary>Runs an asynchronous function that may throw, mapping exceptions with handler and caller cancellation evidence.</summary>
+    /// <param name="func">The asynchronous function to run.</param>
+    /// <param name="errorHandler">Translates a thrown non-cancellation exception into an error.</param>
+    /// <param name="cancellationToken">The caller's token.</param>
+    /// <typeparam name="T">The payload type the function produces.</typeparam>
+    public static async Task<Result<T>> TryAsync<T>(
+        Func<CancellationToken, Task<T>> func, Func<Exception, Error> errorHandler, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var value = await func(cancellationToken).ConfigureAwait(false);
+            return Result<T>.Success(value);
+        }
+        catch (OperationCanceledException canceled)
+        {
+            return Result<T>.Failure(Error.FromCancellation(canceled, cancellationToken));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
