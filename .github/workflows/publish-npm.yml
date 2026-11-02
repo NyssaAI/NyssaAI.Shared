@@ -62,6 +62,13 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Build local dependencies if needed
+        if: steps.target.outputs.pkg_dir == 'nyssa-ai-configuration-ts'
+        run: |
+          cd nyssa-ai-result-ts
+          npm ci
+          npm run build
+
       - name: Install dependencies
         working-directory: ${{ steps.target.outputs.pkg_dir }}
         run: npm ci

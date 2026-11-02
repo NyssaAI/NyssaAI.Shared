@@ -47,6 +47,7 @@ try {
     }
 
     $tsPackages = @(
+        'nyssa-ai-result-ts',
         'nyssa-ai-configuration-ts',
         'nyssa-ai-dbgateway-ts',
         'nyssa-ai-logging-ts'
@@ -57,6 +58,7 @@ try {
             if (-not (Test-Path "node_modules")) {
                 npm ci
             }
+            npm run build
             npm run test
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         }
