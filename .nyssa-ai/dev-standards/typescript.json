@@ -3,31 +3,32 @@
   "source_roots": [
     "nyssa-ai-configuration-ts/src",
     "nyssa-ai-dbgateway-ts/src",
-    "nyssa-ai-logging-ts/src"
+    "nyssa-ai-logging-ts/src",
+    "nyssa-ai-result-ts/src"
   ],
   "commands": {
     "build": {
-      "cwd": "nyssa-ai-configuration-ts",
+      "cwd": ".",
       "argv": [
-        "npm",
-        "run",
-        "build"
+        "node",
+        "-e",
+        "const {execFileSync}=require('node:child_process'); const npm=process.platform==='win32'?'npm.cmd':'npm'; for(const p of ['nyssa-ai-result-ts','nyssa-ai-logging-ts','nyssa-ai-dbgateway-ts','nyssa-ai-configuration-ts']) execFileSync(npm,['--prefix',p,'run','build'],{stdio:'inherit',shell:process.platform==='win32'});"
       ]
     },
     "unit": {
-      "cwd": "nyssa-ai-configuration-ts",
+      "cwd": ".",
       "argv": [
-        "npm",
-        "run",
-        "test:unit"
+        "node",
+        "-e",
+        "const {execFileSync}=require('node:child_process'); const npm=process.platform==='win32'?'npm.cmd':'npm'; for(const p of ['nyssa-ai-result-ts','nyssa-ai-logging-ts','nyssa-ai-dbgateway-ts','nyssa-ai-configuration-ts']) execFileSync(npm,['--prefix',p,'run','test:unit'],{stdio:'inherit',shell:process.platform==='win32'});"
       ]
     },
     "use_case": {
-      "cwd": "nyssa-ai-configuration-ts",
+      "cwd": ".",
       "argv": [
-        "npm",
-        "run",
-        "test:usecase"
+        "node",
+        "-e",
+        "const {execFileSync}=require('node:child_process'); const npm=process.platform==='win32'?'npm.cmd':'npm'; for(const p of ['nyssa-ai-result-ts','nyssa-ai-logging-ts','nyssa-ai-dbgateway-ts','nyssa-ai-configuration-ts']) execFileSync(npm,['--prefix',p,'run','test:usecase'],{stdio:'inherit',shell:process.platform==='win32'});"
       ]
     }
   },
