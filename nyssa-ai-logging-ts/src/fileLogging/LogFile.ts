@@ -75,8 +75,7 @@ export class LogFile {
 
     try {
       if (this.fd === null) {
-        const nowMs = this.clock.now().getTime();
-        if (this.reopenRetryAtMs !== null && nowMs < this.reopenRetryAtMs) {
+        if (this.reopenRetryAtMs === null || this.clock.now().getTime() < this.reopenRetryAtMs) {
           return;
         }
 
@@ -124,6 +123,9 @@ export class LogFile {
   }
 
   private openAppend(targetPath: string): number {
+    if (fs.existsSync(targetPath) && !LogFile.isExistingFile(targetPath)) {
+      throw new Error(`Log path is not a regular file: ${targetPath}`);
+    }
     return fs.openSync(targetPath, "a", OwnerOnlyAccess.OWNER_READ_WRITE);
   }
 
@@ -138,11 +140,11 @@ export class LogFile {
         const olderPath = `${this.logPath}.${index}`;
         const newerPath = `${this.logPath}.${index + 1}`;
 
-        if (!fs.existsSync(olderPath)) {
+        if (!LogFile.isExistingFile(olderPath)) {
           continue;
         }
 
-        if (fs.existsSync(newerPath)) {
+        if (LogFile.isExistingFile(newerPath)) {
           fs.unlinkSync(newerPath);
         }
 
@@ -150,13 +152,14 @@ export class LogFile {
       }
 
       const archivePath = `${this.logPath}.1`;
-      if (fs.existsSync(archivePath)) {
+      if (LogFile.isExistingFile(archivePath)) {
         fs.unlinkSync(archivePath);
       }
 
-      if (fs.existsSync(this.logPath)) {
-        fs.renameSync(this.logPath, archivePath);
+      if (fs.existsSync(this.logPath) && !LogFile.isExistingFile(this.logPath)) {
+        throw new Error(`Log path is not a regular file: ${this.logPath}`);
       }
+      fs.renameSync(this.logPath, archivePath);
 
       this.deleteExpiredBackups();
 
@@ -165,6 +168,14 @@ export class LogFile {
       this.bytesWritten = 0;
       this.rotationRetryAtBytes = 0;
     } catch (error) {
+      if (this.fd !== null) {
+        try {
+          fs.closeSync(this.fd);
+        } catch {
+          // Best-effort close on failed rotation
+        }
+        this.fd = null;
+      }
       const message = error instanceof Error ? error.message : String(error);
       StderrDiagnostics.error(this.logPath, `failed to rotate log file: ${message}`);
       this.tryReopenAfterFailedRotation();
@@ -183,7 +194,7 @@ export class LogFile {
 
     for (let index = 1; index <= LogFile.BACKUP_RETENTION; index++) {
       const backupPath = path.join(directory, `${baseName}.${index}`);
-      if (!fs.existsSync(backupPath)) {
+      if (!LogFile.isExistingFile(backupPath)) {
         continue;
       }
 
@@ -200,18 +211,27 @@ export class LogFile {
   }
 
   private tryReopenAfterFailedRotation(): void {
+    if (this.fd !== null) {
+      return;
+    }
+
     try {
       this.fd = this.openAppend(this.logPath);
       this.bytesWritten = fs.fstatSync(this.fd).size;
-      this.rotationRetryAtBytes = this.bytesWritten + BYTES_PER_MEGABYTE;
+      this.rotationRetryAtBytes = this.bytesWritten + this.rotationTriggerBytes;
       this.reopenRetryAtMs = null;
     } catch (error) {
       this.reopenRetryAtMs = this.clock.now().getTime() + REOPEN_RETRY_DELAY_MS;
       const message = error instanceof Error ? error.message : String(error);
-      StderrDiagnostics.error(
-        this.logPath,
-        `failed to reopen log file after failed rotation: ${message}`
-      );
+      StderrDiagnostics.error(this.logPath, `failed to reopen log file: ${message}`);
+    }
+  }
+
+  private static isExistingFile(targetPath: string): boolean {
+    try {
+      return fs.statSync(targetPath).isFile();
+    } catch {
+      return false;
     }
   }
 }

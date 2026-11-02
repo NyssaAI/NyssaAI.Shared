@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { LogFile } from "../../src/fileLogging/LogFile.js";
 import { TempLogWorkspace } from "./helpers/TempLogWorkspace.js";
 import { FixedClock } from "./helpers/FixedClock.js";
+import { StderrCapture } from "./helpers/StderrCapture.js";
 import type { LogRecord } from "../../src/fileLogging/LogRecord.js";
 
 function createRecord(message: string): LogRecord {
@@ -30,6 +31,20 @@ function countBackups(basePath: string): number {
   return count;
 }
 
+function countRotationFailures(stderrLines: string[]): number {
+  return stderrLines
+    .join("")
+    .split("\n")
+    .filter(line => line.includes("failed to rotate log file")).length;
+}
+
+function countReopenFailures(stderrLines: string[]): number {
+  return stderrLines
+    .join("")
+    .split("\n")
+    .filter(line => line.includes("failed to reopen log file")).length;
+}
+
 describe("LogFileRotation", () => {
   it("writeRecord_whenTheFilePassesTheTrigger_archivesItAndStartsANewOne", () => {
     const workspace = new TempLogWorkspace();
@@ -53,7 +68,7 @@ describe("LogFileRotation", () => {
     } finally {
       workspace.dispose();
     }
-  });
+  }, 15_000);
 
   it("writeRecord_whenRotatingRepeatedly_shiftsBackupsOldestLast", () => {
     const workspace = new TempLogWorkspace();
@@ -76,7 +91,7 @@ describe("LogFileRotation", () => {
     } finally {
       workspace.dispose();
     }
-  });
+  }, 15_000);
 
   it("writeRecord_accumulatesBackupsUpToRetention", () => {
     const workspace = new TempLogWorkspace();
@@ -92,6 +107,134 @@ describe("LogFileRotation", () => {
       expect(countBackups(workspace.logPath)).toBe(LogFile.BACKUP_RETENTION);
       expect(fs.existsSync(`${workspace.logPath}.${LogFile.BACKUP_RETENTION + 1}`)).toBe(false);
     } finally {
+      workspace.dispose();
+    }
+  }, 15_000);
+
+  it.each([
+    [64, 1],
+    [1024 * 1024, 0]
+  ])(
+    "writeRecord_rotatesOnlyOnceFilePassesTrigger (%i bytes -> %i backups)",
+    (triggerBytes, expectedBackups) => {
+      const workspace = new TempLogWorkspace();
+      try {
+        const log = new LogFile(workspace.logPath, triggerBytes);
+        expect(log.initialize()).toBeNull();
+
+        log.writeRecord(createRecord("first"));
+        log.writeRecord(createRecord("second"));
+        log.dispose();
+
+        expect(countBackups(workspace.logPath)).toBe(expectedBackups);
+      } finally {
+        workspace.dispose();
+      }
+    }
+  );
+
+  it("writeRecord_whenRotationFails_reportsOnceThenBacksOffByOneTrigger", () => {
+    const trigger = 1024;
+    const workspace = new TempLogWorkspace();
+    const stderrLines: string[] = [];
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array): boolean => {
+        stderrLines.push(String(chunk));
+        return true;
+      });
+    try {
+      fs.mkdirSync(`${workspace.logPath}.1`, { recursive: true });
+      const log = new LogFile(workspace.logPath, trigger);
+      expect(log.initialize()).toBeNull();
+      const big = "x".repeat(trigger + 100);
+
+      log.writeRecord(createRecord(big)); // over the trigger, no attempt yet
+      log.writeRecord(createRecord("second")); // attempt 1 fails; back off one trigger
+      log.writeRecord(createRecord("third")); // inside the back-off window
+      log.writeRecord(createRecord("fourth")); // still inside
+      expect(countRotationFailures(stderrLines)).toBe(1);
+
+      log.writeRecord(createRecord(big)); // pushes past the retry threshold
+      log.writeRecord(createRecord("sixth")); // attempt 2
+      log.dispose();
+      expect(countRotationFailures(stderrLines)).toBe(2);
+
+      const content = fs.readFileSync(workspace.logPath, "utf8");
+      for (const message of ["second", "third", "fourth", "sixth"]) {
+        expect(content).toContain(message);
+      }
+    } finally {
+      stderrSpy.mockRestore();
+      workspace.dispose();
+    }
+  });
+
+  it("writeRecord_whenRotationAndReopenFail_resumesAfterAccessIsRestored", () => {
+    const clock = new FixedClock(new Date("2026-10-13T12:00:00.000Z"));
+    const workspace = new TempLogWorkspace();
+    const stderr = new StderrCapture();
+    try {
+      const log = new LogFile(workspace.logPath, 64, clock);
+      expect(log.initialize()).toBeNull();
+      log.writeRecord(createRecord("before outage"));
+
+      const displacedPath = `${workspace.logPath}.displaced`;
+      fs.renameSync(workspace.logPath, displacedPath);
+      fs.mkdirSync(workspace.logPath, { recursive: true });
+      log.writeRecord(createRecord("during outage"));
+      expect(countRotationFailures([stderr.text])).toBe(1);
+      expect(countReopenFailures([stderr.text])).toBe(1);
+
+      for (let i = 0; i < 10; i++) {
+        log.writeRecord(createRecord("still unavailable"));
+      }
+      expect(countReopenFailures([stderr.text])).toBe(1);
+
+      clock.advance(60_000);
+      log.writeRecord(createRecord("retry while unavailable"));
+      expect(countReopenFailures([stderr.text])).toBe(2);
+
+      fs.rmdirSync(workspace.logPath);
+      fs.renameSync(displacedPath, workspace.logPath);
+      clock.advance(60_000);
+      log.writeRecord(createRecord("after recovery"));
+      log.dispose();
+
+      const content = fs.readFileSync(workspace.logPath, "utf8");
+      expect(content).toContain("before outage");
+      expect(content).toContain("after recovery");
+      expect(content).not.toContain("during outage");
+      expect(countReopenFailures([stderr.text])).toBe(2);
+    } finally {
+      stderr.dispose();
+      workspace.dispose();
+    }
+  });
+
+  it("writeRecord_whenDisposedAfterRotationAndReopenFail_doesNotReopen", () => {
+    const clock = new FixedClock(new Date("2026-10-13T12:00:00.000Z"));
+    const workspace = new TempLogWorkspace();
+    const stderr = new StderrCapture();
+    try {
+      const log = new LogFile(workspace.logPath, 64, clock);
+      expect(log.initialize()).toBeNull();
+      log.writeRecord(createRecord("before outage"));
+
+      fs.renameSync(workspace.logPath, `${workspace.logPath}.displaced`);
+      fs.mkdirSync(workspace.logPath, { recursive: true });
+      log.writeRecord(createRecord("during outage"));
+      expect(countReopenFailures([stderr.text])).toBe(1);
+      log.dispose();
+
+      fs.rmdirSync(workspace.logPath);
+      clock.advance(60_000);
+      log.writeRecord(createRecord("after disposal"));
+
+      expect(fs.existsSync(workspace.logPath)).toBe(false);
+      expect(countReopenFailures([stderr.text])).toBe(1);
+    } finally {
+      stderr.dispose();
       workspace.dispose();
     }
   });
