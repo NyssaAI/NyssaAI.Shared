@@ -6,7 +6,8 @@
 
 import { type Result } from "./results/Result.js";
 import type { ConfigurationMove } from "./values/ConfigurationMove.js";
-import type { ConfigurationWriteRecoveryHandle } from "./recovery/ConfigurationWriteRecoveryHandle.js";
+import type { ConfigurationRecoveryHandle } from "./recovery/ConfigurationRecoveryHandle.js";
+import type { ConfigurationRecoveryOutcome } from "./recovery/Types.js";
 
 /**
  * ConfigurationMaintainer migrates configuration keys across providers and recovers interrupted multi-step writes.
@@ -25,5 +26,8 @@ export interface ConfigurationMaintainer {
   /**
    * Replays an interrupted multi-step write using its portable recovery handle.
    */
-  recover(handle: ConfigurationWriteRecoveryHandle, signal?: AbortSignal): Promise<Result<void>>;
+  recover(
+    handle: ConfigurationRecoveryHandle,
+    signal?: AbortSignal
+  ): Promise<Result<ConfigurationRecoveryOutcome>>;
 }

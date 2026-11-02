@@ -4,12 +4,16 @@
 # |   +-- delete_key(service, account)
 # |   +-- get_key(service, account)
 # |   `-- set_key(service, account, secret)
-# `-- get_or_create_key(application_name, keyring)
+# +-- get_or_create_key(application_name, keyring)
+# `-- resolve_keyring(configuration_directory, options, keyring)
 """Keyring protocol and master key resolution."""
 
 import os
+import sys
+from pathlib import Path
 from typing import Final, Protocol
 
+from nyssa_ai_configuration.manifest.types import BootstrapOptions
 from nyssa_ai_configuration.results.result import Result, fail
 
 _SERVICE_NAME: Final[str] = "nyssa-ai-configuration"
@@ -32,6 +36,54 @@ class Keyring(Protocol):
         ...
 
 
+def resolve_keyring(
+    configuration_directory: str | Path,
+    options: BootstrapOptions | None = None,
+    keyring: Keyring | None = None,
+) -> Keyring:
+    """Resolve the active keyring strategy when no explicit keyring is provided.
+
+    1. Systemd Headless Server (CREDENTIALS_DIRECTORY) -> KeyringSystemdCreds
+    2. Protected File Fallback (.nyssa-key, NYSSA_CONFIG_DIR, or container/headless Linux) -> KeyringProtectedFile
+    3. Desktop Workstation -> KeyringDefault
+    """
+    if keyring is not None:
+        return keyring
+
+    from nyssa_ai_configuration.keyring.keyring_default import KeyringDefault
+    from nyssa_ai_configuration.keyring.keyring_protected_file import (
+        _KEY_FILENAME,
+        KeyringProtectedFile,
+    )
+    from nyssa_ai_configuration.keyring.keyring_systemd_creds import KeyringSystemdCreds
+
+    if KeyringSystemdCreds.is_available():
+        return KeyringSystemdCreds(
+            options.systemd_credential_name if options is not None else None
+        )
+
+    config_dir = Path(str(configuration_directory)).resolve()
+    if (config_dir / _KEY_FILENAME).exists():
+        return KeyringProtectedFile(config_dir)
+
+    env_config_dir = os.environ.get("NYSSA_CONFIG_DIR")
+    if env_config_dir and env_config_dir.strip():
+        return KeyringProtectedFile(config_dir)
+
+    if Path("/.dockerenv").exists() or Path("/run/.containerenv").exists():
+        return KeyringProtectedFile(config_dir)
+
+    if (
+        sys.platform.startswith("linux")
+        and not os.environ.get("DBUS_SESSION_BUS_ADDRESS")
+        and not os.environ.get("DISPLAY")
+        and not os.environ.get("WAYLAND_DISPLAY")
+    ):
+        return KeyringProtectedFile(config_dir)
+
+    return KeyringDefault()
+
+
 def get_or_create_key(application_name: str, keyring: Keyring) -> Result[bytes]:
     """Retrieve the existing 32-byte key or generate and store a new one when absent.
 
@@ -49,13 +101,13 @@ def get_or_create_key(application_name: str, keyring: Keyring) -> Result[bytes]:
                 f"Stored key for '{application_name}' is {len(existing.value)} bytes; expected 32.",
                 "Validation",
             )
-        return existing  # type: ignore[return-value]
+        return _ok_bytes(existing.value)
 
     fresh = os.urandom(_KEY_BYTES)
     saved = keyring.set_key(_SERVICE_NAME, application_name, fresh)
     if not saved.ok:
         return saved
-    return keyring.get_key(_SERVICE_NAME, application_name) if False else _ok_bytes(fresh)
+    return _ok_bytes(fresh)
 
 
 def _ok_bytes(data: bytes) -> Result[bytes]:

@@ -22,11 +22,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
 import dataclasses
 import json
-from pathlib import Path
 import time
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault import CloudKeyVault
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_factory import (
@@ -37,8 +37,11 @@ from nyssa_ai_configuration.encryption.configuration_cipher_aes_gcm import (
 )
 from nyssa_ai_configuration.file_security.directory_safety import DirectorySafety
 from nyssa_ai_configuration.file_security.protected_file_system import ProtectedFileSystem
-from nyssa_ai_configuration.keyring.keyring import Keyring, get_or_create_key
-from nyssa_ai_configuration.keyring.keyring_default import KeyringDefault
+from nyssa_ai_configuration.keyring.keyring import (
+    Keyring,
+    get_or_create_key,
+    resolve_keyring,
+)
 from nyssa_ai_configuration.logging.configuration_logger import ConfigurationLogger
 from nyssa_ai_configuration.manifest.configuration_manifest_reader import (
     ConfigurationManifestReader,
@@ -97,7 +100,7 @@ class ConfigurationClient:
         browser_launcher: BrowserLauncher | None = None,
         logger: ConfigurationLogger | None = None,
         clock: Callable[[], float] = time.monotonic,
-    ) -> Result["ConfigurationClient"]:
+    ) -> Result[ConfigurationClient]:
         """Resolve manifest, verify directory safety, unlock/create master key, wire vaults, and return ConfigurationClient."""
         app_name_res = DirectorySafety.validate_segment(options.application_name, "application_name")
         if not app_name_res.ok:
@@ -149,7 +152,7 @@ class ConfigurationClient:
         if not dir_created.ok:
             return dir_created
 
-        active_keyring: Keyring = keyring if keyring is not None else KeyringDefault()
+        active_keyring: Keyring = resolve_keyring(config_dir, options, keyring)
         key_res = get_or_create_key(app_name, active_keyring)
         if not key_res.ok:
             return key_res

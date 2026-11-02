@@ -16,6 +16,7 @@ type ErrorCategory = Literal[
     "NotFound",
     "Conflict",
     "Unavailable",
+    "Unsupported",
     "Indeterminate",
     "Canceled",
     "Unexpected",

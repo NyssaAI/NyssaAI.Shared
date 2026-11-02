@@ -24,6 +24,8 @@ from nyssa_ai_configuration.configuration_client import ConfigurationClient
 from nyssa_ai_configuration.configuration_maintainer import ConfigurationMaintainer
 from nyssa_ai_configuration.configuration_oauth_writer import (
     ConfigurationOauthWriter,
+)
+from nyssa_ai_configuration.configuration_oauth_writer import (
     ConfigurationOauthWriter as ConfigurationOAuthWriter,
 )
 from nyssa_ai_configuration.configuration_reader import ConfigurationReader
@@ -37,10 +39,15 @@ from nyssa_ai_configuration.file_security.file_lock import FileLock
 from nyssa_ai_configuration.file_security.protected_file_system import (
     ProtectedFileSystem,
 )
-from nyssa_ai_configuration.keyring.keyring import Keyring, get_or_create_key
+from nyssa_ai_configuration.keyring.keyring import (
+    Keyring,
+    get_or_create_key,
+    resolve_keyring,
+)
 from nyssa_ai_configuration.keyring.keyring_default import KeyringDefault
 from nyssa_ai_configuration.keyring.keyring_in_memory import KeyringInMemory
 from nyssa_ai_configuration.keyring.keyring_protected_file import KeyringProtectedFile
+from nyssa_ai_configuration.keyring.keyring_systemd_creds import KeyringSystemdCreds
 from nyssa_ai_configuration.logging.configuration_log import ConfigurationLog
 from nyssa_ai_configuration.logging.configuration_logger import ConfigurationLogger
 from nyssa_ai_configuration.logging.types import (
@@ -63,10 +70,14 @@ from nyssa_ai_configuration.manifest.types import (
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
 from nyssa_ai_configuration.oauth.oauth_flow_client import (
     OauthFlowClient,
+)
+from nyssa_ai_configuration.oauth.oauth_flow_client import (
     OauthFlowClient as OAuthFlowClient,
 )
 from nyssa_ai_configuration.oauth.oauth_token_provider import (
     OauthTokenProvider,
+)
+from nyssa_ai_configuration.oauth.oauth_token_provider import (
     OauthTokenProvider as OAuthTokenProvider,
 )
 from nyssa_ai_configuration.oauth.types import OAuthHeldGrant, OAuthOptions, OAuthToken
@@ -165,6 +176,7 @@ __all__ = [
     "KeyringDefault",
     "KeyringInMemory",
     "KeyringProtectedFile",
+    "KeyringSystemdCreds",
     "NamespaceDocumentHandler",
     "OAuthFlowClient",
     "OAuthHeldGrant",
@@ -181,4 +193,5 @@ __all__ = [
     "fail_error",
     "get_or_create_key",
     "ok",
+    "resolve_keyring",
 ]

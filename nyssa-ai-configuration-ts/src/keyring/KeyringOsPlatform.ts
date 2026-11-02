@@ -1,20 +1,45 @@
-// Responsibility: OS keychain adapter supporting Windows Credential Manager, macOS Keychain, and Linux Secret Service.
+// Responsibility: OS keychain adapter supporting Windows Credential Manager, macOS Keychain, and Linux systemd-creds.
 // Public interface:
 // `-- KeyringOsPlatform
 //     +-- delete(service, account, signal)
 //     +-- get(service, account, signal)
+//     +-- new(options)
 //     `-- set(service, account, secret, signal)
 
 import { execFileSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { ok, fail, type Result } from "../results/Result.js";
 import { KeyringWindowsCredMan } from "./KeyringWindowsCredMan.js";
+import { KeyringSystemdCreds } from "./KeyringSystemdCreds.js";
 import type { IKeyring } from "./IKeyring.js";
 
 /**
  * KeyringOsPlatform interacts with the native OS credential store using identical
- * service/account addressing and base64 encoding as .NET KeyringWindows, KeyringMacOs, and KeyringLinux.
+ * service/account addressing and base64 encoding as .NET KeyringWindows, KeyringMacOs, and KeyringLinux (systemd-creds).
  */
 export class KeyringOsPlatform {
+  private readonly _platform: NodeJS.Platform;
+  private readonly _commandRunner: (command: string, args: readonly string[], input?: string) => string;
+
+  public constructor(options?: {
+    readonly platform?: NodeJS.Platform | undefined;
+    readonly commandRunner?:
+      | ((command: string, args: readonly string[], input?: string) => string)
+      | undefined;
+  }) {
+    this._platform = options?.platform ?? process.platform;
+    this._commandRunner =
+      options?.commandRunner ??
+      ((command, args, input) =>
+        execFileSync(command, args, {
+          ...(input !== undefined ? { input } : {}),
+          encoding: "utf8",
+          stdio: input !== undefined ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"]
+        }));
+  }
+
   public async get(service: string, account: string, signal?: AbortSignal): Promise<Result<Buffer | null>> {
     signal?.throwIfAborted();
     const addrRes = this.validateAddress(service, account);
@@ -23,14 +48,14 @@ export class KeyringOsPlatform {
     }
 
     let rawRes: Result<string | null>;
-    if (process.platform === "win32") {
+    if (this._platform === "win32") {
       rawRes = KeyringWindowsCredMan.get(addrRes.value);
-    } else if (process.platform === "darwin") {
+    } else if (this._platform === "darwin") {
       rawRes = this.getMacOs(service, account);
-    } else if (process.platform === "linux") {
+    } else if (this._platform === "linux") {
       rawRes = this.getLinux(service, account);
     } else {
-      return fail(`Unsupported platform '${process.platform}' for OS keyring.`, "Unavailable");
+      return fail(`Unsupported platform '${this._platform}' for OS keyring.`, "Unavailable");
     }
 
     if (!rawRes.ok) {
@@ -74,16 +99,16 @@ export class KeyringOsPlatform {
     }
 
     const encoded = secret.toString("base64");
-    if (process.platform === "win32") {
+    if (this._platform === "win32") {
       return KeyringWindowsCredMan.set(addrRes.value, encoded);
     }
-    if (process.platform === "darwin") {
+    if (this._platform === "darwin") {
       return this.setMacOs(service, account, encoded);
     }
-    if (process.platform === "linux") {
+    if (this._platform === "linux") {
       return this.setLinux(service, account, addrRes.value, encoded);
     }
-    return fail(`Unsupported platform '${process.platform}' for OS keyring.`, "Unavailable");
+    return fail(`Unsupported platform '${this._platform}' for OS keyring.`, "Unavailable");
   }
 
   public async delete(service: string, account: string, signal?: AbortSignal): Promise<Result<void>> {
@@ -93,16 +118,16 @@ export class KeyringOsPlatform {
       return addrRes;
     }
 
-    if (process.platform === "win32") {
+    if (this._platform === "win32") {
       return KeyringWindowsCredMan.delete(addrRes.value);
     }
-    if (process.platform === "darwin") {
+    if (this._platform === "darwin") {
       return this.deleteMacOs(service, account);
     }
-    if (process.platform === "linux") {
+    if (this._platform === "linux") {
       return this.deleteLinux(service, account);
     }
-    return fail(`Unsupported platform '${process.platform}' for OS keyring.`, "Unavailable");
+    return fail(`Unsupported platform '${this._platform}' for OS keyring.`, "Unavailable");
   }
 
   private validateAddress(service: string, account: string): Result<string> {
@@ -120,11 +145,14 @@ export class KeyringOsPlatform {
 
   private getMacOs(service: string, account: string): Result<string | null> {
     try {
-      const output = execFileSync(
-        "/usr/bin/security",
-        ["find-generic-password", "-s", service, "-a", account, "-w"],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-      );
+      const output = this._commandRunner("/usr/bin/security", [
+        "find-generic-password",
+        "-s",
+        service,
+        "-a",
+        account,
+        "-w"
+      ]);
       return ok(output.trim());
     } catch (err: unknown) {
       const status = (err as { status?: number }).status;
@@ -138,11 +166,16 @@ export class KeyringOsPlatform {
 
   private setMacOs(service: string, account: string, secret: string): Result<void> {
     try {
-      execFileSync(
-        "/usr/bin/security",
-        ["add-generic-password", "-U", "-s", service, "-a", account, "-w", secret],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-      );
+      this._commandRunner("/usr/bin/security", [
+        "add-generic-password",
+        "-U",
+        "-s",
+        service,
+        "-a",
+        account,
+        "-w",
+        secret
+      ]);
       return ok(undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -152,11 +185,13 @@ export class KeyringOsPlatform {
 
   private deleteMacOs(service: string, account: string): Result<void> {
     try {
-      execFileSync(
-        "/usr/bin/security",
-        ["delete-generic-password", "-s", service, "-a", account],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-      );
+      this._commandRunner("/usr/bin/security", [
+        "delete-generic-password",
+        "-s",
+        service,
+        "-a",
+        account
+      ]);
       return ok(undefined);
     } catch (err: unknown) {
       const status = (err as { status?: number }).status;
@@ -168,50 +203,142 @@ export class KeyringOsPlatform {
     }
   }
 
+  private static sanitizeSegment(segment: string): string {
+    return segment.replace(/[^A-Za-z0-9._-]/g, "_");
+  }
+
+  private static resolveLinuxCredentialPaths(service: string, account: string): {
+    readonly credName: string;
+    readonly credsStoreDir: string;
+    readonly credFilePath: string;
+  } {
+    const credName = `${this.sanitizeSegment(service)}.${this.sanitizeSegment(account)}`;
+    const envDir = process.env["NYSSA_SYSTEMD_CREDS_DIR"]?.trim();
+    const credsStoreDir =
+      envDir && envDir.length > 0 ? path.resolve(envDir) : path.join(os.homedir(), ".nyssa-ai", "credentials");
+    const credFilePath = path.join(credsStoreDir, `${credName}.cred`);
+    return { credName, credsStoreDir, credFilePath };
+  }
+
+  private static systemdUserArgs(): readonly string[] {
+    return typeof process.geteuid === "function" && process.geteuid() === 0 ? [] : ["--user"];
+  }
+
   private getLinux(service: string, account: string): Result<string | null> {
-    try {
-      const output = execFileSync(
-        "secret-tool",
-        ["lookup", "service", service, "username", account],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-      );
-      return ok(output.trim());
-    } catch (err: unknown) {
-      const status = (err as { status?: number; stderr?: Buffer | string }).status;
-      const stderr = String((err as { stderr?: Buffer | string }).stderr ?? "").trim();
-      if (status === 1 && stderr.length === 0) {
-        return ok(null);
+    const { credName, credFilePath } = KeyringOsPlatform.resolveLinuxCredentialPaths(service, account);
+
+    if (KeyringSystemdCreds.isAvailable()) {
+      const rawDir = process.env["CREDENTIALS_DIRECTORY"]!.trim();
+      const credentialsDir = path.resolve(rawDir);
+      const candidates = [
+        credName,
+        `${service}.key`,
+        `${account}.key`,
+        service,
+        account,
+        "nyssa-key",
+        "nyssa-key.key",
+        "master-key",
+        "master-key.key"
+      ];
+      for (const name of candidates) {
+        if (name.includes("/") || name.includes("\\") || name === ".." || name === ".") {
+          continue;
+        }
+        const candidatePath = path.join(credentialsDir, name);
+        if (path.dirname(candidatePath) === credentialsDir && fs.existsSync(candidatePath)) {
+          try {
+            if (fs.statSync(candidatePath).isFile()) {
+              const rawBytes = fs.readFileSync(candidatePath);
+              if (rawBytes.length === 32) {
+                return ok(rawBytes.toString("base64"));
+              }
+              return ok(rawBytes.toString("utf8").trim());
+            }
+          } catch {
+            // continue
+          }
+        }
       }
+      try {
+        const entries = fs.readdirSync(credentialsDir, { withFileTypes: true }).filter((e) => e.isFile());
+        if (entries.length === 1 && entries[0] !== undefined) {
+          const singlePath = path.join(credentialsDir, entries[0].name);
+          const rawBytes = fs.readFileSync(singlePath);
+          if (rawBytes.length === 32) {
+            return ok(rawBytes.toString("base64"));
+          }
+          return ok(rawBytes.toString("utf8").trim());
+        }
+      } catch {
+        // fall through to credFilePath
+      }
+    }
+
+    if (!fs.existsSync(credFilePath)) {
+      return ok(null);
+    }
+
+    try {
+      const output = this._commandRunner("systemd-creds", [
+        ...KeyringOsPlatform.systemdUserArgs(),
+        "decrypt",
+        `--name=${credName}`,
+        credFilePath,
+        "-"
+      ]);
+      return ok(output.trim());
+    } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`keyring: the Secret Service reported error: ${stderr || message}`, "Unavailable");
+      return fail(`keyring: systemd-creds decrypt failed: ${message}`, "Unavailable");
     }
   }
 
-  private setLinux(service: string, account: string, label: string, secret: string): Result<void> {
+  private setLinux(service: string, account: string, _label: string, secret: string): Result<void> {
+    const { credName, credsStoreDir, credFilePath } = KeyringOsPlatform.resolveLinuxCredentialPaths(service, account);
+    const tempFilePath = `${credFilePath}.${process.pid}.tmp`;
+
     try {
-      execFileSync(
-        "secret-tool",
-        ["store", `--label=${label}`, "service", service, "username", account],
-        { input: secret, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }
+      fs.mkdirSync(credsStoreDir, { recursive: true, mode: 0o700 });
+      this._commandRunner(
+        "systemd-creds",
+        [
+          ...KeyringOsPlatform.systemdUserArgs(),
+          "encrypt",
+          `--name=${credName}`,
+          "-",
+          tempFilePath
+        ],
+        secret
       );
+      if (process.platform !== "win32") {
+        fs.chmodSync(tempFilePath, 0o600);
+      }
+      fs.renameSync(tempFilePath, credFilePath);
       return ok(undefined);
     } catch (err) {
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      } catch {
+        // ignore cleanup failure
+      }
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`keyring: the Secret Service refused write: ${message}`, "Unavailable");
+      return fail(`keyring: systemd-creds encrypt failed: ${message}`, "Unavailable");
     }
   }
 
   private deleteLinux(service: string, account: string): Result<void> {
+    const { credFilePath } = KeyringOsPlatform.resolveLinuxCredentialPaths(service, account);
     try {
-      execFileSync(
-        "secret-tool",
-        ["clear", "service", service, "username", account],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-      );
+      if (fs.existsSync(credFilePath)) {
+        fs.unlinkSync(credFilePath);
+      }
       return ok(undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`keyring: the Secret Service refused deletion: ${message}`, "Unavailable");
+      return fail(`keyring: systemd-creds delete failed: ${message}`, "Unavailable");
     }
   }
 }

@@ -44,6 +44,9 @@
   ],
   "author": "NyssaAI",
   "license": "Apache-2.0",
+  "dependencies": {
+    "nyssa-ai-result": "file:../nyssa-ai-result-ts"
+  },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "typescript": "^5.8.0",

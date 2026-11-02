@@ -10,7 +10,8 @@
 # |   +-- home_directory
 # |   +-- key_vault
 # |   +-- lock_timeout_ms
-# |   `-- manifest_path
+# |   +-- manifest_path
+# |   `-- systemd_credential_name
 # +-- ConfigurationManifestDocument
 # |   +-- applications
 # |   `-- version
@@ -66,3 +67,4 @@ class BootstrapOptions:
     configuration_directory: str | None = None
     lock_timeout_ms: int | None = None
     key_vault: VaultOptions | None = None
+    systemd_credential_name: str | None = None

@@ -13,6 +13,7 @@
 //     +-- prepareEntryForProvider(namespace, key, value, providerName, signal)
 //     +-- replayPendingJournalsIfPresent(namespace, signal, expectedOperationId)
 //     +-- resolveEntryValue(namespace, key, entry, signal)
+//     +-- sealLocalValue(serializedString, namespace, key, isJson, providerName)
 //     +-- setDocumentWriteInterceptor(interceptor)
 //     +-- validateNamespaceAndKey(namespace, key)
 //     `-- vaultProviders
@@ -109,6 +110,26 @@ export class ConfigurationEntryResolver {
     return ok(undefined);
   }
 
+  public sealLocalValue(
+    serializedString: string,
+    namespace: string,
+    key: string,
+    isJson: boolean,
+    providerName: string = "aesLocal"
+  ): Result<ConfigurationValue> {
+    if (!this._cipher) {
+      return fail("Cannot encrypt entry: no cipher configured.", "Unavailable");
+    }
+    const sealRes = this._cipher.seal(serializedString, namespace, key);
+    if (!sealRes.ok) return sealRes;
+    return ok({
+      value: sealRes.value,
+      encrypted: true,
+      provider: providerName === "oauth" ? "oauth" : "aesLocal",
+      ...(isJson ? { json: true } : {})
+    });
+  }
+
   public async resolveEntryValue(
     namespace: string,
     key: string,
@@ -192,19 +213,9 @@ export class ConfigurationEntryResolver {
     const serializedString = isJson ? JSON.stringify(value) : (value as string);
 
     if (providerName === "aesLocal" || providerName === "oauth") {
-      if (!this._cipher) {
-        return fail("Cannot encrypt entry: no cipher configured.", "Unavailable");
-      }
-      const sealRes = this._cipher.seal(serializedString, namespace, key);
-      if (!sealRes.ok) return sealRes;
-      return ok({
-        entry: {
-          value: sealRes.value,
-          encrypted: true,
-          provider: providerName === "oauth" ? "oauth" : "aesLocal",
-          ...(isJson ? { json: true } : {})
-        }
-      });
+      const sealed = this.sealLocalValue(serializedString, namespace, key, isJson, providerName);
+      if (!sealed.ok) return sealed;
+      return ok({ entry: sealed.value });
     }
 
     if (!this.vaultProviders.has(providerName)) {
@@ -215,7 +226,6 @@ export class ConfigurationEntryResolver {
     return ok({
       entry: {
         value: pointer,
-        encrypted: true,
         provider: providerName,
         ...(isJson ? { json: true } : {})
       },

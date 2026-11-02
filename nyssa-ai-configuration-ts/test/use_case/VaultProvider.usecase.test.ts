@@ -104,9 +104,11 @@ describe("VaultProvider Public Use Cases (F-203)", () => {
     >;
     expect(rawDoc["stripeSecretKey"]).toEqual({
       value: "billing/stripeSecretKey",
-      encrypted: true,
       provider: "azureKeyVault"
     });
+    expect(rawDoc["stripeSecretKey"]?.encrypted).toBeUndefined();
+    expect(rawDoc["webhookSigningKey"]?.encrypted).toBe(true);
+    expect(rawDoc["webhookSigningKey"]?.provider).toBe("aesLocal");
     expect(vaultStorage.get("billing/stripeSecretKey")).toBe("sk_live_vault_999");
 
     // Multi-provider namespace assembly via getNamespace

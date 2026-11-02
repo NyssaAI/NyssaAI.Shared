@@ -21,7 +21,8 @@ import type { SetOptions } from "./SetOptions.js";
 import type { ConfigurationRemoval } from "./values/ConfigurationRemoval.js";
 import type { ConfigurationMove } from "./values/ConfigurationMove.js";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
-import type { ConfigurationWriteRecoveryHandle } from "./recovery/ConfigurationWriteRecoveryHandle.js";
+import type { ConfigurationRecoveryHandle } from "./recovery/ConfigurationRecoveryHandle.js";
+import type { ConfigurationRecoveryOutcome } from "./recovery/Types.js";
 
 /**
  * @deprecated Prefer `Configuration` (or narrower `ConfigurationReader`, `ConfigurationWriter`, `ConfigurationOAuthWriter`, `ConfigurationMaintainer`).
@@ -62,5 +63,8 @@ export interface IConfiguration {
   ): Promise<Result<void>>;
   authorizeProvider(providerName: string, signal?: AbortSignal): Promise<Result<void>>;
   reauthorize(namespace: string, key: string, signal?: AbortSignal): Promise<Result<void>>;
-  recover(handle: ConfigurationWriteRecoveryHandle, signal?: AbortSignal): Promise<Result<void>>;
+  recover(
+    handle: ConfigurationRecoveryHandle,
+    signal?: AbortSignal
+  ): Promise<Result<ConfigurationRecoveryOutcome>>;
 }

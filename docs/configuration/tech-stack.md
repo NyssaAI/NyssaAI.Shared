@@ -22,7 +22,7 @@ NyssaAI Configuration is a multi-language infrastructure component in the `Nyssa
   - `Microsoft.Extensions.Logging.Abstractions` (`ILogger` diagnostics).
   - `NyssaAI.Results` (`Result`, `Result<T>`, `ResultException`, `ErrorCategory`).
   - `System.Security.Cryptography` (`AesGcm`, `HKDF`, `RandomNumberGenerator`, `CryptographicOperations`).
-  - Platform P/Invoke bindings for OS credential stores: Windows `Advapi32` (`CredReadW`, `CredWriteW`, `CredDeleteW`, `CredFree`), macOS `Security.framework` (`SecItemCopyMatching`, `SecItemAdd`, `SecItemUpdate`, `SecItemDelete`), and Linux `libsecret-1.so.0` (`secret_service_search_sync`, `secret_password_store_sync`, `secret_item_delete_sync`).
+  - Platform bindings for OS credential stores: Windows `Advapi32` (`CredReadW`, `CredWriteW`, `CredDeleteW`, `CredFree`), macOS `Security.framework` (`SecItemCopyMatching`, `SecItemAdd`, `SecItemUpdate`, `SecItemDelete`), and Linux `systemd-creds` (`CREDENTIALS_DIRECTORY` and `systemd-creds encrypt` / `decrypt`).
 - **Node.js / TypeScript Dependencies & Abstractions:**
   - Zero mandatory runtime third-party framework dependencies for core encryption and file locking; uses built-in `node:crypto` (`createCipheriv('aes-256-gcm')`, `createDecipheriv('aes-256-gcm')`, `hkdfSync`, `randomBytes`), `node:fs/promises`, `node:http` (loopback OAuth listener), and `node:child_process` (`icacls` / platform credential helpers).
 

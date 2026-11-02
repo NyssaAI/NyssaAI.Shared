@@ -1,27 +1,36 @@
-// Responsibility: Whole-namespace get, set, and merge operations with legacy namespaceSettings migration and journaled vault writes.
+// Responsibility: Whole-namespace get, set, and merge operations with legacy namespaceSettings migration and guarded two-phase recovery.
 // Public interface:
 // `-- NamespaceDocumentHandler
 //     +-- getNamespace(namespace, signal)
 //     +-- mergeSettings(namespace, value, signal)
-//     +-- new(resolver)
+//     +-- new(resolver, recoveryCoordinator)
 //     `-- setNamespace(namespace, value, signal)
 
+import * as crypto from "node:crypto";
 import { ok, fail, type Result } from "../results/Result.js";
 import { ConfigurationDocumentLocalFile } from "./ConfigurationDocumentLocalFile.js";
-import { PendingJournalManager } from "../recovery/PendingJournalManager.js";
 import type { ConfigurationEntryResolver } from "./ConfigurationEntryResolver.js";
 import type { ConfigurationValue } from "./ConfigurationValue.js";
+import type { ConfigurationRecoveryCoordinator } from "../recovery/ConfigurationRecoveryCoordinator.js";
+import type {
+  ConfigurationOperationKind,
+  ConfigurationPublicationState,
+  ConfigurationRecoveryState,
+  ConfigurationRecoveryStep
+} from "../recovery/Types.js";
 
 /**
  * NamespaceDocumentHandler implements getNamespace, setNamespace, and mergeSettings
- * across multi-provider namespace documents.
+ * across multi-provider namespace documents with guarded two-phase recovery.
  */
 export class NamespaceDocumentHandler {
   private static readonly LEGACY_SETTINGS_KEY = "namespaceSettings";
   private readonly _resolver: ConfigurationEntryResolver;
+  private readonly _recovery: ConfigurationRecoveryCoordinator;
 
-  public constructor(resolver: ConfigurationEntryResolver) {
+  public constructor(resolver: ConfigurationEntryResolver, recoveryCoordinator: ConfigurationRecoveryCoordinator) {
     this._resolver = resolver;
+    this._recovery = recoveryCoordinator;
   }
 
   public async getNamespace<T>(namespace: string, signal?: AbortSignal): Promise<Result<T>> {
@@ -121,6 +130,7 @@ export class NamespaceDocumentHandler {
     const replayRes = await this._resolver.replayPendingJournalsIfPresent(namespace, signal);
     if (!replayRes.ok) return replayRes;
 
+    const incomingEntries: Array<[string, unknown]> = [];
     if (isPlainObject) {
       const obj = value as Record<string, unknown>;
       if (Object.prototype.hasOwnProperty.call(obj, NamespaceDocumentHandler.LEGACY_SETTINGS_KEY)) {
@@ -129,17 +139,20 @@ export class NamespaceDocumentHandler {
           "Validation"
         );
       }
-      for (const propKey of Object.keys(obj)) {
+      for (const [propKey, propVal] of Object.entries(obj)) {
+        if (propVal === undefined) continue;
         const keyValid = ConfigurationDocumentLocalFile.validateSegment(propKey, "key");
         if (!keyValid.ok) return keyValid;
+        incomingEntries.push([propKey, propVal]);
       }
     }
 
     const doc = this._resolver.getDocument(namespace);
-    const docPath = this._resolver.getDocumentPath(namespace);
+    let stateSnapshot: ConfigurationRecoveryState | undefined;
+    let publishing = false;
 
-    return doc.modify(async (current) => {
-      const expectedExistingSha256 = PendingJournalManager.computeDocumentSha256(docPath);
+    const modRes = await doc.modify(async (current) => {
+      const original = { ...current };
 
       if (!isPlainObject) {
         const existingLegacy = current[NamespaceDocumentHandler.LEGACY_SETTINGS_KEY];
@@ -156,7 +169,6 @@ export class NamespaceDocumentHandler {
       }
 
       const working: Record<string, ConfigurationValue> = { ...current };
-
       if (Object.prototype.hasOwnProperty.call(working, NamespaceDocumentHandler.LEGACY_SETTINGS_KEY)) {
         const legacyEntry = working[NamespaceDocumentHandler.LEGACY_SETTINGS_KEY]!;
         const legacyProvider = this._resolver.normalizeProviderName(legacyEntry);
@@ -168,99 +180,114 @@ export class NamespaceDocumentHandler {
         }
 
         if (!replace) {
-          let parsedLegacy: unknown = legacyEntry.value;
-          if (typeof legacyEntry.value === "string") {
-            try {
-              parsedLegacy = JSON.parse(legacyEntry.value);
-            } catch {
-              return fail(
-                "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
-                "Validation"
-              );
-            }
-          }
-          if (typeof parsedLegacy !== "object" || parsedLegacy === null || Array.isArray(parsedLegacy)) {
-            return fail(
-              "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
-              "Validation"
-            );
-          }
-          for (const [lk, lv] of Object.entries(parsedLegacy as Record<string, unknown>)) {
-            if (!Object.prototype.hasOwnProperty.call(working, lk)) {
-              working[lk] = { value: lv };
-            }
-          }
+          const legacyMerge = this.mergeLegacyProperties(legacyEntry, working);
+          if (!legacyMerge.ok) return legacyMerge;
         }
         delete working[NamespaceDocumentHandler.LEGACY_SETTINGS_KEY];
       }
 
-      const incomingObj = value as Record<string, unknown>;
-      const plannedDocument: Record<string, ConfigurationValue> = replace ? {} : { ...working };
-      const vaultWrites: Array<{
-        readonly provider: string;
-        readonly secretName: string;
-        readonly value: string;
-      }> = [];
-
-      for (const [propKey, propVal] of Object.entries(incomingObj)) {
+      const steps: ConfigurationRecoveryStep[] = [];
+      for (const [propKey, propVal] of incomingEntries) {
         const existingEntry = working[propKey];
         const providerName = this._resolver.normalizeProviderName(existingEntry);
 
         const circularRes = this._resolver.checkCircularCredential(providerName, namespace, propKey);
         if (!circularRes.ok) return circularRes;
 
-        const prepared = await this._resolver.prepareEntryForProvider(
+        const isJson = typeof propVal !== "string";
+        const stepRes = await this._recovery.prepareStep(
+          providerName,
+          "Write",
           namespace,
           propKey,
           propVal,
-          providerName,
+          existingEntry,
+          isJson,
           signal
         );
-        if (!prepared.ok) return prepared;
-
-        plannedDocument[propKey] = prepared.value.entry;
-        if (prepared.value.vaultWrite) {
-          vaultWrites.push(prepared.value.vaultWrite);
-        }
+        if (!stepRes.ok) return stepRes;
+        steps.push(stepRes.value);
       }
 
-      const journalRes = this._resolver.journalManager.createWriteJournal(
+      const proposed: Record<string, ConfigurationValue> = replace ? {} : { ...working };
+      const kind: ConfigurationOperationKind = replace ? "Replace" : "Merge";
+      const opId = crypto.randomUUID();
+      const written = await this._recovery.writeSteps(steps, proposed, signal);
+
+      stateSnapshot = {
+        operationId: opId,
         namespace,
-        expectedExistingSha256,
-        plannedDocument,
-        vaultWrites
-      );
-      if (!journalRes.ok) return journalRes;
-      const recoveryHandle = journalRes.value;
+        kind,
+        original,
+        proposed: { ...proposed },
+        steps: [...steps],
+        publication: "NotAttempted",
+        conflicted: false,
+        version: 1
+      };
 
-      for (const vw of vaultWrites) {
-        signal?.throwIfAborted();
-        const vault = this._resolver.vaultProviders.get(vw.provider);
-        if (!vault) {
-          return fail(
-            `Configuration provider '${vw.provider}' is not registered.`,
-            "Validation",
-            recoveryHandle
-          );
-        }
-        const setRes = await vault.setSecret(vw.secretName, vw.value, signal);
-        if (!setRes.ok) {
-          return fail(setRes.error, setRes.category ?? "Unavailable", recoveryHandle);
-        }
+      if (!written.ok) {
+        return written;
       }
 
-      const stageRes = this._resolver.journalManager.updateWriteJournalStage(namespace, "local");
-      if (!stageRes.ok) {
-        return fail(stageRes.error, stageRes.category ?? "Unavailable", recoveryHandle);
-      }
+      publishing = true;
+      stateSnapshot = { ...stateSnapshot, publication: "Unknown" };
 
       const interceptRes = this._resolver.invokeWriteInterceptor(namespace);
       if (!interceptRes.ok) {
-        return fail(interceptRes.error, interceptRes.category ?? "Unavailable", recoveryHandle);
+        return interceptRes;
       }
 
-      this._resolver.journalManager.deleteWriteJournal(namespace);
-      return ok(plannedDocument);
+      return ok(proposed);
     }, signal);
+
+    if (!stateSnapshot) {
+      return modRes;
+    }
+
+    const pubState: ConfigurationPublicationState = modRes.ok
+      ? "Published"
+      : publishing
+        ? "Failed"
+        : "NotAttempted";
+    const finalState: ConfigurationRecoveryState = {
+      ...stateSnapshot,
+      publication: pubState
+    };
+    const out = this._recovery.outcome(finalState);
+
+    if (modRes.ok) {
+      return ok(undefined, out.progress, out.recoveryHandle);
+    }
+    return fail(modRes.error, modRes.category ?? "Unavailable", out.recoveryHandle, out.progress);
+  }
+
+  private mergeLegacyProperties(
+    legacyEntry: ConfigurationValue,
+    working: Record<string, ConfigurationValue>
+  ): Result<void> {
+    let parsedLegacy: unknown = legacyEntry.value;
+    if (typeof legacyEntry.value === "string") {
+      try {
+        parsedLegacy = JSON.parse(legacyEntry.value);
+      } catch {
+        return fail(
+          "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
+          "Validation"
+        );
+      }
+    }
+    if (typeof parsedLegacy !== "object" || parsedLegacy === null || Array.isArray(parsedLegacy)) {
+      return fail(
+        "Merging namespace settings requires JSON objects for the supplied value and any legacy namespaceSettings value.",
+        "Validation"
+      );
+    }
+    for (const [lk, lv] of Object.entries(parsedLegacy as Record<string, unknown>)) {
+      if (!Object.prototype.hasOwnProperty.call(working, lk)) {
+        working[lk] = { value: lv };
+      }
+    }
+    return ok(undefined);
   }
 }

@@ -133,8 +133,12 @@ public sealed class LinuxVmWorkstation : IDisposable
 
     public string ModeOctal(string path) => ExecBash($"stat -c '%a' {Quote(path)}").Trim();
 
-    public string ReadKeyringSecret(string service, string account) =>
-        ExecBash($"secret-tool lookup service {Quote(service)} username {Quote(account)}").Trim();
+    public string ReadKeyringSecret(string service, string account)
+    {
+        var credName = $"{service}.{account}";
+        var credFile = $"/home/svc_acme/.nyssa-ai/credentials/{credName}.cred";
+        return ExecBash($"systemd-creds decrypt --name={Quote(credName)} --user {Quote(credFile)} -").Trim();
+    }
 
     private void InitializeVmEnvironment()
     {

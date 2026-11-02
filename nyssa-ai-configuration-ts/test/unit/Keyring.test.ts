@@ -94,6 +94,76 @@ describe("Keyring", () => {
     expect(delAgain.ok).toBe(true);
   });
 
+  it("keyringOsPlatform_linuxSystemdCreds_encryptsDecryptsAndDeletesViaSystemdCredsCli", async () => {
+    const credsStoreDir = path.join(tempDir, "systemd-store");
+    const prevCredsDirEnv = process.env["NYSSA_SYSTEMD_CREDS_DIR"];
+    const prevCredentialsDir = process.env["CREDENTIALS_DIRECTORY"];
+    process.env["NYSSA_SYSTEMD_CREDS_DIR"] = credsStoreDir;
+    delete process.env["CREDENTIALS_DIRECTORY"];
+
+    const invokedCommands: Array<{ command: string; args: readonly string[] }> = [];
+    const keyring = new KeyringOsPlatform({
+      platform: "linux",
+      commandRunner(command, args, input) {
+        invokedCommands.push({ command, args });
+        expect(command).toBe("systemd-creds");
+        if (args.includes("encrypt")) {
+          const outFile = args[args.length - 1]!;
+          fs.writeFileSync(outFile, `SEALED:${input ?? ""}`, "utf8");
+          return "";
+        }
+        if (args.includes("decrypt")) {
+          const inFile = args[args.length - 2]!;
+          const raw = fs.readFileSync(inFile, "utf8");
+          if (!raw.startsWith("SEALED:")) {
+            throw new Error("corrupt credential blob");
+          }
+          return raw.slice("SEALED:".length);
+        }
+        throw new Error(`Unexpected args: ${args.join(" ")}`);
+      }
+    });
+
+    try {
+      const secret = crypto.randomBytes(32);
+
+      // 1. Missing credential file returns ok(null) without calling systemd-creds
+      const initialGet = await keyring.get("nyssa-ai-configuration", "LinuxService");
+      expect(initialGet.ok).toBe(true);
+      if (initialGet.ok) expect(initialGet.value).toBeNull();
+      expect(invokedCommands.length).toBe(0);
+
+      // 2. set() invokes systemd-creds encrypt and writes <credName>.cred
+      const setRes = await keyring.set("nyssa-ai-configuration", "LinuxService", secret);
+      expect(setRes.ok).toBe(true);
+      const credFile = path.join(credsStoreDir, "nyssa-ai-configuration.LinuxService.cred");
+      expect(fs.existsSync(credFile)).toBe(true);
+
+      // 3. get() invokes systemd-creds decrypt and returns the 32-byte key
+      const getRes = await keyring.get("nyssa-ai-configuration", "LinuxService");
+      expect(getRes.ok).toBe(true);
+      if (getRes.ok) {
+        expect(getRes.value?.equals(secret)).toBe(true);
+      }
+
+      // 4. delete() unlinks <credName>.cred
+      const delRes = await keyring.delete("nyssa-ai-configuration", "LinuxService");
+      expect(delRes.ok).toBe(true);
+      expect(fs.existsSync(credFile)).toBe(false);
+    } finally {
+      if (prevCredsDirEnv === undefined) {
+        delete process.env["NYSSA_SYSTEMD_CREDS_DIR"];
+      } else {
+        process.env["NYSSA_SYSTEMD_CREDS_DIR"] = prevCredsDirEnv;
+      }
+      if (prevCredentialsDir === undefined) {
+        delete process.env["CREDENTIALS_DIRECTORY"];
+      } else {
+        process.env["CREDENTIALS_DIRECTORY"] = prevCredentialsDir;
+      }
+    }
+  });
+
   it.skipIf(process.env["NYSSA_OS_KEYRING_TESTS"] !== "1")(
     "keyringOsPlatform_roundTripAndDelete_succeedsOnLiveKeychain",
     async () => {

@@ -21,7 +21,7 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { ok, fail, type Result } from "../results/Result.js";
 import { ProtectedFileSystem } from "../fileSecurity/ProtectedFileSystem.js";
-import { ConfigurationWriteRecoveryHandle } from "./ConfigurationWriteRecoveryHandle.js";
+import { ConfigurationRecoveryHandle } from "./ConfigurationRecoveryHandle.js";
 import type { ConfigurationValue } from "../values/ConfigurationValue.js";
 
 /**
@@ -80,7 +80,7 @@ export class PendingJournalManager {
       readonly secretName: string;
       readonly value: string;
     }>
-  ): Result<ConfigurationWriteRecoveryHandle> {
+  ): Result<ConfigurationRecoveryHandle> {
     const operationId = crypto.randomUUID();
     const plannedJson = JSON.stringify(plannedDocument, null, 2);
     const plannedNewSha256 = PendingJournalManager.computeStringSha256(plannedJson);
@@ -101,7 +101,16 @@ export class PendingJournalManager {
       return writeRes;
     }
 
-    return ok(new ConfigurationWriteRecoveryHandle(namespace, operationId, journalPath));
+    const token = Buffer.from(
+      JSON.stringify({
+        version: 1,
+        namespace,
+        operationId,
+        journalPath: path.basename(journalPath)
+      }),
+      "utf8"
+    ).toString("base64url");
+    return ConfigurationRecoveryHandle.import(token);
   }
 
   public updateWriteJournalStage(namespace: string, stage: "vault" | "local"): Result<void> {

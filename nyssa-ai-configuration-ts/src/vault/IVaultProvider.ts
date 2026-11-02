@@ -4,9 +4,11 @@
 //     +-- deleteSecret(secretName, signal)
 //     +-- getSecret(secretName, signal)
 //     +-- name
+//     +-- recovery
 //     `-- setSecret(secretName, secretValue, signal)
 
 import { type Result } from "../results/Result.js";
+import type { CloudKeyVaultRecovery } from "./CloudKeyVaultRecovery.js";
 
 /**
  * IVaultProvider adapts an external secret manager (such as Azure Key Vault or HashiCorp Vault).
@@ -14,6 +16,9 @@ import { type Result } from "../results/Result.js";
 export interface IVaultProvider {
   /** Unique provider name matching the manifest keyVault.name. */
   readonly name: string;
+
+  /** Optional guarded two-phase recovery capability for F-204. */
+  readonly recovery?: CloudKeyVaultRecovery | undefined;
 
   /**
    * Retrieves a secret value by its versionless identifier ('namespace/key').

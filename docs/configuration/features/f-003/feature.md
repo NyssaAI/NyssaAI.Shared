@@ -24,8 +24,8 @@ Applications need to encrypt sensitive values on disk without storing the encryp
 
 ## Scope
 
-- Platform `IKeyring` port (`GetSecret`, `SetSecret`, `DeleteSecret`) and platform adapters for Windows Credential Manager (`CredReadW`/`CredWriteW`/`CredDeleteW`), macOS Keychain (`SecItem*`), and Linux FreeDesktop Secret Service (`libsecret`).
-- Strict three-way outcome distinction in every `IKeyring` adapter: found secret bytes, confirmed absence (`null` only on `ERROR_NOT_FOUND`, `errSecItemNotFound`, or null `libsecret` lookup without `GError`), or operational failure.
+- Platform `IKeyring` port (`GetSecret`, `SetSecret`, `DeleteSecret`) and platform adapters for Windows Credential Manager (`CredReadW`/`CredWriteW`/`CredDeleteW`), macOS Keychain (`SecItem*`), and Linux Systemd Encrypted Credentials (`systemd-creds` / `CREDENTIALS_DIRECTORY`).
+- Strict three-way outcome distinction in every `IKeyring` adapter: found secret bytes, confirmed absence (`null` only on `ERROR_NOT_FOUND`, `errSecItemNotFound`, or absent `.cred` file on Linux), or operational failure.
 - `KeyringManagedSecret` custody at service `<ApplicationName>`, account `"configuration-key"`: generates and stores a 32-byte random key only on confirmed absence; never overwrites or regenerates a key on read error; zeroes raw key buffers after cipher initialization.
 - `ConfigurationCipherAesGcm` (`IConfigurationCipher`) implementing FormatVersion 2 AES-256-GCM sealing and opening:
   - Binary layout: `[0x02 (1 byte)][12-byte random nonce][16-byte authentication tag][ciphertext]`, encoded as Base64URL without padding.

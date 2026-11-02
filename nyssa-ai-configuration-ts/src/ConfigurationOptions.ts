@@ -11,6 +11,7 @@
 //     +-- lockTimeoutMs
 //     +-- logger
 //     +-- oauthClient
+//     +-- systemdCredentialName
 //     `-- vaultFactories
 
 import type { IKeyring } from "./keyring/IKeyring.js";
@@ -36,6 +37,8 @@ export interface ConfigurationOptions {
   readonly vaultFactories?: ReadonlyArray<IVaultProviderFactory> | undefined;
   /** Custom keyring implementation for master key custody. */
   readonly keyring?: IKeyring | undefined;
+  /** Name of the systemd credential file in CREDENTIALS_DIRECTORY (defaults to applicationName or master-key). */
+  readonly systemdCredentialName?: string | undefined;
   /** Custom OAuth 2.0 flow client for authorization code and refresh token exchange. */
   readonly oauthClient?: IOAuthFlowClient | undefined;
   /** Custom browser launcher for interactive OAuth sign-in. */

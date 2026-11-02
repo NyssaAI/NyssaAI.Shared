@@ -21,7 +21,8 @@ import type { SetOptions } from "./SetOptions.js";
 import type { ConfigurationRemoval } from "./values/ConfigurationRemoval.js";
 import type { ConfigurationMove } from "./values/ConfigurationMove.js";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
-import type { ConfigurationWriteRecoveryHandle } from "./recovery/ConfigurationWriteRecoveryHandle.js";
+import type { ConfigurationRecoveryHandle } from "./recovery/ConfigurationRecoveryHandle.js";
+import type { ConfigurationRecoveryOutcome } from "./recovery/Types.js";
 
 /**
  * Configuration provides application code with access to persistent settings, secrets, OAuth credentials, and recovery.
@@ -117,5 +118,8 @@ export interface Configuration {
   /**
    * Replays an interrupted multi-step write using its portable recovery handle.
    */
-  recover(handle: ConfigurationWriteRecoveryHandle, signal?: AbortSignal): Promise<Result<void>>;
+  recover(
+    handle: ConfigurationRecoveryHandle,
+    signal?: AbortSignal
+  ): Promise<Result<ConfigurationRecoveryOutcome>>;
 }

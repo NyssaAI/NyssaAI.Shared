@@ -35,7 +35,8 @@ import type { ConfigurationOptions } from "./ConfigurationOptions.js";
 import type { ConfigurationRemoval } from "./values/ConfigurationRemoval.js";
 import type { ConfigurationMove } from "./values/ConfigurationMove.js";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
-import type { ConfigurationWriteRecoveryHandle } from "./recovery/ConfigurationWriteRecoveryHandle.js";
+import type { ConfigurationRecoveryHandle } from "./recovery/ConfigurationRecoveryHandle.js";
+import type { ConfigurationRecoveryOutcome } from "./recovery/Types.js";
 import type { IConfigurationLogger } from "./logging/IConfigurationLogger.js";
 import type { LogRecord } from "./logging/LogRecord.js";
 
@@ -216,9 +217,9 @@ export class ConfigurationClient {
   }
 
   public async recover(
-    handle: ConfigurationWriteRecoveryHandle,
+    handle: ConfigurationRecoveryHandle,
     signal?: AbortSignal
-  ): Promise<Result<void>> {
+  ): Promise<Result<ConfigurationRecoveryOutcome>> {
     return this.executeLogged("recover", async () => {
       return this._store.recover(handle, signal);
     });

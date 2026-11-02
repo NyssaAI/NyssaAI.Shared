@@ -25,7 +25,10 @@ import { NamespaceDocumentHandler } from "./NamespaceDocumentHandler.js";
 import { ConfigurationMover } from "./ConfigurationMover.js";
 import { OAuthTokenManager } from "../oauth/OAuthTokenManager.js";
 import { PendingJournalManager } from "../recovery/PendingJournalManager.js";
-import type { ConfigurationWriteRecoveryHandle } from "../recovery/ConfigurationWriteRecoveryHandle.js";
+import { ConfigurationRecoveryCoordinator } from "../recovery/ConfigurationRecoveryCoordinator.js";
+import type { ConfigurationRecoveryTokenProtector } from "../recovery/ConfigurationRecoveryTokenProtector.js";
+import type { ConfigurationRecoveryHandle } from "../recovery/ConfigurationRecoveryHandle.js";
+import type { ConfigurationRecoveryOutcome } from "../recovery/Types.js";
 import type { ConfigurationRemoval } from "./ConfigurationRemoval.js";
 import type { ConfigurationMove } from "./ConfigurationMove.js";
 import type { IConfigurationCipher } from "../encryption/IConfigurationCipher.js";
@@ -36,12 +39,13 @@ import type { IBrowserLauncher } from "../oauth/IBrowserLauncher.js";
 
 /**
  * ConfigurationStore maps namespace names to document files and transparently seals/unseals values,
- * routes remote vault entries, refreshes OAuth tokens, and replays write-ahead journals.
+ * routes remote vault entries, refreshes OAuth tokens, and coordinates guarded two-phase recovery.
  */
 export class ConfigurationStore {
   private readonly _vaultCredentials: ReadonlyMap<string, { readonly namespace: string; readonly key: string }>;
   private readonly _vaultAuth: ReadonlyMap<string, { readonly namespace: string; readonly key: string; readonly options?: OAuthOptions | undefined }>;
   private readonly _resolver: ConfigurationEntryResolver;
+  private readonly _recoveryCoordinator: ConfigurationRecoveryCoordinator;
   private readonly _namespaceHandler: NamespaceDocumentHandler;
   private readonly _mover: ConfigurationMover;
 
@@ -56,6 +60,7 @@ export class ConfigurationStore {
       readonly oauthClient?: IOAuthFlowClient | undefined;
       readonly browserLauncher?: IBrowserLauncher | undefined;
       readonly clock?: (() => number) | undefined;
+      readonly recoveryProtector?: ConfigurationRecoveryTokenProtector | undefined;
     }
   ) {
     const resolvedDir = path.resolve(configurationDirectory);
@@ -67,8 +72,9 @@ export class ConfigurationStore {
     this._resolver = new ConfigurationEntryResolver(
       resolvedDir, lockTimeoutMs, cipher, vaultProviders, this._vaultCredentials, oauthManager, journalManager
     );
-    this._namespaceHandler = new NamespaceDocumentHandler(this._resolver);
-    this._mover = new ConfigurationMover(this._resolver);
+    this._recoveryCoordinator = new ConfigurationRecoveryCoordinator(this._resolver, options?.recoveryProtector);
+    this._namespaceHandler = new NamespaceDocumentHandler(this._resolver, this._recoveryCoordinator);
+    this._mover = new ConfigurationMover(this._resolver, this._recoveryCoordinator);
   }
 
   public setDocumentWriteInterceptor(interceptor?: (namespace: string) => Result<void>): void {
@@ -336,13 +342,9 @@ export class ConfigurationStore {
   }
 
   public async recover(
-    handle: ConfigurationWriteRecoveryHandle,
+    handle: ConfigurationRecoveryHandle,
     signal?: AbortSignal
-  ): Promise<Result<void>> {
-    signal?.throwIfAborted();
-    const validNs = ConfigurationDocumentLocalFile.validateSegment(handle.namespace, "namespace");
-    if (!validNs.ok) return validNs;
-
-    return this._resolver.replayPendingJournalsIfPresent(handle.namespace, signal, handle.operationId);
+  ): Promise<Result<ConfigurationRecoveryOutcome>> {
+    return this._recoveryCoordinator.recover(handle, signal);
   }
 }

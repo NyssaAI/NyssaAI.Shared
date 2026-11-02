@@ -1,11 +1,8 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using NyssaAI.Results;
-
-using NyssaAI.Configuration.Contracts;
-
 using NyssaAI.Configuration.Client;
+using NyssaAI.Configuration.Contracts;
+using NyssaAI.Results;
 
 namespace NyssaAI.Configuration.OAuth.Infrastructure;
 
@@ -42,16 +39,12 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
 {
     public bool IsLocalOnly => true;
 
-    private const int PersistAttempts = 3;
-
-    private readonly IConfigurationCipher _cipher;
-    private readonly IConfigurationDocumentFactory _documents;
     private readonly HttpClient _client;
     private readonly IBrowserLauncher _browser;
-    private readonly TimeSpan _refreshSkew;
     private readonly TimeProvider _clock;
     private readonly ILogger? _logger;
-    private readonly ConcurrentDictionary<string, HeldGrant> _held = new(StringComparer.Ordinal);
+    private readonly OAuthGrantStore _grantStore;
+    private readonly ConcurrentDictionary<string, OAuthHeldGrant> _held = new(StringComparer.Ordinal);
 
     /// <summary>Creates the provider.</summary>
     /// <param name="cipher">The cipher that seals and opens stored credentials.</param>
@@ -72,14 +65,19 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
         TimeSpan? refreshSkew = null,
         string name = "oauth")
     {
-        _cipher = cipher;
-        _documents = documents;
         _client = client;
         _browser = browser;
-        _refreshSkew = refreshSkew ?? TimeSpan.FromMinutes(5);
         _clock = clock ?? TimeProvider.System;
         _logger = logger;
         Name = name;
+        _grantStore = new OAuthGrantStore(
+            cipher,
+            documents,
+            client,
+            _clock,
+            refreshSkew ?? TimeSpan.FromMinutes(5),
+            name,
+            logger);
     }
 
     /// <inheritdoc/>
@@ -94,7 +92,7 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
         var address = $"{@namespace}/{key}";
         if (_held.TryRemove(address, out var held))
         {
-            var persisted = await PersistHeldAsync(@namespace, key, held, cancellationToken).ConfigureAwait(false);
+            var persisted = await _grantStore.PersistHeldAsync(@namespace, key, held, cancellationToken).ConfigureAwait(false);
             if (persisted.IsSuccess)
                 return Result<string>.Success(held.Token.AccessToken);
 
@@ -103,14 +101,14 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
             return Result<string>.Failure(persisted.Errors);
         }
 
-        var token = Open(entry, @namespace, key);
+        var token = _grantStore.Open(entry, @namespace, key);
         if (token.IsFailure)
             return Result<string>.Failure(token.Errors);
 
-        if (IsFresh(token.Value))
+        if (_grantStore.IsFresh(token.Value))
             return Result<string>.Success(token.Value.AccessToken);
 
-        return await RefreshUnderLockAsync(@namespace, key, cancellationToken).ConfigureAwait(false);
+        return await _grantStore.RefreshUnderLockAsync(@namespace, key, _held, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -135,7 +133,7 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
             return Result<ConfigurationValue>.Failure(authorized.Errors);
         }
 
-        return Seal(authorized.Value, @namespace, key);
+        return _grantStore.Seal(authorized.Value, @namespace, key);
     }
 
     /// <inheritdoc/>
@@ -151,7 +149,7 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
         string key,
         CancellationToken cancellationToken = default)
     {
-        var stored = Open(entry, @namespace, key);
+        var stored = _grantStore.Open(entry, @namespace, key);
         return stored.IsFailure
             ? ValueTask.FromResult(Result<ConfigurationValue>.Failure(stored.Errors))
             : AuthorizeAsync(@namespace, key, stored.Value.Options, cancellationToken);
@@ -164,14 +162,14 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
     /// </remarks>
     public ValueTask<Result<ConfigurationValue>> WriteAsync(string value, string @namespace, string key, CancellationToken cancellationToken = default)
     {
-        var token = Parse(value);
+        var token = OAuthGrantStore.Parse(value);
         if (token.IsFailure)
             return ValueTask.FromResult(Result<ConfigurationValue>.Failure(token.Errors));
 
         if (string.IsNullOrWhiteSpace(token.Value.RefreshToken) || string.IsNullOrWhiteSpace(token.Value.AccessToken))
             return ValueTask.FromResult(Result<ConfigurationValue>.Failure(GrantIncomplete));
 
-        return ValueTask.FromResult(Seal(token.Value, @namespace, key));
+        return ValueTask.FromResult(_grantStore.Seal(token.Value, @namespace, key));
     }
 
     /// <inheritdoc/>
@@ -220,227 +218,4 @@ internal sealed class OAuthTokenProvider : IConfigurationProvider, IReauthorizab
         "The stored sign-in changed while it was being refreshed.",
         $"The OAuth entry at '{@namespace}/{key}' was removed or replaced during refresh.",
         ErrorCategory.Conflict);
-
-    private bool IsFresh(OAuthToken token) => token.ExpiresAt - _clock.GetUtcNow() > _refreshSkew;
-
-    private async ValueTask<Result<string>> RefreshUnderLockAsync(string @namespace, string key, CancellationToken cancellationToken)
-    {
-        var document = _documents.Create(@namespace);
-        if (document.IsFailure)
-            return Result<string>.Failure(document.Errors);
-
-        Result<string>? outcome = null;
-        HeldGrant? exchanged = null;
-
-        var modified = await document.Value.ModifyAsync(
-            async entries =>
-            {
-                // Re-read inside the lock: another reader may have refreshed while this one waited.
-                if (!entries.TryGetValue(key, out var current) || !string.Equals(current.Provider, Name, StringComparison.Ordinal))
-                {
-                    outcome = Result<string>.Failure(EntryChanged(@namespace, key));
-                    return Result.Failure(outcome.Errors);
-                }
-
-                if (current.ReauthRequired)
-                {
-                    outcome = Result<string>.Failure(ReauthorizationRequired(@namespace, key));
-                    return Result.Failure(outcome.Errors);
-                }
-
-                var stored = Open(current, @namespace, key);
-                if (stored.IsFailure)
-                {
-                    outcome = Result<string>.Failure(stored.Errors);
-                    return Result.Failure(stored.Errors);
-                }
-
-                if (IsFresh(stored.Value))
-                {
-                    // The winner already stored a fresh grant; nothing to write.
-                    outcome = Result<string>.Success(stored.Value.AccessToken);
-                    return Result.Failure(NothingToWrite);
-                }
-
-                // The server is whatever this credential recorded when it was acquired.
-                var endpoint = OAuthTokenEndpoint.Create(stored.Value.Options, _client, _clock, logger: _logger);
-                if (endpoint.IsFailure)
-                {
-                    outcome = Result<string>.Failure(endpoint.Errors);
-                    return Result.Failure(endpoint.Errors);
-                }
-
-                var refreshed = await endpoint.Value.RefreshAsync(stored.Value.RefreshToken, cancellationToken).ConfigureAwait(false);
-                if (refreshed.IsFailure)
-                {
-                    if (refreshed.Errors.Any(error => error.Category == ErrorCategory.Forbidden))
-                    {
-                        // The grant is dead. Record that so every later read fails fast instead of
-                        // presenting the same refresh token again.
-                        _logger?.LogWarning("OAuth grant at {Namespace}/{Key} was rejected; re-authorization is required", @namespace, key);
-                        entries[key] = current with { ReauthRequired = true };
-                        outcome = Result<string>.Failure([ReauthorizationRequired(@namespace, key), .. refreshed.Errors]);
-                        return Result.Success();
-                    }
-
-                    _logger?.LogWarning("OAuth refresh at {Namespace}/{Key} failed ({Category})", @namespace, key, refreshed.Errors[0].Category);
-                    outcome = Result<string>.Failure(refreshed.Errors);
-                    return Result.Failure(refreshed.Errors);
-                }
-
-                var rotated = stored.Value with
-                {
-                    AccessToken = refreshed.Value.AccessToken,
-                    TokenType = refreshed.Value.TokenType,
-                    ExpiresAt = refreshed.Value.ExpiresAt,
-                    RefreshToken = string.IsNullOrEmpty(refreshed.Value.RefreshToken)
-                        ? stored.Value.RefreshToken
-                        : refreshed.Value.RefreshToken,
-                };
-
-                var sealedEntry = Seal(rotated, @namespace, key);
-                if (sealedEntry.IsFailure)
-                {
-                    outcome = Result<string>.Failure(sealedEntry.Errors);
-                    return Result.Failure(sealedEntry.Errors);
-                }
-
-                exchanged = new HeldGrant { Token = rotated, OriginalEntry = current };
-                entries[key] = sealedEntry.Value;
-                outcome = Result<string>.Success(rotated.AccessToken);
-                return Result.Success();
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        if (modified.IsSuccess || modified.Errors.Contains(NothingToWrite))
-            return outcome!;
-
-        if (exchanged is null)
-            return outcome ?? Result<string>.Failure(modified.Errors);
-
-        // The server rotated the grant and the publish failed. The exchanged token is the only
-        // live one now, so it is retried here and held in memory if that fails too.
-        var persisted = await PersistHeldAsync(@namespace, key, exchanged, cancellationToken).ConfigureAwait(false);
-        if (persisted.IsSuccess)
-            return Result<string>.Success(exchanged.Token.AccessToken);
-
-        if (!persisted.Errors.Any(error => error.Category == ErrorCategory.Conflict))
-        {
-            _held[$"{@namespace}/{key}"] = exchanged;
-            _logger?.LogWarning("OAuth grant at {Namespace}/{Key} was refreshed but could not be persisted; holding it for the next read", @namespace, key);
-        }
-        return Result<string>.Failure(persisted.Errors);
-    }
-
-    // Writes a token that has already been exchanged, without asking the server again. The
-    // entry must still match the original snapshot or already contain the complete held grant,
-    // so a concurrent refresh, Set, or Remove is never clobbered or resurrected.
-    private async ValueTask<Result> PersistHeldAsync(string @namespace, string key, HeldGrant held, CancellationToken cancellationToken)
-    {
-        Result last = Result.Success();
-        for (var attempt = 1; attempt <= PersistAttempts; attempt++)
-        {
-            var document = _documents.Create(@namespace);
-            if (document.IsFailure)
-                return Result.Failure(document.Errors);
-
-            last = await document.Value.ModifyAsync(
-                entries =>
-                {
-                    if (!entries.TryGetValue(key, out var current) || !string.Equals(current.Provider, Name, StringComparison.Ordinal))
-                        return ValueTask.FromResult(Result.Failure(EntryChanged(@namespace, key)));
-
-                    var stored = Open(current, @namespace, key);
-                    if (stored.IsFailure)
-                        return ValueTask.FromResult(Result.Failure(stored.Errors));
-
-                    // A server may keep the same refresh token while issuing a new access token.
-                    // Only the complete persisted grant proves the failed publish already landed.
-                    if (!current.ReauthRequired && SameGrant(stored.Value, held.Token))
-                        return ValueTask.FromResult(Result.Failure(NothingToWrite));
-
-                    if (current != held.OriginalEntry)
-                        return ValueTask.FromResult(Result.Failure(EntryChanged(@namespace, key)));
-
-                    var sealedEntry = Seal(held.Token, @namespace, key);
-                    if (sealedEntry.IsFailure)
-                        return ValueTask.FromResult(Result.Failure(sealedEntry.Errors));
-
-                    entries[key] = sealedEntry.Value;
-                    return ValueTask.FromResult(Result.Success());
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            if (last.IsSuccess || last.Errors.Contains(NothingToWrite))
-                return Result.Success();
-
-            // A changed entry or a canceled caller will not improve on retry.
-            if (last.Errors.Any(error => error.Category is ErrorCategory.Conflict or ErrorCategory.Canceled or ErrorCategory.Validation))
-                return last;
-        }
-
-        return last;
-    }
-
-    private static bool SameGrant(OAuthToken stored, OAuthToken held) =>
-        stored.AccessToken == held.AccessToken
-        && stored.RefreshToken == held.RefreshToken
-        && stored.TokenType == held.TokenType
-        && stored.ExpiresAt == held.ExpiresAt
-        && stored.AuthorizationEndpoint == held.AuthorizationEndpoint
-        && stored.TokenEndpoint == held.TokenEndpoint
-        && stored.ClientId == held.ClientId
-        && stored.Scopes.SequenceEqual(held.Scopes, StringComparer.Ordinal)
-        && stored.RedirectPort == held.RedirectPort;
-
-    private Result<OAuthToken> Open(ConfigurationValue entry, string @namespace, string key)
-    {
-        var opened = _cipher.Open(entry.Value, @namespace, key);
-        return opened.IsFailure ? Result<OAuthToken>.Failure(opened.Errors) : Parse(opened.Value);
-    }
-
-    private Result<ConfigurationValue> Seal(OAuthToken token, string @namespace, string key)
-    {
-        var sealedValue = _cipher.Seal(JsonSerializer.Serialize(token, OAuthGrantJsonContext.Default.OAuthToken), @namespace, key);
-        return sealedValue.IsFailure
-            ? Result<ConfigurationValue>.Failure(sealedValue.Errors)
-            : Result<ConfigurationValue>.Success(new ConfigurationValue
-            {
-                Value = sealedValue.Value,
-                Encrypted = true,
-                Provider = Name,
-            });
-    }
-
-    // This is the adapter boundary: System.Text.Json throws on a malformed payload.
-    private static Result<OAuthToken> Parse(string payload)
-    {
-        OAuthToken? token;
-        try
-        {
-            token = JsonSerializer.Deserialize(payload, OAuthGrantJsonContext.Default.OAuthToken);
-        }
-        catch (JsonException exception)
-        {
-            return Result<OAuthToken>.Failure(TokenPayloadInvalid(exception));
-        }
-
-        return token is null
-            ? Result<OAuthToken>.Failure(TokenPayloadMissing)
-            : Result<OAuthToken>.Success(token);
-    }
-
-    // A change callback returns this to say "the document is already right; do not publish". It
-    // never leaves this type: every caller replaces it with the outcome it stands for.
-    private static readonly Error NothingToWrite = Error.FromMessages(
-        "Nothing to write.",
-        "oauth: the stored grant is already current",
-        ErrorCategory.Conflict);
-
-    private sealed record HeldGrant
-    {
-        public required OAuthToken Token { get; init; }
-
-        public required ConfigurationValue OriginalEntry { get; init; }
-    }
 }

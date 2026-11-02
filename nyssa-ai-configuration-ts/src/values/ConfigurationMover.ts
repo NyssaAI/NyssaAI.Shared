@@ -2,11 +2,18 @@
 // Public interface:
 // `-- ConfigurationMover
 //     +-- move(namespace, key, destinationProvider, signal)
-//     `-- new(resolver)
+//     `-- new(resolver, recoveryCoordinator)
 
+import * as crypto from "node:crypto";
 import { ok, fail, type Result } from "../results/Result.js";
 import type { ConfigurationEntryResolver } from "./ConfigurationEntryResolver.js";
 import type { ConfigurationMove } from "./ConfigurationMove.js";
+import type { ConfigurationRecoveryCoordinator } from "../recovery/ConfigurationRecoveryCoordinator.js";
+import type {
+  ConfigurationPublicationState,
+  ConfigurationRecoveryState,
+  ConfigurationRecoveryStep
+} from "../recovery/Types.js";
 
 /**
  * ConfigurationMover migrates a configuration entry between providers, writing to the destination
@@ -14,9 +21,11 @@ import type { ConfigurationMove } from "./ConfigurationMove.js";
  */
 export class ConfigurationMover {
   private readonly _resolver: ConfigurationEntryResolver;
+  private readonly _recovery: ConfigurationRecoveryCoordinator;
 
-  public constructor(resolver: ConfigurationEntryResolver) {
+  public constructor(resolver: ConfigurationEntryResolver, recoveryCoordinator: ConfigurationRecoveryCoordinator) {
     this._resolver = resolver;
+    this._recovery = recoveryCoordinator;
   }
 
   public async move(
@@ -37,6 +46,10 @@ export class ConfigurationMover {
     }
 
     const targetProvider = this._resolver.canonicalProvider(destinationProvider);
+    if (targetProvider === "oauth") {
+      return fail("Cannot move an entry to the 'oauth' provider.", "Validation");
+    }
+
     const circularRes = this._resolver.checkCircularCredential(targetProvider, namespace, key);
     if (!circularRes.ok) {
       return circularRes;
@@ -45,16 +58,15 @@ export class ConfigurationMover {
     if (
       targetProvider !== "Default" &&
       targetProvider !== "aesLocal" &&
-      targetProvider !== "oauth" &&
       !this._resolver.vaultProviders.has(targetProvider)
     ) {
       return fail(`Configuration provider '${targetProvider}' is not registered.`, "Validation");
     }
 
     const doc = this._resolver.getDocument(namespace);
-    let sourceProvider = "Default";
-    let sourceSecretName = `${namespace}/${key}`;
     let wasNoOp = false;
+    let stateSnapshot: ConfigurationRecoveryState | undefined;
+    let publishing = false;
 
     const modRes = await doc.modify(async (current) => {
       const existing = current[key];
@@ -62,19 +74,13 @@ export class ConfigurationMover {
         return fail(`No configuration entry exists at '${namespace}/${key}'.`, "NotFound");
       }
 
-      sourceProvider = this._resolver.normalizeProviderName(existing);
+      const sourceProvider = this._resolver.normalizeProviderName(existing);
+      if (sourceProvider === "oauth") {
+        return fail("OAuth entries cannot be moved between providers.", "Conflict");
+      }
       if (sourceProvider === targetProvider) {
         wasNoOp = true;
         return ok(current);
-      }
-
-      if (
-        sourceProvider !== "Default" &&
-        sourceProvider !== "aesLocal" &&
-        sourceProvider !== "oauth" &&
-        typeof existing.value === "string"
-      ) {
-        sourceSecretName = existing.value;
       }
 
       const clearRes = await this._resolver.resolveEntryValue(namespace, key, existing, signal);
@@ -82,82 +88,133 @@ export class ConfigurationMover {
         return clearRes;
       }
 
-      const preparedRes = await this._resolver.prepareEntryForProvider(
+      const isJson = Boolean(existing.json) || typeof clearRes.value !== "string";
+      const writeStepRes = await this._recovery.prepareStep(
+        targetProvider,
+        "Write",
         namespace,
         key,
         clearRes.value,
-        targetProvider,
+        undefined,
+        isJson,
         signal
       );
-      if (!preparedRes.ok) {
-        return preparedRes;
+      if (!writeStepRes.ok) {
+        return writeStepRes;
       }
 
-      if (preparedRes.value.vaultWrite) {
-        const vw = preparedRes.value.vaultWrite;
-        const destVault = this._resolver.vaultProviders.get(vw.provider);
-        if (!destVault) {
-          return fail(`Configuration provider '${vw.provider}' is not registered.`, "Validation");
-        }
-        const writeDestRes = await destVault.setSecret(vw.secretName, vw.value, signal);
-        if (!writeDestRes.ok) {
-          return writeDestRes;
-        }
-      }
-
-      if (sourceProvider !== "Default" && sourceProvider !== "aesLocal" && sourceProvider !== "oauth") {
-        const moveJournalRes = this._resolver.journalManager.createMoveJournal(
+      const steps: ConfigurationRecoveryStep[] = [writeStepRes.value];
+      if (sourceProvider !== "Default" && sourceProvider !== "aesLocal") {
+        const remStepRes = await this._recovery.prepareStep(
+          sourceProvider,
+          "Remove",
           namespace,
           key,
-          sourceProvider,
-          sourceSecretName
+          undefined,
+          existing,
+          isJson,
+          signal
         );
-        if (!moveJournalRes.ok) {
-          return moveJournalRes;
+        if (!remStepRes.ok) {
+          return remStepRes;
+        }
+        steps.push(remStepRes.value);
+      }
+
+      const original = { ...current };
+      const proposed = { ...current };
+      const writeRes = await this._recovery.writeSteps(steps, proposed, signal);
+
+      stateSnapshot = {
+        operationId: crypto.randomUUID(),
+        namespace,
+        kind: "Move",
+        original,
+        proposed: { ...proposed },
+        steps: [...steps],
+        publication: "NotAttempted",
+        conflicted: false,
+        version: 1
+      };
+
+      if (!writeRes.ok) {
+        return writeRes;
+      }
+
+      if (sourceProvider !== "Default" && sourceProvider !== "aesLocal") {
+        const sourceSecretName =
+          typeof existing.value === "string" ? existing.value : `${namespace}/${key}`;
+        const sourceVault = this._resolver.vaultProviders.get(sourceProvider);
+        if (sourceVault && sourceVault.recovery === undefined) {
+          const moveJournalRes = this._resolver.journalManager.createMoveJournal(
+            namespace,
+            key,
+            sourceProvider,
+            sourceSecretName
+          );
+          if (!moveJournalRes.ok) {
+            return moveJournalRes;
+          }
         }
       }
+
+      publishing = true;
+      stateSnapshot = { ...stateSnapshot, publication: "Unknown" };
 
       const interceptRes = this._resolver.invokeWriteInterceptor(namespace);
       if (!interceptRes.ok) {
         return interceptRes;
       }
 
-      current[key] = preparedRes.value.entry;
+      current[key] = proposed[key]!;
       return ok(current);
     }, signal);
 
-    if (!modRes.ok) {
+    if (!stateSnapshot) {
+      if (modRes.ok) {
+        return ok({ sourceValueRemains: false });
+      }
       return modRes;
+    }
+
+    if (!modRes.ok) {
+      const pubState: ConfigurationPublicationState = publishing ? "Failed" : "NotAttempted";
+      const failedState: ConfigurationRecoveryState = {
+        ...stateSnapshot,
+        publication: pubState
+      };
+      const out = this._recovery.outcome(failedState);
+      return fail(modRes.error, modRes.category ?? "Unavailable", out.recoveryHandle, out.progress);
     }
 
     if (wasNoOp) {
       return ok({ sourceValueRemains: false });
     }
 
-    if (sourceProvider !== "Default" && sourceProvider !== "aesLocal" && sourceProvider !== "oauth") {
-      const sourceVault = this._resolver.vaultProviders.get(sourceProvider);
-      if (!sourceVault) {
-        return ok({
-          sourceValueRemains: true,
-          sourceDeleteError: `Source provider '${sourceProvider}' is not registered.`
-        });
-      }
+    const stepsMut = [...stateSnapshot.steps];
+    const cleanRes = await this._recovery.cleanupSteps(stepsMut, signal);
+    this._resolver.journalManager.deleteMoveJournal(namespace);
 
-      const delRes = await sourceVault.deleteSecret(sourceSecretName, signal);
-      if (!delRes.ok) {
-        this._resolver.journalManager.deleteMoveJournal(namespace);
-        return ok({
-          sourceValueRemains: true,
-          sourceDeleteError: delRes.error
-        });
-      }
+    const publishedState: ConfigurationRecoveryState = {
+      ...stateSnapshot,
+      steps: stepsMut,
+      publication: "Published"
+    };
+    const out = this._recovery.outcome(publishedState);
+    const remSteps = stepsMut.filter((s) => s.operation.action === "Remove");
+    const sourceValueRemains = remSteps.some((s) => s.state !== "Applied");
+    const sourceDeleteError = !cleanRes.ok ? cleanRes.error : undefined;
 
-      this._resolver.journalManager.deleteMoveJournal(namespace);
-      return ok({
-        sourceValueRemains: delRes.value.retained
-      });
-    }
-
-    return ok({ sourceValueRemains: false });
+    const moveVal: ConfigurationMove = {
+      sourceValueRemains,
+      ...(sourceDeleteError !== undefined ? { sourceDeleteError } : {}),
+      ...(sourceValueRemains ? { progress: out.progress } : {}),
+      ...(out.recoveryHandle !== undefined ? { recoveryHandle: out.recoveryHandle } : {})
+    };
+    return ok(
+      moveVal,
+      sourceValueRemains ? out.progress : undefined,
+      out.recoveryHandle
+    );
   }
 }

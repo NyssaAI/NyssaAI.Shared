@@ -6,7 +6,7 @@
 
 - **Unified Configuration API (`IConfiguration`)**: Read and write plain settings, locally encrypted secrets (`"aesLocal"`), OAuth 2.0 PKCE credentials (`"oauth"`), and external cloud vault pointers through a consistent `Result<T>` contract without exception-driven control flow.
 - **Cross-Platform Parity with .NET**: Shares the `~/.nyssa-ai/config-manifest.json` layout, `<namespace>.json` envelope structure, cross-process `.lock` coordination, and FormatVersion 2 AES-256-GCM ciphertext authenticated with `(namespace, key)` AAD.
-- **Address-Bound Local Encryption**: Encrypts secrets locally with AES-256-GCM using a 256-bit master key managed via `IKeyring` (`KeyringProtectedFile`, `KeyringOsPlatform`, or `InMemoryKeyring`).
+- **Address-Bound Local Encryption**: Encrypts secrets locally with AES-256-GCM using a 256-bit master key managed via `IKeyring` (`KeyringSystemdCreds`, `KeyringProtectedFile`, `KeyringOsPlatform`, or `InMemoryKeyring`).
 - **Typed DTO & Namespace Operations**: Save and read typed objects under a single key (`setAs` / `getAs`), replace an entire namespace from a DTO (`setNamespace` / `getNamespace`), or merge partial updates while preserving existing providers (`mergeSettings`).
 - **Interactive OAuth 2.0 + PKCE & Silent Refresh**: Acquire OAuth tokens via `authorize`, store encrypted credentials on disk, automatically refresh expiring tokens under cross-process namespace locks, and replay pending rotated grants after interrupted writes.
 - **External Vault Adaptation & Guarded Recovery**: Plug in cloud secret managers (`IVaultProviderFactory` / `IVaultProvider`), migrate entries between providers with `move`, and resume interrupted multi-step writes with portable `ConfigurationWriteRecoveryHandle` tokens (`recoverWrite`).
@@ -118,7 +118,8 @@ if (moveRes.ok) {
 | `configManifest` | `~/.nyssa-ai/config-manifest.json` | Path to the configuration manifest JSON file. |
 | `configDirectory` | `<cwd>/.nyssa-ai/config` | Default configuration directory recorded in the manifest on first use. |
 | `lockTimeoutMs` | `10000` (10s) | Cross-process document lock acquisition timeout in milliseconds. |
-| `keyring` | `KeyringProtectedFile` | Master key custody strategy (`KeyringProtectedFile`, `KeyringOsPlatform`, or `InMemoryKeyring`). |
+| `keyring` | Auto-detected (`KeyringSystemdCreds` -> `KeyringProtectedFile` -> `KeyringOsPlatform`) | Master key custody strategy (`KeyringSystemdCreds`, `KeyringProtectedFile`, `KeyringOsPlatform`, or `InMemoryKeyring`). |
+| `systemdCredentialName` | `undefined` (resolves `<service>.key`, `<account>.key`, `nyssa-key`, `master-key`, or single file) | Optional credential filename in `CREDENTIALS_DIRECTORY` when using `KeyringSystemdCreds`. |
 | `keyVault` | `undefined` | Optional external vault configuration (overridden whole if the manifest defines `keyVault`). |
 | `vaultFactories` | `[]` | Registered `IVaultProviderFactory` implementations matched by `keyVault.kind`. |
 | `logger` | `NullConfigurationLogger` | Optional structured operational logger (`IConfigurationLogger`). |
@@ -131,6 +132,7 @@ The package exports `ConfigurationClient` at the root entrypoint and exposes all
 import { ConfigurationClient } from "@nyssa-ai/configuration";
 import { InMemoryKeyring } from "@nyssa-ai/configuration/keyring/InMemoryKeyring";
 import { KeyringOsPlatform } from "@nyssa-ai/configuration/keyring/KeyringOsPlatform";
+import { KeyringSystemdCreds } from "@nyssa-ai/configuration/keyring/KeyringSystemdCreds";
 import { ConfigurationWriteRecoveryHandle } from "@nyssa-ai/configuration/recovery/ConfigurationWriteRecoveryHandle";
 import type { IConfiguration } from "@nyssa-ai/configuration/IConfiguration";
 import type { Result } from "@nyssa-ai/configuration/results/Result";

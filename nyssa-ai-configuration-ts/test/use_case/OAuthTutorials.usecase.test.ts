@@ -114,8 +114,8 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     expect(validTokenRes.ok && validTokenRes.value).toBe("access-token-initial");
     expect(browserLaunchCount).toBe(1);
 
-    // 3. Advance clock within 60-second expiry window (e.g., 59 minutes and 30 seconds later)
-    currentNowMs = Date.parse("2026-10-22T12:59:30Z");
+    // 3. Advance clock within 5-minute expiry window (e.g., 56 minutes after a 60-minute grant)
+    currentNowMs = Date.parse("2026-10-22T12:56:00Z");
     const refreshedTokenRes = await client.get("graph", "mailToken");
     expect(refreshedTokenRes.ok && refreshedTokenRes.value).toBe("access-token-refreshed");
     expect(browserLaunchCount).toBe(1); // 0 additional browser launches

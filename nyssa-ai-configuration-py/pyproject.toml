@@ -34,6 +34,7 @@ classifiers = [
 ]
 dependencies = [
     "cryptography>=42.0.0",
+    "nyssa-ai-result>=0.2.1",
 ]
 
 [project.optional-dependencies]

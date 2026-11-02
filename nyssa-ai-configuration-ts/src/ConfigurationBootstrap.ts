@@ -2,7 +2,8 @@
 // Public interface:
 // `-- ConfigurationBootstrap
 //     +-- createStore(options)
-//     `-- inferApplicationName()
+//     +-- inferApplicationName()
+//     `-- resolveKeyring(configurationDirectory, options)
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -11,13 +12,17 @@ import { ConfigurationManifestReader } from "./manifest/ConfigurationManifestRea
 import { ConfigurationManifestWriter } from "./manifest/ConfigurationManifestWriter.js";
 import { KeyringDefault } from "./keyring/KeyringDefault.js";
 import { KeyringOsPlatform } from "./keyring/KeyringOsPlatform.js";
+import { KeyringProtectedFile } from "./keyring/KeyringProtectedFile.js";
+import { KeyringSystemdCreds } from "./keyring/KeyringSystemdCreds.js";
 import { ConfigurationCipherAesGcm } from "./encryption/ConfigurationCipherAesGcm.js";
+import { ConfigurationRecoveryTokenProtector } from "./recovery/ConfigurationRecoveryTokenProtector.js";
 import { ConfigurationStore } from "./values/ConfigurationStore.js";
 import { ConfigurationDocumentLocalFile } from "./values/ConfigurationDocumentLocalFile.js";
 import { NullConfigurationLogger } from "./logging/NullConfigurationLogger.js";
 import { ProtectedFileSystem } from "./fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "./fileSecurity/DirectorySafety.js";
 import type { ConfigurationOptions } from "./ConfigurationOptions.js";
+import type { IKeyring } from "./keyring/IKeyring.js";
 import type { IVaultProvider } from "./vault/IVaultProvider.js";
 import type { VaultOptions } from "./manifest/VaultOptions.js";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
@@ -36,6 +41,7 @@ export class ConfigurationBootstrap {
       readonly configurationDirectory: string;
       readonly store: ConfigurationStore;
       readonly logger: IConfigurationLogger;
+      readonly keyring: IKeyring;
     }>
   > {
     const resolvedOptions = options ?? {};
@@ -95,7 +101,7 @@ export class ConfigurationBootstrap {
       return dirSafe;
     }
 
-    const keyring = resolvedOptions.keyring ?? new KeyringOsPlatform();
+    const keyring = this.resolveKeyring(configDir, resolvedOptions);
     const keyRes = await KeyringDefault.getOrCreateKey(applicationName, keyring);
     if (!keyRes.ok) {
       return keyRes;
@@ -103,6 +109,7 @@ export class ConfigurationBootstrap {
 
     const keyBuf = keyRes.value;
     const cipherRes = ConfigurationCipherAesGcm.create(keyBuf);
+    const recoveryProtector = new ConfigurationRecoveryTokenProtector(keyBuf, applicationName, configDir);
     keyBuf.fill(0);
 
     if (!cipherRes.ok) {
@@ -200,7 +207,8 @@ export class ConfigurationBootstrap {
       vaultAuth,
       oauthClient: resolvedOptions.oauthClient,
       browserLauncher: resolvedOptions.browserLauncher,
-      clock: resolvedOptions.clock
+      clock: resolvedOptions.clock,
+      recoveryProtector
     });
     storeRef = store;
 
@@ -208,8 +216,58 @@ export class ConfigurationBootstrap {
       applicationName,
       configurationDirectory: configDir,
       store,
-      logger
+      logger,
+      keyring
     });
+  }
+
+  /**
+   * Resolves the active keyring strategy when options.keyring is omitted:
+   * 1. Systemd Headless Server (CREDENTIALS_DIRECTORY) -> KeyringSystemdCreds
+   * 2. Protected File Fallback (.nyssa-key, NYSSA_CONFIG_DIR, or container/headless Linux) -> KeyringProtectedFile
+   * 3. Desktop Workstation -> KeyringOsPlatform
+   */
+  public static resolveKeyring(configurationDirectory: string, options?: ConfigurationOptions): IKeyring {
+    if (options?.keyring !== undefined) {
+      return options.keyring;
+    }
+
+    if (KeyringSystemdCreds.isAvailable()) {
+      return new KeyringSystemdCreds(options?.systemdCredentialName);
+    }
+
+    if (this.shouldUseProtectedFileKeyring(configurationDirectory)) {
+      return new KeyringProtectedFile(configurationDirectory);
+    }
+
+    return new KeyringOsPlatform();
+  }
+
+  private static shouldUseProtectedFileKeyring(configurationDirectory: string): boolean {
+    const keyFilePath = path.join(configurationDirectory, KeyringProtectedFile.KEY_FILENAME);
+    if (fs.existsSync(keyFilePath)) {
+      return true;
+    }
+
+    const envConfigDir = process.env["NYSSA_CONFIG_DIR"];
+    if (envConfigDir && envConfigDir.trim().length > 0) {
+      return true;
+    }
+
+    if (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv")) {
+      return true;
+    }
+
+    if (
+      process.platform === "linux" &&
+      !process.env["DBUS_SESSION_BUS_ADDRESS"] &&
+      !process.env["DISPLAY"] &&
+      !process.env["WAYLAND_DISPLAY"]
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   public static inferApplicationName(): string {

@@ -4,12 +4,97 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
 import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
-import { ConfigurationWriteRecoveryHandle } from "../../src/recovery/ConfigurationWriteRecoveryHandle.js";
-import { PendingJournalManager } from "../../src/recovery/PendingJournalManager.js";
-import { ProtectedFileSystem } from "../../src/fileSecurity/ProtectedFileSystem.js";
+import { ConfigurationRecoveryHandle } from "../../src/recovery/ConfigurationRecoveryHandle.js";
 import { ok, fail, type Result } from "../../src/results/Result.js";
 import type { IVaultProvider } from "../../src/vault/IVaultProvider.js";
 import type { IVaultProviderFactory } from "../../src/vault/IVaultProviderFactory.js";
+import type { CloudKeyVaultRecovery } from "../../src/vault/CloudKeyVaultRecovery.js";
+import type {
+  CloudKeyVaultOperation,
+  CloudKeyVaultPreparation,
+  CloudKeyVaultStepEffect,
+  ConfigurationPointer
+} from "../../src/vault/Types.js";
+
+class GuardedVault {
+  public readonly name = "bitwarden";
+  public readonly storeIdentity: string;
+  public readonly items = new Map<string, string>();
+  public readonly executedOps = new Map<string, ConfigurationPointer | null>();
+  public failOperationKey?: string | undefined;
+
+  public constructor(storeIdentity: string = "vault-instance-01") {
+    this.storeIdentity = storeIdentity;
+  }
+
+  public get recovery(): CloudKeyVaultRecovery {
+    return this;
+  }
+
+  public prepare(operation: CloudKeyVaultOperation): Result<CloudKeyVaultPreparation> {
+    const ref =
+      operation.pointer !== undefined
+        ? operation.pointer.value
+        : `guarded://${operation.namespace}/${operation.key}`;
+    return ok({
+      storeIdentity: this.storeIdentity,
+      targetReference: ref
+    });
+  }
+
+  public execute(
+    operation: CloudKeyVaultOperation,
+    preparation: CloudKeyVaultPreparation
+  ): Result<CloudKeyVaultStepEffect> {
+    if (this.failOperationKey === operation.key) {
+      return fail(`Simulated failure executing step for '${operation.key}'.`, "Unavailable");
+    }
+    const ref = preparation.targetReference ?? `guarded://${operation.namespace}/${operation.key}`;
+    if (operation.action === "Write") {
+      this.items.set(ref, operation.value ?? "");
+      const ptr: ConfigurationPointer = { provider: "bitwarden", value: ref };
+      this.executedOps.set(operation.operationId, ptr);
+      return ok({ state: "Applied", pointer: ptr });
+    }
+    this.items.delete(ref);
+    this.executedOps.set(operation.operationId, null);
+    return ok({ state: "Applied" });
+  }
+
+  public reconcile(
+    operation: CloudKeyVaultOperation,
+    _preparation: CloudKeyVaultPreparation
+  ): Result<CloudKeyVaultStepEffect> {
+    if (this.executedOps.has(operation.operationId)) {
+      const ptr = this.executedOps.get(operation.operationId) ?? undefined;
+      return ok({
+        state: "Applied",
+        ...(ptr !== undefined ? { pointer: ptr } : {})
+      });
+    }
+    return ok({ state: "Failed" });
+  }
+
+  public async getSecret(secretName: string): Promise<Result<string>> {
+    const val = this.items.get(secretName);
+    if (val === undefined) return fail(`Secret '${secretName}' not found.`, "NotFound");
+    return ok(val);
+  }
+
+  public async setSecret(secretName: string, secretValue: string): Promise<Result<void>> {
+    const ref = secretName.startsWith("guarded://") ? secretName : `guarded://${secretName}`;
+    this.items.set(ref, secretValue);
+    this.items.set(secretName, secretValue);
+    return ok(undefined);
+  }
+
+  public async deleteSecret(
+    secretName: string
+  ): Promise<Result<{ readonly deleted: boolean; readonly retained: boolean }>> {
+    this.items.delete(secretName);
+    return ok({ deleted: true, retained: false });
+  }
+}
 
 describe("ConfigurationRecovery Public Use Cases (F-204)", () => {
   let tempDir: string;
@@ -32,230 +117,244 @@ describe("ConfigurationRecovery Public Use Cases (F-204)", () => {
     }
   });
 
-  it("configurationRecovery_interruptedMultiKeyVaultWrite_returnsHandleAndRecoversOnRetryOrExplicitRecover (F-204 UC-001 & UC-002)", async () => {
-    const vaultSecrets = new Map<string, string>();
-    let failSecondVaultWrite = true;
-    let vaultWriteAttempts = 0;
-
-    const fakeVaultFactory: IVaultProviderFactory = {
-      kind: "azure-key-vault",
+  it("configurationRecovery_interruptedMove_returnsRecoveryHandleAndRecoversToCompleted (F-204 UC-001 & UC-002)", async () => {
+    const vault = new GuardedVault();
+    const factory: IVaultProviderFactory = {
+      kind: "bitwarden",
       create(): Result<IVaultProvider> {
-        return ok({
-          name: "azureKeyVault",
-          async getSecret(name: string): Promise<Result<string>> {
-            const val = vaultSecrets.get(name);
-            return val !== undefined ? ok(val) : fail("Not found", "NotFound");
-          },
-          async setSecret(name: string, val: string): Promise<Result<void>> {
-            vaultWriteAttempts++;
-            if (failSecondVaultWrite && vaultWriteAttempts === 2) {
-              return fail("Transient vault timeout on second key.", "Unavailable");
-            }
-            vaultSecrets.set(name, val);
-            return ok(undefined);
-          },
-          async deleteSecret(
-            name: string
-          ): Promise<Result<{ readonly deleted: boolean; readonly retained: boolean }>> {
-            vaultSecrets.delete(name);
-            return ok({ deleted: true, retained: false });
-          }
-        });
+        return ok(vault);
       }
     };
 
     const clientRes = await ConfigurationClient.initialize({
-      applicationName: "RecoveryApp",
+      applicationName: "nyssa-app",
       configManifest: manifestPath,
       configDirectory: configDir,
       keyring,
       keyVault: {
-        name: "azureKeyVault",
-        kind: "azure-key-vault",
-        settings: { vaultUri: "https://recovery.vault.azure.net/" },
-        secrets: {}
+        name: "bitwarden",
+        kind: "bitwarden"
       },
-      vaultFactories: [fakeVaultFactory]
+      vaultFactories: [factory]
     });
     expect(clientRes.ok).toBe(true);
     if (!clientRes.ok) return;
     const client = clientRes.value;
 
-    // Seed two external vault keys
-    failSecondVaultWrite = false;
     expect(
       (
-        await client.set("cluster", "nodeAKey", "v1-a", {
+        await client.set("payments", "secretKey", "sk_live_abc123", {
           encrypted: true,
-          provider: "azureKeyVault"
-        })
-      ).ok
-    ).toBe(true);
-    expect(
-      (
-        await client.set("cluster", "nodeBKey", "v1-b", {
-          encrypted: true,
-          provider: "azureKeyVault"
+          provider: "aesLocal"
         })
       ).ok
     ).toBe(true);
 
-    // Attempt multi-key update where the 2nd vault write fails midway
-    vaultWriteAttempts = 0;
-    failSecondVaultWrite = true;
-    const failedWrite = await client.setNamespace("cluster", {
-      nodeAKey: "v2-a",
-      nodeBKey: "v2-b"
-    });
-    expect(failedWrite.ok).toBe(false);
-    if (failedWrite.ok) return;
+    // Simulate a local disk write failure after the remote vault write succeeds
+    client.setDocumentWriteInterceptor((ns) => fail(`Simulated crash publishing ${ns}.json`, "Unavailable"));
+    const attempt = await client.move("payments", "secretKey", "bitwarden");
 
-    // Verify recoveryHandle is returned on the failed Result
-    expect(failedWrite.recoveryHandle).toBeDefined();
-    const handle = failedWrite.recoveryHandle!;
+    expect(attempt.ok).toBe(false);
+    if (attempt.ok) return;
+    expect(attempt.progress).toBeDefined();
+    expect(attempt.progress?.recovery).toBe("Unfinished");
+    expect(attempt.recoveryHandle).toBeDefined();
 
-    // Export and import recovery handle across process boundary (F-204 UC-002)
-    const exportedToken = handle.export();
-    const importedRes = ConfigurationWriteRecoveryHandle.import(exportedToken);
-    expect(importedRes.ok).toBe(true);
-    if (!importedRes.ok) return;
+    // Export and re-import the opaque recovery token across process boundaries
+    const exportedToken = attempt.recoveryHandle!.export();
+    expect(attempt.recoveryHandle!.toString()).toBe("ConfigurationRecoveryHandle { protected }");
+    expect(attempt.recoveryHandle!.toString()).not.toContain(exportedToken);
 
-    // Tampered journalPath outside .pending/ is rejected
-    const tamperedToken = Buffer.from(
-      JSON.stringify({
-        version: 1,
-        namespace: "cluster",
-        operationId: handle.operationId,
-        journalPath: path.join(configDir, "cluster.json")
-      }),
-      "utf8"
-    ).toString("base64url");
-    const tamperedRes = ConfigurationWriteRecoveryHandle.import(tamperedToken);
-    expect(tamperedRes.ok).toBe(false);
+    const reimported = ConfigurationRecoveryHandle.import(exportedToken);
+    expect(reimported.ok).toBe(true);
+    if (!reimported.ok) return;
 
-    // Recover using imported handle once vault is healthy again
-    failSecondVaultWrite = false;
-    const recoverRes = await client.recover(importedRes.value);
-    expect(recoverRes.ok).toBe(true);
+    // Restore local disk writes and recover
+    client.setDocumentWriteInterceptor(undefined);
+    const recovered = await client.recover(reimported.value);
+    expect(recovered.ok).toBe(true);
+    if (!recovered.ok) return;
+    expect(recovered.value.status).toBe("Completed");
+    expect(recovered.value.recoveryHandle).toBeUndefined();
 
-    // Verify both vault secrets and local document are converged and journal is deleted
-    expect(vaultSecrets.get("cluster/nodeAKey")).toBe("v2-a");
-    expect(vaultSecrets.get("cluster/nodeBKey")).toBe("v2-b");
-    const journalManager = new PendingJournalManager(configDir);
-    expect(journalManager.hasWriteJournal("cluster")).toBe(false);
-
-    const readNs = await client.getNamespace<{ nodeAKey: string; nodeBKey: string }>("cluster");
-    expect(readNs.ok && readNs.value).toEqual({
-      nodeAKey: "v2-a",
-      nodeBKey: "v2-b"
-    });
+    const valRes = await client.get("payments", "secretKey");
+    expect(valRes.ok && valRes.value).toBe("sk_live_abc123");
   });
 
-  it("configurationRecovery_pendingMoveCleanupJournal_completesSourceVaultDeleteOnNextOperation (F-204 UC-003)", async () => {
-    const vaultSecrets = new Map<string, string>([["legacy/apiToken", "secret-in-vault"]]);
-
-    const fakeVaultFactory: IVaultProviderFactory = {
-      kind: "azure-key-vault",
+  it("configurationRecovery_interruptedSetNamespace_recoversAndDetectsConcurrentConflict (F-204 UC-003)", async () => {
+    const vault = new GuardedVault();
+    const factory: IVaultProviderFactory = {
+      kind: "bitwarden",
       create(): Result<IVaultProvider> {
-        return ok({
-          name: "azureKeyVault",
-          async getSecret(name: string): Promise<Result<string>> {
-            const val = vaultSecrets.get(name);
-            return val !== undefined ? ok(val) : fail("Not found", "NotFound");
-          },
-          async setSecret(name: string, val: string): Promise<Result<void>> {
-            vaultSecrets.set(name, val);
-            return ok(undefined);
-          },
-          async deleteSecret(
-            name: string
-          ): Promise<Result<{ readonly deleted: boolean; readonly retained: boolean }>> {
-            vaultSecrets.delete(name);
-            return ok({ deleted: true, retained: false });
-          }
-        });
+        return ok(vault);
       }
     };
 
     const clientRes = await ConfigurationClient.initialize({
-      applicationName: "MoveRecoveryApp",
+      applicationName: "nyssa-app",
       configManifest: manifestPath,
       configDirectory: configDir,
       keyring,
       keyVault: {
-        name: "azureKeyVault",
-        kind: "azure-key-vault",
-        settings: { vaultUri: "https://move.vault.azure.net/" },
-        secrets: {}
+        name: "bitwarden",
+        kind: "bitwarden"
       },
-      vaultFactories: [fakeVaultFactory]
+      vaultFactories: [factory]
     });
     expect(clientRes.ok).toBe(true);
     if (!clientRes.ok) return;
     const client = clientRes.value;
 
-    // Seed local key after destination write succeeded, and simulate a leftover .pending/legacy.move.json
-    expect((await client.set("legacy", "apiToken", "secret-in-vault")).ok).toBe(true);
-    const journalManager = new PendingJournalManager(configDir);
     expect(
-      journalManager.createMoveJournal("legacy", "apiToken", "azureKeyVault", "legacy/apiToken").ok
+      (
+        await client.set("payments", "vaultKey", "v1", {
+          provider: "bitwarden"
+        })
+      ).ok
     ).toBe(true);
-    expect(journalManager.hasMoveJournal("legacy")).toBe(true);
+    expect((await client.set("payments", "region", "us-west")).ok).toBe(true);
 
-    // Next write/remove/move on "legacy" replays the move cleanup journal and deletes the vault secret
-    expect((await client.set("legacy", "otherKey", "ok")).ok).toBe(true);
-    expect(vaultSecrets.has("legacy/apiToken")).toBe(false);
-    expect(journalManager.hasMoveJournal("legacy")).toBe(false);
+    client.setDocumentWriteInterceptor((ns) => fail(`Crash writing ${ns}`, "Unavailable"));
+    const interrupted = await client.setNamespace("payments", {
+      vaultKey: "v2",
+      region: "eu-central"
+    });
+    expect(interrupted.ok).toBe(false);
+    if (interrupted.ok) return;
+    expect(interrupted.recoveryHandle).toBeDefined();
+
+    // External modification occurs before recover() is called
+    client.setDocumentWriteInterceptor(undefined);
+    expect((await client.set("payments", "region", "ap-south")).ok).toBe(true);
+
+    const conflictOutcome = await client.recover(interrupted.recoveryHandle!);
+    expect(conflictOutcome.ok).toBe(true);
+    if (!conflictOutcome.ok) return;
+    expect(conflictOutcome.value.status).toBe("Conflict");
+    expect(conflictOutcome.value.recoveryHandle).toBeUndefined();
   });
 
-  it("configurationRecovery_concurrentEditConflictVsManualReconciliation_detectsSha256Correctly (F-204 UC-004)", async () => {
+  it("configurationRecovery_unguardedVault_reportsManualReconciliationWhenInterrupted (F-204 UC-004)", async () => {
+    const unguardedItems = new Map<string, string>();
+    const unguardedVault: IVaultProvider = {
+      name: "bitwarden",
+      recovery: undefined,
+      async getSecret(secretName: string): Promise<Result<string>> {
+        const val = unguardedItems.get(secretName);
+        return val !== undefined ? ok(val) : fail("Not found", "NotFound");
+      },
+      async setSecret(secretName: string, secretValue: string): Promise<Result<void>> {
+        unguardedItems.set(secretName, secretValue);
+        return ok(undefined);
+      },
+      async deleteSecret(
+        secretName: string
+      ): Promise<Result<{ readonly deleted: boolean; readonly retained: boolean }>> {
+        unguardedItems.delete(secretName);
+        return ok({ deleted: true, retained: false });
+      }
+    };
+
+    const factory: IVaultProviderFactory = {
+      kind: "bitwarden",
+      create(): Result<IVaultProvider> {
+        return ok(unguardedVault);
+      }
+    };
+
     const clientRes = await ConfigurationClient.initialize({
-      applicationName: "ConflictRecoveryApp",
+      applicationName: "nyssa-app",
       configManifest: manifestPath,
       configDirectory: configDir,
-      keyring
+      keyring,
+      keyVault: {
+        name: "bitwarden",
+        kind: "bitwarden"
+      },
+      vaultFactories: [factory]
     });
     expect(clientRes.ok).toBe(true);
     if (!clientRes.ok) return;
     const client = clientRes.value;
 
-    expect((await client.set("orders", "endpoint", "https://v1.orders.local")).ok).toBe(true);
+    expect(
+      (
+        await client.set("payments", "vaultKey", "v1", {
+          provider: "bitwarden"
+        })
+      ).ok
+    ).toBe(true);
 
-    const docPath = path.join(configDir, "orders.json");
-    const journalManager = new PendingJournalManager(configDir);
-    const originalSha = PendingJournalManager.computeDocumentSha256(docPath);
+    client.setDocumentWriteInterceptor((ns) => fail(`Crash writing ${ns}`, "Unavailable"));
+    const attempt = await client.mergeSettings("payments", { vaultKey: "v2" });
 
-    // Create a pending write journal expecting originalSha and planning v2
-    const plannedDoc = {
-      endpoint: { value: "https://v2.orders.local" }
+    expect(attempt.ok).toBe(false);
+    if (attempt.ok) return;
+    expect(attempt.progress).toBeDefined();
+    expect(attempt.progress?.recovery).toBe("ManualReconciliation");
+    expect(attempt.recoveryHandle).toBeUndefined();
+  });
+
+  it("configurationRecovery_tamperedAeadRecoveryToken_isRejectedDuringRecover (F-204 UC-005)", async () => {
+    const vault = new GuardedVault();
+    const factory: IVaultProviderFactory = {
+      kind: "bitwarden",
+      create(): Result<IVaultProvider> {
+        return ok(vault);
+      }
     };
-    const handleRes = journalManager.createWriteJournal("orders", originalSha, plannedDoc, []);
-    expect(handleRes.ok).toBe(true);
-    if (!handleRes.ok) return;
 
-    // Case A: Another writer modifies orders.json to an unrelated state (v3)
-    const concurrentDoc = {
-      endpoint: { value: "https://v3-concurrent.orders.local" }
-    };
-    expect(ProtectedFileSystem.createFile(docPath, JSON.stringify(concurrentDoc, null, 2)).ok).toBe(
-      true
-    );
+    const clientRes = await ConfigurationClient.initialize({
+      applicationName: "nyssa-app",
+      configManifest: manifestPath,
+      configDirectory: configDir,
+      keyring,
+      keyVault: {
+        name: "bitwarden",
+        kind: "bitwarden"
+      },
+      vaultFactories: [factory]
+    });
+    expect(clientRes.ok).toBe(true);
+    if (!clientRes.ok) return;
+    const client = clientRes.value;
 
-    // Recovery detects SHA-256 mismatch against both expectedExistingSha256 and plannedNewSha256 -> Conflict
-    const conflictRes = await client.recover(handleRes.value);
-    expect(conflictRes.ok).toBe(false);
-    if (!conflictRes.ok) {
-      expect(conflictRes.category).toBe("Conflict");
+    expect((await client.set("cluster", "nodeAKey", "v1-a", { provider: "bitwarden" })).ok).toBe(true);
+    expect((await client.set("cluster", "nodeBKey", "v1-b", { provider: "bitwarden" })).ok).toBe(true);
+
+    vault.failOperationKey = "nodeBKey";
+    const interrupted = await client.setNamespace("cluster", {
+      nodeAKey: "v2-a",
+      nodeBKey: "v2-b"
+    });
+    expect(interrupted.ok).toBe(false);
+    if (interrupted.ok) return;
+    expect(interrupted.recoveryHandle).toBeDefined();
+
+    const rawToken = interrupted.recoveryHandle!.export();
+    const tamperedChars = rawToken.slice(0, -2) + (rawToken.endsWith("AA") ? "BB" : "AA");
+    const tamperedHandleRes = ConfigurationRecoveryHandle.import(tamperedChars);
+    expect(tamperedHandleRes.ok).toBe(true);
+    if (!tamperedHandleRes.ok) return;
+
+    const tamperedRecover = await client.recover(tamperedHandleRes.value);
+    expect(tamperedRecover.ok).toBe(false);
+    if (!tamperedRecover.ok) {
+      expect(tamperedRecover.category).toBe("Validation");
     }
-    // Journal is preserved so operator can inspect
-    expect(journalManager.hasWriteJournal("orders")).toBe(true);
 
-    // Case B: Operator manually reconciles orders.json to match plannedDocument (v2)
-    expect(ProtectedFileSystem.createFile(docPath, JSON.stringify(plannedDoc, null, 2)).ok).toBe(
-      true
-    );
-    const reconciledRes = await client.recover(handleRes.value);
-    expect(reconciledRes.ok).toBe(true);
-    expect(journalManager.hasWriteJournal("orders")).toBe(false);
+    // Valid token recovers cleanly once vault is healthy
+    vault.failOperationKey = undefined;
+    const validRecover = await client.recover(interrupted.recoveryHandle!);
+    expect(validRecover.ok).toBe(true);
+    if (validRecover.ok) {
+      expect(validRecover.value.status).toBe("Completed");
+    }
+
+    const nsRes = await client.getNamespace<{ nodeAKey: string; nodeBKey: string }>("cluster");
+    expect(nsRes.ok && nsRes.value).toEqual({
+      nodeAKey: "v2-a",
+      nodeBKey: "v2-b"
+    });
   });
 });

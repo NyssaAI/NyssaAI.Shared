@@ -1,45 +1,52 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Runtime.Versioning;
-using NyssaAI.Results;
 using NyssaAI.Configuration.Contracts;
-
+using NyssaAI.Results;
 
 namespace NyssaAI.Configuration.OsKeyring;
 
 /// <summary>
-/// KeyringLinux reads secrets from the Secret Service through <c>libsecret</c>. A secret filed
-/// under service <c>S</c> and key <c>K</c> is the item whose attributes are
-/// <c>service=S</c> and <c>username=K</c> under the generic schema, the same addressing
-/// <c>secret-tool</c> and the Python <c>keyring</c> package use, so an operator can place a
-/// secret with <c>secret-tool store --label=... service S username K</c>.
+/// KeyringLinux manages secrets on Linux using <c>systemd-creds</c>. A secret filed under service
+/// <c>S</c> and key <c>K</c> is stored as an encrypted credential file named
+/// <c>&lt;Sanitize(S)&gt;.&lt;Sanitize(K)&gt;.cred</c> inside <c>~/.nyssa-ai/credentials</c> (or
+/// <c>NYSSA_SYSTEMD_CREDS_DIR</c> when set), encrypted and decrypted via <c>systemd-creds</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The lookup returns a pointer that libsecret allocated and that only libsecret's own free may
-/// release; it is decoded and freed here, never marshalled as a managed string, which would hand
-/// a glib allocation to the CoTaskMem allocator. A populated <c>GError</c> is the store being
-/// unreachable -- no session bus, no daemon, a locked collection -- and is a failure, not a miss.
-/// A missing <c>libsecret-1.so.0</c> or <c>libglib-2.0.so.0</c> is the same failure.
-/// </para>
-/// <para>
-/// The schema is built in unmanaged memory rather than through <c>secret_schema_new</c>, which
-/// is variadic and cannot be called through <c>LibraryImport</c> portably.
+/// On reads, if <c>CREDENTIALS_DIRECTORY</c> is set and contains a matching pre-decrypted systemd
+/// credential file, its content is returned directly. Otherwise, if the <c>.cred</c> file does not
+/// exist, <c>null</c> is returned to signal confirmed absence. When the <c>.cred</c> file exists,
+/// <c>systemd-creds decrypt</c> is invoked and any non-zero exit code or process launch failure is
+/// reported as <see cref="ErrorCategory.Unavailable"/>, never mistaken for an absent secret.
 /// </para>
 /// </remarks>
-[SupportedOSPlatform("linux")]
 internal sealed partial class KeyringLinux : IKeyring
 {
-    private const string LibSecret = "libsecret-1.so.0";
-    private const string LibGlib = "libglib-2.0.so.0";
-    private const int SecretSearchAll = 1;
-    private const string SchemaName = "org.freedesktop.Secret.Generic";
-    private const string ServiceAttribute = "service";
-    private const string KeyAttribute = "username";
+    /// <summary>Environment variable overriding the directory where encrypted <c>.cred</c> files are stored.</summary>
+    public const string CredsDirEnvironmentVariable = "NYSSA_SYSTEMD_CREDS_DIR";
 
-    // SecretSchema: name pointer, flags, 32 attribute slots of (name pointer, type), then reserved
-    // fields; every slot is pointer-aligned, so the size is 74 pointers on any width.
-    private const int SchemaAttributeSlots = 32;
-    private static readonly nuint SchemaSize = (nuint)(74 * nint.Size);
+    private const string SystemdCredsBinary = "systemd-creds";
+
+    private readonly Func<string, string[], string?, (int ExitCode, string StdOut, string StdErr)> _runner;
+    private readonly string? _storeDirectory;
+
+    /// <summary>Creates a Linux keyring backed by <c>systemd-creds</c>.</summary>
+    public KeyringLinux()
+        : this(null, null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a Linux keyring with an optional process runner and store directory for deterministic testing.
+    /// </summary>
+    internal KeyringLinux(
+        Func<string, string[], string?, (int ExitCode, string StdOut, string StdErr)>? runner = null,
+        string? storeDirectory = null)
+    {
+        _runner = runner ?? RunProcess;
+        _storeDirectory = storeDirectory;
+    }
 
     /// <inheritdoc/>
     public Result<string?> Get(string service, string key)
@@ -48,63 +55,44 @@ internal sealed partial class KeyringLinux : IKeyring
         if (target.IsFailure)
             return Result<string?>.Failure(target.Errors);
 
-        // This is the adapter boundary: the loader throws when a library or symbol is missing, and
-        // every native allocation made here is released in the finally regardless of outcome.
-        nint glib = 0, schema = 0, schemaName = 0, serviceName = 0, keyName = 0, serviceValue = 0, keyValue = 0, table = 0;
+        var credName = GetCredentialName(service, key);
+
+        var runtimeCredsDir = Environment.GetEnvironmentVariable(KeyringSystemdCreds.CredentialsDirectoryVariable);
+        if (!string.IsNullOrWhiteSpace(runtimeCredsDir) && Directory.Exists(runtimeCredsDir))
+        {
+            try
+            {
+                var preprovisioned = KeyringSystemdCreds.TryReadCredentialFile(
+                    runtimeCredsDir,
+                    explicitName: null,
+                    credName,
+                    service,
+                    key);
+                if (preprovisioned is not null)
+                    return Result<string?>.Success(preprovisioned);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return Result<string?>.Failure(StoreUnavailable(-1, exception.Message));
+            }
+        }
+
+        var credFilePath = GetCredentialFilePath(credName);
+        if (!File.Exists(credFilePath))
+            return Result<string?>.Success(null);
+
         try
         {
-            glib = NativeLibrary.Load(LibGlib);
-            var hash = NativeLibrary.GetExport(glib, "g_str_hash");
-            var equal = NativeLibrary.GetExport(glib, "g_str_equal");
+            var arguments = BuildDecryptArguments(credName, credFilePath);
+            var (exitCode, stdOut, stdErr) = _runner(SystemdCredsBinary, arguments, null);
+            if (exitCode != 0)
+                return Result<string?>.Failure(StoreUnavailable(exitCode, stdErr.Trim()));
 
-            schemaName = Marshal.StringToCoTaskMemUTF8(SchemaName);
-            serviceName = Marshal.StringToCoTaskMemUTF8(ServiceAttribute);
-            keyName = Marshal.StringToCoTaskMemUTF8(KeyAttribute);
-            serviceValue = Marshal.StringToCoTaskMemUTF8(service);
-            keyValue = Marshal.StringToCoTaskMemUTF8(key);
-
-            schema = BuildSchema(schemaName, serviceName, keyName);
-
-            table = HashTableNew(hash, equal);
-            HashTableInsert(table, serviceName, serviceValue);
-            HashTableInsert(table, keyName, keyValue);
-
-            var password = SecretPasswordLookup(schema, table, 0, out var error);
-            if (error != 0)
-            {
-                var failure = StoreUnavailable(ReadErrorCode(error), ReadErrorMessage(error));
-                ErrorFree(error);
-                if (password != 0)
-                    SecretPasswordFree(password);
-                return Result<string?>.Failure(failure);
-            }
-
-            if (password == 0)
-                return Result<string?>.Success(null);
-
-            var secret = Marshal.PtrToStringUTF8(password);
-            SecretPasswordFree(password);
-            return Result<string?>.Success(secret);
+            return Result<string?>.Success(stdOut.TrimEnd('\r', '\n'));
         }
-        catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        catch (Exception exception) when (exception is Win32Exception or FileNotFoundException or InvalidOperationException or IOException)
         {
             return Result<string?>.Failure(LibraryUnavailable(exception));
-        }
-        finally
-        {
-            if (table != 0)
-                HashTableUnref(table);
-            if (schema != 0)
-                FreeSchema(schema);
-            Marshal.FreeCoTaskMem(schemaName);
-            Marshal.FreeCoTaskMem(serviceName);
-            Marshal.FreeCoTaskMem(keyName);
-            Marshal.FreeCoTaskMem(serviceValue);
-            Marshal.FreeCoTaskMem(keyValue);
-            if (glib != 0)
-            {
-                NativeLibrary.Free(glib);
-            }
         }
     }
 
@@ -115,70 +103,51 @@ internal sealed partial class KeyringLinux : IKeyring
         if (target.IsFailure)
             return Result.Failure(target.Errors);
 
-        // Mirrors Get: the same schema and attribute table address the item, so a value stored
-        // here is found by the same lookup and by secret-tool with the same arguments.
-        nint glib = 0, schema = 0, schemaName = 0, serviceName = 0, keyName = 0, serviceValue = 0, keyValue = 0;
-        nint table = 0, label = 0, password = 0;
+        var credName = GetCredentialName(service, key);
+        var storeDir = ResolveStoreDirectory();
+        var credFilePath = Path.Combine(storeDir, $"{credName}.cred");
+        var tempFilePath = Path.Combine(storeDir, $".{credName}.{Guid.NewGuid():N}.tmp");
+
         try
         {
-            glib = NativeLibrary.Load(LibGlib);
-            var hash = NativeLibrary.GetExport(glib, "g_str_hash");
-            var equal = NativeLibrary.GetExport(glib, "g_str_equal");
-
-            schemaName = Marshal.StringToCoTaskMemUTF8(SchemaName);
-            serviceName = Marshal.StringToCoTaskMemUTF8(ServiceAttribute);
-            keyName = Marshal.StringToCoTaskMemUTF8(KeyAttribute);
-            serviceValue = Marshal.StringToCoTaskMemUTF8(service);
-            keyValue = Marshal.StringToCoTaskMemUTF8(key);
-            label = Marshal.StringToCoTaskMemUTF8(target.Value);
-            password = Marshal.StringToCoTaskMemUTF8(secret);
-
-            schema = BuildSchema(schemaName, serviceName, keyName);
-
-            table = HashTableNew(hash, equal);
-            HashTableInsert(table, serviceName, serviceValue);
-            HashTableInsert(table, keyName, keyValue);
-
-            // The default collection is chosen by passing no collection at all.
-            var stored = SecretPasswordStore(schema, table, 0, label, password, 0, out var error);
-            if (error != 0)
+            Directory.CreateDirectory(storeDir);
+            if (!OperatingSystem.IsWindows())
             {
-                var failure = StoreNotWritable(ReadErrorCode(error), ReadErrorMessage(error));
-                ErrorFree(error);
-                return Result.Failure(failure);
+                File.SetUnixFileMode(
+                    storeDir,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
 
-            return stored != 0
-                ? Result.Success()
-                : Result.Failure(StoreNotWritable(0, "the Secret Service refused the item without reporting an error"));
+            var arguments = BuildEncryptArguments(credName, tempFilePath);
+            var (exitCode, stdOut, stdErr) = _runner(SystemdCredsBinary, arguments, secret);
+            if (exitCode != 0)
+            {
+                TryDeleteFile(tempFilePath);
+                return Result.Failure(StoreNotWritable(exitCode, stdErr.Trim()));
+            }
+
+            if (!File.Exists(tempFilePath))
+                File.WriteAllText(tempFilePath, stdOut);
+
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    tempFilePath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+
+            File.Move(tempFilePath, credFilePath, overwrite: true);
+            return Result.Success();
         }
-        catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        catch (Exception exception) when (exception is Win32Exception or FileNotFoundException or InvalidOperationException)
         {
+            TryDeleteFile(tempFilePath);
             return Result.Failure(LibraryUnavailable(exception));
         }
-        finally
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            if (table != 0)
-                HashTableUnref(table);
-            if (schema != 0)
-                FreeSchema(schema);
-            Marshal.FreeCoTaskMem(schemaName);
-            Marshal.FreeCoTaskMem(serviceName);
-            Marshal.FreeCoTaskMem(keyName);
-            Marshal.FreeCoTaskMem(serviceValue);
-            Marshal.FreeCoTaskMem(keyValue);
-            Marshal.FreeCoTaskMem(label);
-            if (password != 0)
-            {
-                // The password buffer holds the secret; clear it before it returns to the allocator.
-                ZeroUtf8(password, secret.Length);
-                Marshal.FreeCoTaskMem(password);
-            }
-
-            if (glib != 0)
-            {
-                NativeLibrary.Free(glib);
-            }
+            TryDeleteFile(tempFilePath);
+            return Result.Failure(StoreNotWritable(-1, exception.Message));
         }
     }
 
@@ -189,174 +158,149 @@ internal sealed partial class KeyringLinux : IKeyring
         if (target.IsFailure)
             return Result.Failure(target.Errors);
 
-        // This is the adapter boundary: the loader throws when a library or symbol is missing, and
-        // every native allocation made here is released in the finally regardless of outcome.
-        nint glib = 0, schema = 0, schemaName = 0, serviceName = 0, keyName = 0, serviceValue = 0, keyValue = 0, table = 0;
-        nint items = 0;
+        var credName = GetCredentialName(service, key);
+        var credFilePath = GetCredentialFilePath(credName);
+
         try
         {
-            glib = NativeLibrary.Load(LibGlib);
-            var hash = NativeLibrary.GetExport(glib, "g_str_hash");
-            var equal = NativeLibrary.GetExport(glib, "g_str_equal");
-
-            schemaName = Marshal.StringToCoTaskMemUTF8(SchemaName);
-            serviceName = Marshal.StringToCoTaskMemUTF8(ServiceAttribute);
-            keyName = Marshal.StringToCoTaskMemUTF8(KeyAttribute);
-            serviceValue = Marshal.StringToCoTaskMemUTF8(service);
-            keyValue = Marshal.StringToCoTaskMemUTF8(key);
-
-            schema = BuildSchema(schemaName, serviceName, keyName);
-
-            table = HashTableNew(hash, equal);
-            HashTableInsert(table, serviceName, serviceValue);
-            HashTableInsert(table, keyName, keyValue);
-
-            // Search all matching items, including locked ones. password_clearv_sync only removes
-            // unlocked items and can silently leave a locked credential behind.
-            items = SecretServiceSearch(0, schema, table, SecretSearchAll, 0, out var error);
-            if (error != 0)
-            {
-                var failure = StoreNotDeletable(ReadErrorCode(error), ReadErrorMessage(error));
-                ErrorFree(error);
-                return Result.Failure(failure);
-            }
-
-            // GList contains data, next and previous pointers. Searching does not load secret values.
-            for (var node = items; node != 0; node = Marshal.ReadIntPtr(node, nint.Size))
-            {
-                var deleted = SecretItemDelete(Marshal.ReadIntPtr(node), 0, out error);
-                if (error != 0)
-                {
-                    var failure = StoreNotDeletable(ReadErrorCode(error), ReadErrorMessage(error));
-                    ErrorFree(error);
-                    return Result.Failure(failure);
-                }
-
-                if (deleted == 0)
-                    return Result.Failure(StoreNotDeletable(0, "the Secret Service refused deletion without reporting an error"));
-            }
+            if (File.Exists(credFilePath))
+                File.Delete(credFilePath);
 
             return Result.Success();
         }
-        catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return Result.Failure(LibraryUnavailable(exception));
-        }
-        finally
-        {
-            for (var node = items; node != 0; node = Marshal.ReadIntPtr(node, nint.Size))
-                ObjectUnref(Marshal.ReadIntPtr(node));
-            if (items != 0)
-                ListFree(items);
-            if (table != 0)
-                HashTableUnref(table);
-            if (schema != 0)
-                FreeSchema(schema);
-            Marshal.FreeCoTaskMem(schemaName);
-            Marshal.FreeCoTaskMem(serviceName);
-            Marshal.FreeCoTaskMem(keyName);
-            Marshal.FreeCoTaskMem(serviceValue);
-            Marshal.FreeCoTaskMem(keyValue);
-            if (glib != 0)
-            {
-                NativeLibrary.Free(glib);
-            }
+            return Result.Failure(StoreNotDeletable(-1, exception.Message));
         }
     }
 
-    /// <summary>The failure returned when the Secret Service refuses deletion or cannot search for the item.</summary>
-    /// <param name="code">The GError code, or zero when deletion was refused without an error.</param>
-    /// <param name="message">The store's diagnostic message.</param>
+    internal static string GetCredentialName(string service, string key) =>
+        $"{SanitizeName(service)}.{SanitizeName(key)}";
+
+    internal static string SanitizeName(string value)
+    {
+        var chars = value.ToCharArray();
+        for (var index = 0; index < chars.Length; index++)
+        {
+            var ch = chars[index];
+            var allowed = (ch >= 'a' && ch <= 'z')
+                || (ch >= 'A' && ch <= 'Z')
+                || (ch >= '0' && ch <= '9')
+                || ch is '.' or '_' or '-';
+            if (!allowed)
+                chars[index] = '_';
+        }
+
+        return new string(chars);
+    }
+
+    /// <summary>The failure returned when the credential file cannot be deleted.</summary>
+    /// <param name="code">The exit or error code.</param>
+    /// <param name="message">The diagnostic message.</param>
     public static Error StoreNotDeletable(int code, string? message) => Error.FromMessages(
         "The credential could not be deleted.",
-        $"keyring: the Secret Service reported deletion error {code}: {message}",
+        $"keyring: systemd-creds deletion error {code}: {message}",
         ErrorCategory.Unavailable);
 
-    /// <summary>The failure returned when the Secret Service could not answer.</summary>
-    /// <param name="code">The <c>GError</c> code.</param>
-    /// <param name="message">The <c>GError</c> message, which describes the connection, never a secret.</param>
+    /// <summary>The failure returned when systemd-creds could not decrypt a credential.</summary>
+    /// <param name="code">The exit code.</param>
+    /// <param name="message">The diagnostic message from systemd-creds, never a secret.</param>
     public static Error StoreUnavailable(int code, string? message) => Error.FromMessages(
         "The credential store could not be read.",
-        $"keyring: the Secret Service reported error {code}: {message}",
+        $"keyring: systemd-creds reported error {code}: {message}",
         ErrorCategory.Unavailable);
 
-    /// <summary>The failure returned when libsecret or glib is not installed.</summary>
-    /// <param name="exception">The loader failure.</param>
+    /// <summary>The failure returned when systemd-creds is not installed or cannot be launched.</summary>
+    /// <param name="exception">The process launch failure.</param>
     public static Error LibraryUnavailable(Exception exception) => Error.FromMessages(
         "The credential store is not available on this machine.",
         $"keyring: {exception.GetType().Name}: {exception.Message}",
         ErrorCategory.Unavailable);
 
-    /// <summary>The failure returned when the Secret Service refused to store an item.</summary>
-    /// <param name="code">The <c>GError</c> code, or zero when the call failed without one.</param>
-    /// <param name="message">The <c>GError</c> message, which describes the connection, never a secret.</param>
+    /// <summary>The failure returned when systemd-creds refused to encrypt or store an item.</summary>
+    /// <param name="code">The exit code.</param>
+    /// <param name="message">The diagnostic message from systemd-creds, never a secret.</param>
     public static Error StoreNotWritable(int code, string? message) => Error.FromMessages(
         "The credential store could not be written.",
-        $"keyring: the Secret Service reported error {code}: {message}",
+        $"keyring: systemd-creds reported error {code}: {message}",
         ErrorCategory.Unavailable);
 
-    private static unsafe void ZeroUtf8(nint buffer, int characters) =>
-        new Span<byte>((void*)buffer, characters).Clear();
-
-    private static unsafe nint BuildSchema(nint schemaName, nint serviceName, nint keyName)
+    private string ResolveStoreDirectory()
     {
-        var schema = (byte*)NativeMemory.AllocZeroed(SchemaSize);
-        var slots = (nint*)schema;
-        slots[0] = schemaName;
-        // slots[1] holds the flags (SECRET_SCHEMA_NONE = 0) and stays zero.
-        // Each attribute is two pointer-sized slots: the name and the type, STRING being 0.
-        slots[2] = serviceName;
-        slots[4] = keyName;
-        // The third attribute's null name terminates the list; the memory is already zero.
-        _ = SchemaAttributeSlots;
-        return (nint)schema;
+        if (!string.IsNullOrWhiteSpace(_storeDirectory))
+            return _storeDirectory;
+
+        var configured = Environment.GetEnvironmentVariable(CredsDirEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(configured))
+            return configured;
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".nyssa-ai",
+            "credentials");
     }
 
-    private static unsafe void FreeSchema(nint schema) => NativeMemory.Free((void*)schema);
+    private string GetCredentialFilePath(string credName) =>
+        Path.Combine(ResolveStoreDirectory(), $"{credName}.cred");
 
-    private static unsafe int ReadErrorCode(nint error) => *(int*)((byte*)error + sizeof(uint));
+    private static string[] BuildDecryptArguments(string credName, string credFilePath) =>
+        IsUserMode()
+            ? ["decrypt", $"--name={credName}", "--user", credFilePath, "-"]
+            : ["decrypt", $"--name={credName}", credFilePath, "-"];
 
-    private static unsafe string? ReadErrorMessage(nint error)
+    private static string[] BuildEncryptArguments(string credName, string outputFilePath) =>
+        IsUserMode()
+            ? ["encrypt", $"--name={credName}", "--user", "-", outputFilePath]
+            : ["encrypt", $"--name={credName}", "-", outputFilePath];
+
+    private static bool IsUserMode() =>
+        !OperatingSystem.IsLinux() || GetEffectiveUid() != 0;
+
+    private static void TryDeleteFile(string path)
     {
-        // GError: guint32 domain, gint code, gchar* message; the pointer sits at the next
-        // pointer-aligned offset after the two 32-bit fields.
-        var messageOffset = Math.Max(2 * sizeof(uint), nint.Size);
-        var message = *(nint*)((byte*)error + messageOffset);
-        return message == 0 ? null : Marshal.PtrToStringUTF8(message);
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort cleanup of temporary file.
+        }
     }
 
-    [LibraryImport(LibSecret, EntryPoint = "secret_password_lookupv_sync")]
-    private static partial nint SecretPasswordLookup(nint schema, nint attributes, nint cancellable, out nint error);
+    private static (int ExitCode, string StdOut, string StdErr) RunProcess(
+        string fileName,
+        string[] arguments,
+        string? standardInput)
+    {
+        var startInfo = new ProcessStartInfo(fileName)
+        {
+            RedirectStandardInput = standardInput is not null,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
 
-    [LibraryImport(LibSecret, EntryPoint = "secret_password_storev_sync")]
-    private static partial int SecretPasswordStore(
-        nint schema, nint attributes, nint collection, nint label, nint password, nint cancellable, out nint error);
+        foreach (var argument in arguments)
+            startInfo.ArgumentList.Add(argument);
 
-    [LibraryImport(LibSecret, EntryPoint = "secret_service_search_sync")]
-    private static partial nint SecretServiceSearch(
-        nint service, nint schema, nint attributes, int flags, nint cancellable, out nint error);
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start '{fileName}'.");
 
-    [LibraryImport(LibSecret, EntryPoint = "secret_item_delete_sync")]
-    private static partial int SecretItemDelete(nint item, nint cancellable, out nint error);
+        if (standardInput is not null)
+        {
+            process.StandardInput.Write(standardInput);
+            process.StandardInput.Close();
+        }
 
-    [LibraryImport("libgobject-2.0.so.0", EntryPoint = "g_object_unref")]
-    private static partial void ObjectUnref(nint instance);
+        var stdOutTask = process.StandardOutput.ReadToEndAsync();
+        var stdErrTask = process.StandardError.ReadToEndAsync();
+        process.WaitForExit();
+        return (process.ExitCode, stdOutTask.GetAwaiter().GetResult(), stdErrTask.GetAwaiter().GetResult());
+    }
 
-    [LibraryImport(LibGlib, EntryPoint = "g_list_free")]
-    private static partial void ListFree(nint list);
-
-    [LibraryImport(LibSecret, EntryPoint = "secret_password_free")]
-    private static partial void SecretPasswordFree(nint password);
-
-    [LibraryImport(LibGlib, EntryPoint = "g_hash_table_new")]
-    private static partial nint HashTableNew(nint hashFunction, nint equalFunction);
-
-    [LibraryImport(LibGlib, EntryPoint = "g_hash_table_insert")]
-    private static partial int HashTableInsert(nint table, nint key, nint value);
-
-    [LibraryImport(LibGlib, EntryPoint = "g_hash_table_unref")]
-    private static partial void HashTableUnref(nint table);
-
-    [LibraryImport(LibGlib, EntryPoint = "g_error_free")]
-    private static partial void ErrorFree(nint error);
+    [LibraryImport("libc", EntryPoint = "geteuid")]
+    private static partial uint GetEffectiveUid();
 }
