@@ -1,6 +1,6 @@
 {
   "name": "@nyssa-ai/db-gateway",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "description": "Zero-ceremony, typed database gateway across SQLite and PostgreSQL matching NyssaAI.DbGateway",
   "type": "module",
   "main": "./dist/gateway/DbGatewayClient.js",
