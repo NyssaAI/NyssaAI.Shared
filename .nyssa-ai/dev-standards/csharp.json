@@ -1,10 +1,10 @@
 {
   "revision": "758e538dfaae67ba49ad6d144f0e21800ddbf4c5",
   "source_roots": [
-    "nyssa-ai-configuration-cs/src",
+    "nyssa-ai-result-cs/src",
     "nyssa-ai-logging-cs/src",
     "nyssa-ai-dbgateway-cs/src",
-    "nyssa-ai-result-cs/src"
+    "nyssa-ai-configuration-cs/src"
   ],
   "commands": {
     "build": {
@@ -18,19 +18,17 @@
     "unit": {
       "cwd": ".",
       "argv": [
-        "dotnet",
-        "test",
-        "--project",
-        "nyssa-ai-configuration-cs/test/unit"
+        "python",
+        "-c",
+        "import subprocess,sys; [sys.exit(r.returncode) for p in ['nyssa-ai-result-cs/test/unit/NyssaAI.Result.Tests.csproj','nyssa-ai-logging-cs/test/unit/NyssaAI.Logging.Tests.csproj','nyssa-ai-dbgateway-cs/test/unit/NyssaAI.DbGateway.Tests.csproj','nyssa-ai-configuration-cs/test/unit/NyssaAI.Configuration.Tests.csproj'] if (r:=subprocess.run(['dotnet','test','--project',p])).returncode!=0]"
       ]
     },
     "use_case": {
       "cwd": ".",
       "argv": [
-        "dotnet",
-        "test",
-        "--project",
-        "nyssa-ai-configuration-cs/test/use_case"
+        "python",
+        "-c",
+        "import subprocess,sys; [sys.exit(r.returncode) for p in ['nyssa-ai-result-cs/test/use_case/NyssaAI.Result.UseCaseTests.csproj','nyssa-ai-logging-cs/test/use_case/NyssaAI.Logging.UseCaseTests.csproj','nyssa-ai-dbgateway-cs/test/use_case/NyssaAI.DbGateway.UseCaseTests.csproj','nyssa-ai-configuration-cs/test/use_case/NyssaAI.Configuration.UseCaseTests.csproj'] if (r:=subprocess.run(['dotnet','test','--project',p])).returncode!=0]"
       ]
     }
   },
