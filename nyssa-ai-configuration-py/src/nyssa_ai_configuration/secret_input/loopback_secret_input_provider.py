@@ -150,7 +150,7 @@ class LoopbackSecretInputProvider:
     <div style="background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 32px; width: 440px; max-width: 90%;">
         <h2 style="margin-top: 0; color: #111;">Set Configuration Secret</h2>
         <p style="color: #666; font-size: 14px; margin-bottom: 24px;">Enter value for <code>{html.escape(request.namespace)}:{html.escape(request.key)}</code>. Plaintext is sent over local loopback directly to storage and never stored in LLM context.</p>
-        <form method="POST" onsubmit="var s=document.querySelector('input[name=secret]').value; var c=document.querySelector('input[name=confirm_secret]'); if(c &amp;&amp; s!==c.value){ alert('Entered secrets do not match. Please verify.'); return false; }">
+        <form method="POST" onsubmit="var s=document.querySelector('input[name=secret]').value; var c=document.querySelector('input[name=confirm_secret]'); if(c &amp;&amp; s!==c.value){{ alert('Entered secrets do not match. Please verify.'); return false; }}">
             <input type="hidden" name="session_token" value="{html.escape(session_token)}" />
             <div style="margin-bottom: 16px;">
                 <label style="display:block; margin-bottom: 6px; font-weight: bold;">Secret Value</label>
