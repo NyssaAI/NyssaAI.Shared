@@ -51,6 +51,76 @@ public sealed class SecretCaptureTests
     }
 
     [Fact]
+    public async Task CaptureSecretAsync_WhenForcedProviderIsSet_LocksDestinationToForcedProvider()
+    {
+        using var directory = new TemporaryDirectory();
+        var documents = new ConfigurationDocumentFactoryLocalFile(directory.Path);
+        var cipher = ConfigurationCipherAesGcm.Create(new byte[32]).Value;
+        var localEncryption = new ConfigurationProviderLocalEncryption(cipher);
+        var store = ConfigurationStore.Create(documents, [localEncryption]).Value;
+        using var client = new ConfigurationClient(store);
+
+        SecretPromptRequest? capturedReq = null;
+        var mockInput = new MockSecretInputProvider(req =>
+        {
+            capturedReq = req;
+            return Result<CapturedSecret>.Success(new CapturedSecret("plain_value".ToCharArray(), req.AvailableProviders[0]));
+        });
+
+        var options = new CaptureSecretOptions
+        {
+            ForcedProvider = "literal",
+            InputProvider = mockInput
+        };
+
+        var extensions = (IConfigurationSecretWriter)client;
+        var result = await extensions.CaptureSecretAsync("app", "plain_key", options, TestContext.Current.CancellationToken);
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(capturedReq);
+        Assert.Single(capturedReq.AvailableProviders);
+        Assert.Equal("literal", capturedReq.AvailableProviders[0]);
+        Assert.Equal("literal", result.Value.Provider);
+
+        var rawJson = await File.ReadAllTextAsync(Path.Combine(directory.Path, "app.json"), TestContext.Current.CancellationToken);
+        Assert.Contains("plain_value", rawJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CaptureSecretAsync_WhenUnforced_OffersAvailableProvidersAndAllowsLiteralSelection()
+    {
+        using var directory = new TemporaryDirectory();
+        var documents = new ConfigurationDocumentFactoryLocalFile(directory.Path);
+        var cipher = ConfigurationCipherAesGcm.Create(new byte[32]).Value;
+        var localEncryption = new ConfigurationProviderLocalEncryption(cipher);
+        var store = ConfigurationStore.Create(documents, [localEncryption]).Value;
+        using var client = new ConfigurationClient(store);
+
+        SecretPromptRequest? capturedReq = null;
+        var mockInput = new MockSecretInputProvider(req =>
+        {
+            capturedReq = req;
+            return Result<CapturedSecret>.Success(new CapturedSecret("unforced_plain_val".ToCharArray(), "literal"));
+        });
+
+        var options = new CaptureSecretOptions
+        {
+            InputProvider = mockInput
+        };
+
+        var extensions = (IConfigurationSecretWriter)client;
+        var result = await extensions.CaptureSecretAsync("app", "unforced_key", options, TestContext.Current.CancellationToken);
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(capturedReq);
+        Assert.Contains("aesLocal", capturedReq.AvailableProviders);
+        Assert.Contains("literal", capturedReq.AvailableProviders);
+        Assert.Equal("aesLocal", capturedReq.PreferredProvider);
+        Assert.Equal("literal", result.Value.Provider);
+
+        var rawJson = await File.ReadAllTextAsync(Path.Combine(directory.Path, "app.json"), TestContext.Current.CancellationToken);
+        Assert.Contains("unforced_plain_val", rawJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CliSecretInputProvider_DoubleEntryMismatch_ReturnsValidationError()
     {
         var input = new StringReader("password123\npassword999\n");
@@ -226,14 +296,16 @@ public sealed class SecretCaptureTests
 
     private sealed class MockSecretInputProvider : ISecretInputProvider
     {
-        private readonly CapturedSecret _captured;
+        private readonly Func<SecretPromptRequest, Result<CapturedSecret>> _handler;
 
-        public MockSecretInputProvider(CapturedSecret captured) => _captured = captured;
+        public MockSecretInputProvider(CapturedSecret captured) => _handler = _ => Result<CapturedSecret>.Success(captured);
+
+        public MockSecretInputProvider(Func<SecretPromptRequest, Result<CapturedSecret>> handler) => _handler = handler;
 
         public ValueTask<Result<CapturedSecret>> CaptureAsync(
             SecretPromptRequest request,
             CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Result<CapturedSecret>.Success(_captured));
+            ValueTask.FromResult(_handler(request));
     }
 
     private sealed class FailingBrowserLauncher : IBrowserLauncher
