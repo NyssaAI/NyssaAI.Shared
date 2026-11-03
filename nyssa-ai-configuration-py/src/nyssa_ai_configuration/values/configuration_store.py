@@ -3,6 +3,7 @@
 # `-- ConfigurationStore
 #     +-- authorize(namespace, key, options, browser_launcher)
 #     +-- get(namespace, key)
+#     +-- get_available_secret_providers()
 #     +-- get_entry(namespace, key)
 #     +-- get_namespace(namespace)
 #     +-- list(namespace)
@@ -32,31 +33,15 @@ from nyssa_ai_configuration.logging.configuration_logger import ConfigurationLog
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
 from nyssa_ai_configuration.oauth.oauth_token_provider import OauthTokenProvider
 from nyssa_ai_configuration.oauth.types import OAuthOptions
-from nyssa_ai_configuration.recovery.configuration_recovery_coordinator import (
-    ConfigurationRecoveryCoordinator,
-)
-from nyssa_ai_configuration.recovery.configuration_recovery_handle import (
-    ConfigurationRecoveryHandle,
-)
-from nyssa_ai_configuration.recovery.configuration_recovery_token_protector import (
-    ConfigurationRecoveryTokenProtector,
-)
-from nyssa_ai_configuration.recovery.types import (
-    ConfigurationAttempt,
-    ConfigurationMove,
-    ConfigurationRecoveryOutcome,
-)
+from nyssa_ai_configuration.recovery.configuration_recovery_coordinator import ConfigurationRecoveryCoordinator
+from nyssa_ai_configuration.recovery.configuration_recovery_handle import ConfigurationRecoveryHandle
+from nyssa_ai_configuration.recovery.configuration_recovery_token_protector import ConfigurationRecoveryTokenProtector
+from nyssa_ai_configuration.recovery.types import ConfigurationAttempt, ConfigurationMove, ConfigurationRecoveryOutcome
 from nyssa_ai_result import Result, fail, ok
-from nyssa_ai_configuration.values.configuration_document_local_file import (
-    ConfigurationDocumentLocalFile,
-)
+from nyssa_ai_configuration.values.configuration_document_local_file import ConfigurationDocumentLocalFile
 from nyssa_ai_configuration.values.configuration_mover import ConfigurationMover
-from nyssa_ai_configuration.values.configuration_value_codec import (
-    ConfigurationValueCodec,
-)
-from nyssa_ai_configuration.values.namespace_document_handler import (
-    NamespaceDocumentHandler,
-)
+from nyssa_ai_configuration.values.configuration_value_codec import ConfigurationValueCodec
+from nyssa_ai_configuration.values.namespace_document_handler import NamespaceDocumentHandler
 from nyssa_ai_configuration.values.types import ConfigurationRemoval, ConfigurationValue
 
 
@@ -109,6 +94,14 @@ class ConfigurationStore:
     def set_document_write_interceptor(self, interceptor: Callable[[str], Result[None]] | None = None) -> None:
         """Register an optional write interceptor used in recovery/OAuth tests to simulate disk write failures."""
         self._write_interceptor = interceptor
+
+    def get_available_secret_providers(self) -> list[str]:
+        """Return the list of providers available for secret storage (aesLocal and configured vaults)."""
+        providers = ["aesLocal"]
+        for vault_name in self._vaults:
+            if vault_name not in providers:
+                providers.append(vault_name)
+        return providers
 
     def resolve_vault_credential(self, vault_name: str) -> Result[str]:
         """Resolve the bearer token configured for vault_name, blocking circular self-reference."""

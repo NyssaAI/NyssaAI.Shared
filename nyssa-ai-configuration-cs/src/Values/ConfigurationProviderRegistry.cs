@@ -60,6 +60,10 @@ internal sealed class ConfigurationProviderRegistry
 
     public bool HasCredential(string provider) => _credentials.ContainsKey(provider);
 
+    /// <summary>Returns the names of all registered providers eligible for storing secrets (excludes "oauth").</summary>
+    public IReadOnlyList<string> GetAvailableSecretProviders() =>
+        _providers.Keys.Where(k => !string.Equals(k, "oauth", StringComparison.OrdinalIgnoreCase)).ToList();
+
     public Result<IConfigurationProvider> GetProvider(string name) =>
         _providers.TryGetValue(name, out var provider)
             ? Result<IConfigurationProvider>.Success(provider)

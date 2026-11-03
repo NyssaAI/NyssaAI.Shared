@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization.Metadata;
 using NyssaAI.Results;
 using NyssaAI.Configuration.Contracts;
+using NyssaAI.Configuration.SecretInput;
 
 namespace NyssaAI.Configuration.Client;
 
@@ -249,6 +250,72 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
         string key,
         CancellationToken cancellationToken) =>
         _entries.ReauthorizeAsync(@namespace, key, cancellationToken);
+
+    async ValueTask<Result<SecretReceipt>> IConfigurationSecretWriter.CaptureSecretAsync(
+        string @namespace,
+        string key,
+        CaptureSecretOptions? options,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var registered = _entries.GetAvailableSecretProviders();
+        var available = (options?.AllowedProviders is { Count: > 0 } allowed)
+            ? registered.Where(p => allowed.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList()
+            : registered;
+
+        if (available.Count == 0)
+        {
+            available = new List<string> { "aesLocal" };
+        }
+
+        var preferred = options?.PreferredProvider;
+        if (string.IsNullOrWhiteSpace(preferred) || !available.Contains(preferred, StringComparer.OrdinalIgnoreCase))
+        {
+            preferred = available.FirstOrDefault(p => !string.Equals(p, "aesLocal", StringComparison.OrdinalIgnoreCase)) ?? available[0];
+        }
+
+        var inputProvider = options?.InputProvider ?? new AdaptiveSecretInputProvider(options?.Mode ?? SecretCaptureMode.Auto);
+        var promptMessage = options?.PromptMessage ?? $"Enter secret for {@namespace}:{key}";
+        var timeout = options?.Timeout ?? TimeSpan.FromMinutes(2);
+        var confirm = options?.Confirm ?? true;
+
+        var request = new SecretPromptRequest
+        {
+            Namespace = @namespace,
+            Key = key,
+            PromptMessage = promptMessage,
+            AvailableProviders = available,
+            PreferredProvider = preferred,
+            Confirm = confirm,
+            Timeout = timeout
+        };
+
+        var captureResult = await inputProvider.CaptureAsync(request, cancellationToken).ConfigureAwait(false);
+        if (captureResult.IsFailure)
+            return Result<SecretReceipt>.Failure(captureResult.Errors);
+
+        using var capturedSecret = captureResult.Value;
+        var destination = capturedSecret.SelectedProvider;
+
+        var saveResult = await _entries.SetAsync(
+            @namespace,
+            key,
+            capturedSecret.ValueString,
+            destination,
+            cancellationToken).ConfigureAwait(false);
+
+        if (saveResult.IsFailure)
+            return Result<SecretReceipt>.Failure(saveResult.Errors);
+
+        return Result<SecretReceipt>.Success(new SecretReceipt
+        {
+            Namespace = @namespace,
+            Key = key,
+            Provider = destination,
+            StoredAt = DateTimeOffset.UtcNow
+        });
+    }
 
     /// <summary>Releases what the composition opened; the resolving scope calls this, never a consumer.</summary>
     public void Dispose() => _owned?.Dispose();

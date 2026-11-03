@@ -3,7 +3,29 @@
 # (none)
 """NyssaAI Configuration for Python."""
 
+from nyssa_ai_configuration.capture_secret_options import CaptureSecretOptions
 from nyssa_ai_configuration.cloud_key_vaults.access_token_source import AccessTokenSource
+from nyssa_ai_configuration.configuration_secret_writer import (
+    ConfigurationSecretWriter,
+)
+from nyssa_ai_configuration.secret_capture_mode import SecretCaptureMode
+from nyssa_ai_configuration.secret_input.adaptive_secret_input_provider import (
+    AdaptiveSecretInputProvider,
+)
+from nyssa_ai_configuration.secret_input.captured_secret import CapturedSecret
+from nyssa_ai_configuration.secret_input.cli_secret_input_provider import (
+    CliSecretInputProvider,
+)
+from nyssa_ai_configuration.secret_input.loopback_secret_input_provider import (
+    LoopbackSecretInputProvider,
+)
+from nyssa_ai_configuration.secret_input.secret_input_provider import (
+    SecretInputProvider,
+)
+from nyssa_ai_configuration.secret_input.secret_prompt_request import (
+    SecretPromptRequest,
+)
+from nyssa_ai_configuration.secret_receipt import SecretReceipt
 from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_bitwarden import (
     CloudKeyVaultBitwarden,
 )
@@ -124,9 +146,13 @@ from nyssa_ai_configuration.values.types import ConfigurationRemoval, Configurat
 
 __all__ = [
     "AccessTokenSource",
+    "AdaptiveSecretInputProvider",
     "ApplicationManifestEntry",
     "BootstrapOptions",
     "BrowserLauncher",
+    "CaptureSecretOptions",
+    "CapturedSecret",
+    "CliSecretInputProvider",
     "CloudKeyVault",
     "CloudKeyVaultAction",
     "CloudKeyVaultBitwarden",
@@ -168,6 +194,7 @@ __all__ = [
     "ConfigurationRecoveryStep",
     "ConfigurationRecoveryTokenProtector",
     "ConfigurationRemoval",
+    "ConfigurationSecretWriter",
     "ConfigurationStepProgress",
     "ConfigurationStepState",
     "ConfigurationStore",
@@ -184,6 +211,7 @@ __all__ = [
     "KeyringInMemory",
     "KeyringProtectedFile",
     "KeyringSystemdCreds",
+    "LoopbackSecretInputProvider",
     "NamespaceDocumentHandler",
     "OAuthFlowClient",
     "OAuthHeldGrant",
@@ -195,6 +223,10 @@ __all__ = [
     "Ok",
     "ProtectedFileSystem",
     "Result",
+    "SecretCaptureMode",
+    "SecretInputProvider",
+    "SecretPromptRequest",
+    "SecretReceipt",
     "VaultOptions",
     "fail",
     "fail_error",

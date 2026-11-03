@@ -128,6 +128,10 @@ class OauthFlowClient:
         sep = "&" if "?" in options.authorization_endpoint else "?"
         auth_url = f"{options.authorization_endpoint}{sep}{urllib.parse.urlencode(query_params)}"
 
+        print("\nPlease visit the following URL to log in:")
+        print(auth_url)
+        print("Waiting for authorization in browser...")
+
         server.timeout = 30.0
         thread = threading.Thread(target=server.handle_request, daemon=True)
         thread.start()
@@ -135,9 +139,12 @@ class OauthFlowClient:
             if browser_launcher is not None:
                 launch_res = browser_launcher.open_url(auth_url)
                 if not launch_res.ok:
-                    return launch_res
+                    print("Could not open browser automatically. Please open the link above manually.")
             else:
-                webbrowser.open(auth_url)
+                try:
+                    webbrowser.open(auth_url)
+                except Exception:
+                    print("Could not open browser automatically. Please open the link above manually.")
             thread.join(timeout=30.0)
         finally:
             server.server_close()
@@ -162,7 +169,10 @@ class OauthFlowClient:
         )
         if not post_res.ok:
             return post_res
-        return self._parse_token_response(post_res.value[0], post_res.value[1], options, None)
+        parsed = self._parse_token_response(post_res.value[0], post_res.value[1], options, None)
+        if parsed.ok:
+            print("Authentication successful! Stored credentials under provider 'oauth'.")
+        return parsed
 
     def refresh(self, token: OAuthToken) -> Result[OAuthToken]:
         """Exchange a refresh_token for a fresh OAuthToken without opening a browser."""

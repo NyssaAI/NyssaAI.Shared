@@ -4,6 +4,7 @@
 //     +-- applicationName
 //     +-- authorize(namespace, key, options, signal)
 //     +-- authorizeProvider(providerName, signal)
+//     +-- captureSecret(namespace, key, options, signal)
 //     +-- configurationDirectory
 //     +-- get(namespace, key, signal)
 //     +-- getAs(namespace, key, signal)
@@ -40,6 +41,8 @@ import type { ConfigurationRecoveryHandle } from "./recovery/ConfigurationRecove
 import type { ConfigurationRecoveryOutcome } from "./recovery/Types.js";
 import type { IConfigurationLogger } from "./logging/IConfigurationLogger.js";
 import type { LogRecord } from "./logging/LogRecord.js";
+import type { CaptureSecretOptions } from "./CaptureSecretOptions.js"; import type { SecretReceipt } from "./SecretReceipt.js"; import type { SecretPromptRequest } from "./secretInput/SecretPromptRequest.js";
+import { AdaptiveSecretInputProvider } from "./secretInput/AdaptiveSecretInputProvider.js";
 
 /**
  * ConfigurationClient orchestrates manifest resolution, master key custody, external vaults,
@@ -83,6 +86,55 @@ export class ConfigurationClient {
    */
   public setDocumentWriteInterceptor(interceptor?: (namespace: string) => Result<void>): void {
     this._store.setDocumentWriteInterceptor(interceptor);
+  }
+
+  public async captureSecret(
+    namespace: string,
+    key: string,
+    options?: CaptureSecretOptions,
+    signal?: AbortSignal
+  ): Promise<Result<SecretReceipt>> {
+    return this.executeLogged("captureSecret", async () => {
+      const opts = options ?? {};
+      const available = this._store.getAvailableSecretProviders();
+      const effectiveProviders = opts.allowedProviders && opts.allowedProviders.length > 0 ? available.filter((p) => opts.allowedProviders!.includes(p)) : available;
+      if (effectiveProviders.length === 0) return fail("No allowed secret storage providers are available.", "Validation");
+      const defaultProvider = opts.targetProvider && effectiveProviders.includes(opts.targetProvider) ? opts.targetProvider : effectiveProviders.includes("aesLocal") ? "aesLocal" : effectiveProviders[0] ?? "aesLocal";
+      const promptRequest: SecretPromptRequest = { namespace, key, promptMessage: opts.promptMessage ?? `Enter secret for '${namespace}/${key}'`, availableProviders: effectiveProviders, defaultProvider, confirm: opts.confirm ?? true, timeoutMs: opts.timeoutMs };
+      const provider = opts.inputProvider ?? new AdaptiveSecretInputProvider(opts.mode);
+      const captureRes = await provider.captureSecret(promptRequest, signal);
+      if (!captureRes.ok) return captureRes;
+
+      const captured = captureRes.value;
+      try {
+        const targetProvider = captured.selectedProvider;
+        const secretValue = captured.secret;
+
+        const setRes = await this._store.set(
+          namespace,
+          key,
+          secretValue,
+          targetProvider === "aesLocal",
+          targetProvider,
+          signal
+        );
+
+        if (!setRes.ok) {
+          return setRes;
+        }
+
+        const receipt: SecretReceipt = {
+          namespace,
+          key,
+          provider: targetProvider,
+          storedAtUtc: new Date()
+        };
+
+        return ok(receipt);
+      } finally {
+        captured.dispose();
+      }
+    });
   }
 
   public async get(namespace: string, key: string, signal?: AbortSignal): Promise<Result<string>> {

@@ -144,6 +144,10 @@ internal sealed class ConfigurationStore : IConfigurationValues
         _entryHandler.RemoveAsync(@namespace, key, ResolveCredentialAsync, cancellationToken);
 
     /// <inheritdoc/>
+    public IReadOnlyList<string> GetAvailableSecretProviders() =>
+        _registry.GetAvailableSecretProviders();
+
+    /// <inheritdoc/>
     public ValueTask<Result<IReadOnlyList<string>>> ListAsync(string @namespace, CancellationToken cancellationToken = default) =>
         _entryHandler.ListAsync(@namespace, cancellationToken);
 

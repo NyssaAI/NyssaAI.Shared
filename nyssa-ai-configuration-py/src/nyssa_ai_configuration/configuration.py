@@ -3,6 +3,7 @@
 # `-- Configuration
 #     +-- authorize(namespace, key, options, browser_launcher)
 #     +-- authorize_provider(provider_name, browser_launcher)
+#     +-- capture_secret(namespace, key, options)
 #     +-- get(namespace, key)
 #     +-- get_as(namespace, key, target_type)
 #     +-- get_namespace(namespace, target_type)
@@ -22,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol
 
+from nyssa_ai_configuration.capture_secret_options import CaptureSecretOptions
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
 from nyssa_ai_configuration.oauth.types import OAuthOptions
 from nyssa_ai_configuration.recovery.configuration_recovery_handle import (
@@ -33,11 +35,21 @@ from nyssa_ai_configuration.recovery.types import (
     ConfigurationRecoveryOutcome,
 )
 from nyssa_ai_result import Result
+from nyssa_ai_configuration.secret_receipt import SecretReceipt
 from nyssa_ai_configuration.values.types import ConfigurationRemoval
 
 
 class Configuration(Protocol):
     """Unified interface for reading, writing, migrating, authorizing, and recovering configuration."""
+
+    def capture_secret(
+        self,
+        namespace: str,
+        key: str,
+        options: CaptureSecretOptions | None = None,
+    ) -> Result[SecretReceipt]:
+        """Prompt user out-of-band for a secret, encrypt or vault it, and return a sanitized receipt."""
+        ...
 
     def get(self, namespace: str, key: str) -> Result[str]:
         """Read a string setting or secret at (namespace, key)."""

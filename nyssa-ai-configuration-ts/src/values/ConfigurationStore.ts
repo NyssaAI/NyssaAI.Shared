@@ -4,6 +4,7 @@
 //     +-- authorize(namespace, key, options, signal)
 //     +-- authorizeProvider(providerName, signal)
 //     +-- get(namespace, key, signal)
+//     +-- getAvailableSecretProviders()
 //     +-- getNamespace(namespace, signal)
 //     +-- list(namespace, signal)
 //     +-- mergeSettings(namespace, value, signal)
@@ -55,13 +56,10 @@ export class ConfigurationStore {
     lockTimeoutMs: number = 10000,
     cipher?: IConfigurationCipher | undefined,
     options?: {
-      readonly vaultProviders?: ReadonlyMap<string, IVaultProvider> | undefined;
-      readonly vaultCredentials?: ReadonlyMap<string, { readonly namespace: string; readonly key: string }> | undefined;
+      readonly vaultProviders?: ReadonlyMap<string, IVaultProvider> | undefined; readonly vaultCredentials?: ReadonlyMap<string, { readonly namespace: string; readonly key: string }> | undefined;
       readonly vaultAuth?: ReadonlyMap<string, { readonly namespace: string; readonly key: string; readonly options?: OAuthOptions | undefined }> | undefined;
-      readonly oauthClient?: IOAuthFlowClient | undefined;
-      readonly browserLauncher?: IBrowserLauncher | undefined;
-      readonly clock?: (() => number) | undefined;
-      readonly recoveryProtector?: ConfigurationRecoveryTokenProtector | undefined;
+      readonly oauthClient?: IOAuthFlowClient | undefined; readonly browserLauncher?: IBrowserLauncher | undefined;
+      readonly clock?: (() => number) | undefined; readonly recoveryProtector?: ConfigurationRecoveryTokenProtector | undefined;
     }
   ) {
     const resolvedDir = path.resolve(configurationDirectory);
@@ -80,6 +78,10 @@ export class ConfigurationStore {
 
   public setDocumentWriteInterceptor(interceptor?: (namespace: string) => Result<void>): void {
     this._resolver.setDocumentWriteInterceptor(interceptor);
+  }
+
+  public getAvailableSecretProviders(): readonly string[] {
+    return this._resolver.getAvailableSecretProviders();
   }
 
   public async resolveVaultCredential(vaultName: string, signal?: AbortSignal): Promise<Result<string>> {

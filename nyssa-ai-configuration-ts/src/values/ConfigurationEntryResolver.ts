@@ -3,6 +3,7 @@
 // `-- ConfigurationEntryResolver
 //     +-- canonicalProvider(provider)
 //     +-- checkCircularCredential(providerName, namespace, key)
+//     +-- getAvailableSecretProviders()
 //     +-- getDocument(namespace)
 //     +-- getDocumentPath(namespace)
 //     +-- invokeWriteInterceptor(namespace)
@@ -66,6 +67,16 @@ export class ConfigurationEntryResolver {
 
   public invokeWriteInterceptor(namespace: string): Result<void> {
     return this._documentWriteInterceptor ? this._documentWriteInterceptor(namespace) : ok(undefined);
+  }
+
+  public getAvailableSecretProviders(): readonly string[] {
+    const list = ["aesLocal"];
+    for (const key of this.vaultProviders.keys()) {
+      if (!list.includes(key)) {
+        list.push(key);
+      }
+    }
+    return list;
   }
 
   public getDocumentPath(namespace: string): string {

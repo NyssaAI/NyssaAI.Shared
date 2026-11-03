@@ -3,6 +3,7 @@
 // `-- IConfiguration
 //     +-- authorize(namespace, key, options, signal)
 //     +-- authorizeProvider(providerName, signal)
+//     +-- captureSecret(namespace, key, options, signal)
 //     +-- get(namespace, key, signal)
 //     +-- getAs(namespace, key, signal)
 //     +-- getNamespace(namespace, signal)
@@ -24,11 +25,20 @@ import type { ConfigurationMove } from "./values/ConfigurationMove.js";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
 import type { ConfigurationRecoveryHandle } from "./recovery/ConfigurationRecoveryHandle.js";
 import type { ConfigurationRecoveryOutcome } from "./recovery/Types.js";
+import type { CaptureSecretOptions } from "./CaptureSecretOptions.js";
+import type { SecretReceipt } from "./SecretReceipt.js";
 
 /**
  * @deprecated Prefer `Configuration` (or narrower `ConfigurationReader`, `ConfigurationWriter`, `ConfigurationOAuthWriter`, `ConfigurationMaintainer`).
  */
 export interface IConfiguration {
+  captureSecret(
+    namespace: string,
+    key: string,
+    options?: CaptureSecretOptions,
+    signal?: AbortSignal
+  ): Promise<Result<SecretReceipt>>;
+
   get(namespace: string, key: string, signal?: AbortSignal): Promise<Result<string>>;
   getAs<T>(namespace: string, key: string, signal?: AbortSignal): Promise<Result<T>>;
   getNamespace<T>(namespace: string, signal?: AbortSignal): Promise<Result<T>>;

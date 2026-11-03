@@ -3,6 +3,7 @@
 # `-- ConfigurationClient
 #     +-- authorize(namespace, key, options, browser_launcher)
 #     +-- authorize_provider(provider_name, browser_launcher)
+#     +-- capture_secret(namespace, key, options)
 #     +-- create(options, keyring, vault_factories, oauth_flow_client, browser_launcher, logger, clock)
 #     +-- get(namespace, key)
 #     +-- get_as(namespace, key, target_type)
@@ -10,7 +11,7 @@
 #     +-- list(namespace)
 #     +-- merge_settings(namespace, value)
 #     +-- move(namespace, key, destination_provider)
-#     +-- new(application_name, configuration_directory, lock_timeout_ms, store, vault_auth)
+#     +-- new(application_name, configuration_directory, lock_timeout_ms, store, vault_auth, browser_launcher)
 #     +-- reauthorize(namespace, key, browser_launcher)
 #     +-- recover(handle)
 #     +-- remove(namespace, key)
@@ -28,46 +29,29 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_factory_bitwarden import (
-    CloudKeyVaultFactoryBitwarden,
-)
+from nyssa_ai_configuration.capture_secret_options import CaptureSecretOptions
+from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_factory_bitwarden import CloudKeyVaultFactoryBitwarden
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault import CloudKeyVault
-from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_factory import (
-    CloudKeyVaultFactory,
-)
-from nyssa_ai_configuration.encryption.configuration_cipher_aes_gcm import (
-    ConfigurationCipherAesGcm,
-)
+from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_factory import CloudKeyVaultFactory
+from nyssa_ai_configuration.configuration_secret_writer import ConfigurationSecretWriter
+from nyssa_ai_configuration.encryption.configuration_cipher_aes_gcm import ConfigurationCipherAesGcm
 from nyssa_ai_configuration.file_security.directory_safety import DirectorySafety
 from nyssa_ai_configuration.file_security.protected_file_system import ProtectedFileSystem
-from nyssa_ai_configuration.keyring.keyring import (
-    Keyring,
-    get_or_create_key,
-    resolve_keyring,
-)
+from nyssa_ai_configuration.keyring.keyring import Keyring, get_or_create_key, resolve_keyring
 from nyssa_ai_configuration.logging.configuration_logger import ConfigurationLogger
-from nyssa_ai_configuration.manifest.configuration_manifest_reader import (
-    ConfigurationManifestReader,
-)
-from nyssa_ai_configuration.manifest.configuration_manifest_writer import (
-    ConfigurationManifestWriter,
-)
+from nyssa_ai_configuration.manifest.configuration_manifest_reader import ConfigurationManifestReader
+from nyssa_ai_configuration.manifest.configuration_manifest_writer import ConfigurationManifestWriter
 from nyssa_ai_configuration.manifest.types import BootstrapOptions, VaultOptions
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
 from nyssa_ai_configuration.oauth.oauth_flow_client import OauthFlowClient
 from nyssa_ai_configuration.oauth.oauth_token_provider import OauthTokenProvider
 from nyssa_ai_configuration.oauth.types import OAuthOptions
-from nyssa_ai_configuration.recovery.configuration_recovery_handle import (
-    ConfigurationRecoveryHandle,
-)
-from nyssa_ai_configuration.recovery.configuration_recovery_token_protector import (
-    ConfigurationRecoveryTokenProtector,
-)
-from nyssa_ai_configuration.recovery.types import (
-    ConfigurationAttempt,
-    ConfigurationMove,
-    ConfigurationRecoveryOutcome,
-)
+from nyssa_ai_configuration.recovery.configuration_recovery_handle import ConfigurationRecoveryHandle
+from nyssa_ai_configuration.recovery.configuration_recovery_token_protector import ConfigurationRecoveryTokenProtector
+from nyssa_ai_configuration.recovery.types import ConfigurationAttempt, ConfigurationMove, ConfigurationRecoveryOutcome
+from nyssa_ai_configuration.secret_input.adaptive_secret_input_provider import AdaptiveSecretInputProvider
+from nyssa_ai_configuration.secret_input.secret_prompt_request import SecretPromptRequest
+from nyssa_ai_configuration.secret_receipt import SecretReceipt
 from nyssa_ai_result import Result, fail, ok
 from nyssa_ai_configuration.values.configuration_store import ConfigurationStore
 from nyssa_ai_configuration.values.types import ConfigurationRemoval
@@ -83,6 +67,7 @@ class ConfigurationClient:
         lock_timeout_ms: int,
         store: ConfigurationStore,
         vault_auth: Mapping[str, tuple[str, str, OAuthOptions | None]] | None = None,
+        browser_launcher: BrowserLauncher | None = None,
     ) -> None:
         """Initialize with resolved bootstrap metadata, underlying store, and vault OAuth bindings."""
         self.application_name = application_name
@@ -92,6 +77,7 @@ class ConfigurationClient:
         self._vault_auth: dict[str, tuple[str, str, OAuthOptions | None]] = (
             dict(vault_auth) if vault_auth is not None else {}
         )
+        self._browser_launcher = browser_launcher
 
     @classmethod
     def create(
@@ -123,28 +109,17 @@ class ConfigurationClient:
         existing = entry_res.value if entry_res.ok else None
         if existing is not None:
             config_dir = existing.configuration_directory
-            timeout_ms = (
-                options.lock_timeout_ms
-                if options.lock_timeout_ms is not None
-                else existing.lock_timeout_ms
-            )
+            timeout_ms = options.lock_timeout_ms if options.lock_timeout_ms is not None else existing.lock_timeout_ms
             if timeout_ms <= 0:
                 return fail("lockTimeoutMs must be a positive integer.", "Validation")
-            vault_opt: VaultOptions | None = (
-                existing.key_vault if existing.key_vault is not None else options.key_vault
-            )
+            vault_opt: VaultOptions | None = existing.key_vault if existing.key_vault is not None else options.key_vault
         else:
-            config_dir = (
-                str(Path(options.configuration_directory).resolve())
-                if options.configuration_directory and options.configuration_directory.strip()
-                else str((manifest_path.parent / app_name).resolve())
-            )
+            config_dir = str(Path(options.configuration_directory).resolve()) if options.configuration_directory and options.configuration_directory.strip() else str((manifest_path.parent / app_name).resolve())
             timeout_ms = options.lock_timeout_ms if options.lock_timeout_ms is not None else 10000
             if timeout_ms <= 0:
                 return fail("lockTimeoutMs must be a positive integer.", "Validation")
             vault_opt = options.key_vault
-            writer = ConfigurationManifestWriter(logger=logger, clock=clock)
-            prov_res = writer.provision_application(manifest_path, app_name, config_dir, timeout_ms)
+            prov_res = ConfigurationManifestWriter(logger=logger, clock=clock).provision_application(manifest_path, app_name, config_dir, timeout_ms)
             if not prov_res.ok:
                 return prov_res
 
@@ -154,18 +129,15 @@ class ConfigurationClient:
         dir_created = ProtectedFileSystem.create_directory(config_dir)
         if not dir_created.ok:
             return dir_created
-
         active_keyring: Keyring = resolve_keyring(config_dir, options, keyring)
         key_res = get_or_create_key(app_name, active_keyring)
         if not key_res.ok:
             return key_res
         master_key = key_res.value
-
         cipher_res = ConfigurationCipherAesGcm.create(master_key)
         if not cipher_res.ok:
             return cipher_res
         cipher = cipher_res.value
-
         protector = ConfigurationRecoveryTokenProtector(master_key, app_name, config_dir)
         oauth_provider = OauthTokenProvider(cipher, oauth_flow_client, browser_launcher, logger=logger, clock=clock)
 
@@ -177,7 +149,6 @@ class ConfigurationClient:
         class _StoreTokenSource:
             def __init__(self, vault_name: str) -> None:
                 self._vault_name = vault_name
-
             def get_access_token(self) -> Result[str]:
                 return store_box[0].resolve_vault_credential(self._vault_name)
 
@@ -201,7 +172,6 @@ class ConfigurationClient:
             if not created_vault.ok:
                 return created_vault
             vaults[vault_opt.name] = created_vault.value
-
             auth_opts_res = factory.authorization(vault_opt)
             if not auth_opts_res.ok:
                 return auth_opts_res
@@ -212,11 +182,42 @@ class ConfigurationClient:
             config_dir, timeout_ms, cipher, vaults, credentials, oauth_provider, protector, logger, clock
         )
         store_box.append(store)
-        return ok(cls(app_name, config_dir, timeout_ms, store, vault_auth))
+        return ok(cls(app_name, config_dir, timeout_ms, store, vault_auth, browser_launcher))
 
     def set_document_write_interceptor(self, interceptor: Callable[[str], Result[None]] | None = None) -> None:
         """Configure a write interceptor on the underlying store for recovery and OAuth tests."""
         self._store.set_document_write_interceptor(interceptor)
+
+    def capture_secret(
+        self, namespace: str, key: str, options: CaptureSecretOptions | None = None
+    ) -> Result[SecretReceipt]:
+        """Prompt user directly out-of-band for a secret value and store it securely."""
+        opts = options or CaptureSecretOptions()
+        available = self._store.get_available_secret_providers()
+        if opts.allowed_providers is not None:
+            available = [p for p in available if p in opts.allowed_providers]
+            if not available:
+                return fail("No allowed secret storage providers are available.", "Validation")
+
+        preferred = opts.preferred_provider
+        if not preferred or preferred not in available:
+            preferred = "aesLocal" if "aesLocal" in available else (available[0] if available else "aesLocal")
+
+        prompt_req = SecretPromptRequest(
+            namespace, key, opts.prompt_message or f"Enter secret for '{namespace}/{key}'",
+            available, preferred, opts.confirm, opts.timeout_seconds,
+        )
+        provider = opts.input_provider or AdaptiveSecretInputProvider(opts.mode, self._browser_launcher)
+        capture_res = provider.capture(prompt_req)
+        if not capture_res.ok:
+            return capture_res
+
+        with capture_res.value as captured:
+            target_prov, secret_value = captured.selected_provider, captured.value
+            set_res = self._store.set(namespace, key, secret_value, provider=target_prov, is_json=False)
+            if not set_res.ok:
+                return set_res
+            return ok(SecretReceipt(namespace, key, target_prov))
 
     def get(self, namespace: str, key: str) -> Result[str]:
         """Read a string setting or secret at (namespace, key)."""
@@ -325,9 +326,7 @@ class ConfigurationClient:
 
     @staticmethod
     def _to_jsonable(value: object) -> object:
-        if dataclasses.is_dataclass(value) and not isinstance(value, type):
-            return dataclasses.asdict(value)
-        return value
+        return dataclasses.asdict(value) if dataclasses.is_dataclass(value) and not isinstance(value, type) else value
 
     @staticmethod
     def _convert_to_type[T](parsed: object, target_type: Callable[[object], T] | type[T]) -> Result[T]:

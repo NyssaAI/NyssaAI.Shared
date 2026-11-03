@@ -136,4 +136,7 @@ internal interface IConfigurationValues
     ValueTask<ConfigurationAttempt<ConfigurationMove>> MoveAsync(string @namespace, string key, string? toProvider = null, CancellationToken cancellationToken = default);
     /// <summary>Explicitly resumes a protected operation.</summary>
     ValueTask<ConfigurationAttempt<ConfigurationRecoveryOutcome>> RecoverAsync(ConfigurationRecoveryHandle handle, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the registered secret storage providers (aesLocal and cloud vaults).</summary>
+    IReadOnlyList<string> GetAvailableSecretProviders();
 }

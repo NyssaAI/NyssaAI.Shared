@@ -25,13 +25,20 @@ internal sealed class OAuthAuthorizationClientLoopback
     private readonly OAuthTokenEndpoint _endpoint;
     private readonly IBrowserLauncher _browser;
     private readonly ILogger? _logger;
+    private readonly TextWriter? _consoleOut;
 
-    private OAuthAuthorizationClientLoopback(OAuthOptions options, OAuthTokenEndpoint endpoint, IBrowserLauncher browser, ILogger? logger)
+    private OAuthAuthorizationClientLoopback(
+        OAuthOptions options,
+        OAuthTokenEndpoint endpoint,
+        IBrowserLauncher browser,
+        ILogger? logger,
+        TextWriter? consoleOut = null)
     {
         _options = options;
         _endpoint = endpoint;
         _browser = browser;
         _logger = logger;
+        _consoleOut = consoleOut;
     }
 
     /// <summary>Creates a client for one flow, failing when the options are not valid.</summary>
@@ -40,18 +47,20 @@ internal sealed class OAuthAuthorizationClientLoopback
     /// <param name="browser">What opens the authorize URI: the user's browser, or a test's stand-in.</param>
     /// <param name="clock">The clock expiry is computed against; the system clock when null.</param>
     /// <param name="logger">The logger flow outcomes are reported to, if any.</param>
+    /// <param name="consoleOut">Optional text writer for user-facing terminal URL output.</param>
     public static Result<OAuthAuthorizationClientLoopback> Create(
         OAuthOptions options,
         HttpClient client,
         IBrowserLauncher browser,
         TimeProvider? clock = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        TextWriter? consoleOut = null)
     {
         var endpoint = OAuthTokenEndpoint.Create(options, client, clock, logger: logger);
         return endpoint.IsFailure
             ? Result<OAuthAuthorizationClientLoopback>.Failure(endpoint.Errors)
             : Result<OAuthAuthorizationClientLoopback>.Success(
-                new OAuthAuthorizationClientLoopback(options, endpoint.Value, browser, logger));
+                new OAuthAuthorizationClientLoopback(options, endpoint.Value, browser, logger, consoleOut));
     }
 
     /// <summary>Runs the flow and returns the credential it produced, describing the server it came from.</summary>
@@ -68,9 +77,18 @@ internal sealed class OAuthAuthorizationClientLoopback
             var pkce = PkceChallenge.Create();
             var authorizeUri = BuildAuthorizeUri(listener.Value.RedirectUri, pkce);
 
+            var writer = _consoleOut ?? Console.Out;
+            writer.WriteLine();
+            writer.WriteLine("Please visit the following URL to log in:");
+            writer.WriteLine(authorizeUri.AbsoluteUri);
+            writer.WriteLine("Waiting for authorization in browser...");
+
             var launched = await _browser.LaunchAsync(authorizeUri, cancellationToken).ConfigureAwait(false);
             if (launched.IsFailure)
-                return Result<OAuthToken>.Failure(launched.Errors);
+            {
+                _logger?.LogWarning("Browser launch was unsuccessful; proceeding with manual URL navigation: {Message}", launched.Errors[0].TechnicalMessage);
+                writer.WriteLine("Could not open browser automatically. Please open the link above manually.");
+            }
 
             var callback = await listener.Value.WaitForCallbackAsync(cancellationToken).ConfigureAwait(false);
             if (callback.IsFailure)
@@ -94,6 +112,8 @@ internal sealed class OAuthAuthorizationClientLoopback
 
             if (string.IsNullOrEmpty(grant.Value.RefreshToken))
                 return Result<OAuthToken>.Failure(NoRefreshToken);
+
+            writer.WriteLine("Authentication successful! Stored credentials under provider 'oauth'.");
 
             return Result<OAuthToken>.Success(OAuthToken.From(
                 grant.Value.AccessToken,

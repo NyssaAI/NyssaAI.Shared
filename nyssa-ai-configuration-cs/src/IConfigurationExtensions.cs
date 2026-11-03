@@ -10,6 +10,6 @@ namespace NyssaAI.Configuration;
 /// <see cref="IConfiguration"/>: a read that needs sign-in throws, and the
 /// application decides where and when a person can act on it.
 /// </remarks>
-public interface IConfigurationExtensions : IConfigurationOAuthWriter
+public interface IConfigurationExtensions : IConfigurationOAuthWriter, IConfigurationSecretWriter
 {
 }

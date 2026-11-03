@@ -20,6 +20,7 @@ public sealed class PackageStructureTests
         "IConfigurationReader.cs",
         "IConfigurationWriter.cs",
         "IConfigurationOAuthWriter.cs",
+        "IConfigurationSecretWriter.cs",
         "IConfigurationMaintainer.cs",
         "IConfigurationExtensions.cs",
         "IConfigurationBootstrap.cs",
@@ -34,6 +35,7 @@ public sealed class PackageStructureTests
         "IConfigurationReader.cs",
         "IConfigurationWriter.cs",
         "IConfigurationOAuthWriter.cs",
+        "IConfigurationSecretWriter.cs",
         "IConfigurationMaintainer.cs",
         "IConfigurationExtensions.cs",
     ];
@@ -166,7 +168,7 @@ public sealed class PackageStructureTests
         // directly. See the remarks above: a covering contract with no in-assembly consumer is
         // ceremony, and this list is where that judgement is recorded.
         string[] notFeatures =
-            ["Client", "Contracts", "FileSecurity", "Manifest", "CloudKeyVaults", "OAuth", "OsKeyring"];
+            ["Client", "Contracts", "FileSecurity", "Manifest", "CloudKeyVaults", "OAuth", "OsKeyring", "SecretInput"];
 
         var features = SourceRoot()
             .GetDirectories()

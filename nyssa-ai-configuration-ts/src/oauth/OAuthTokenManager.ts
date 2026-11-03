@@ -20,6 +20,7 @@ import type { ConfigurationValue } from "../values/ConfigurationValue.js";
 import type { OAuthOptions } from "./OAuthOptions.js";
 import type { IOAuthFlowClient } from "./IOAuthFlowClient.js";
 import type { IBrowserLauncher } from "./IBrowserLauncher.js";
+import { OAuthLoopbackFlowClient } from "./OAuthLoopbackFlowClient.js";
 
 /**
  * OAuthTokenManager coordinates PKCE S256 sign-in, 5-minute expiry window refresh,
@@ -44,7 +45,7 @@ export class OAuthTokenManager {
   ) {
     this._configurationDirectory = path.resolve(configurationDirectory);
     this._cipher = cipher;
-    this._flowClient = flowClient;
+    this._flowClient = flowClient ?? new OAuthLoopbackFlowClient();
     this._browserLauncher = browserLauncher;
     this._clock = clock ?? (() => Date.now());
   }
@@ -111,12 +112,18 @@ export class OAuthTokenManager {
     const state = crypto.randomBytes(16).toString("base64url");
     const scopes = options.scopes ?? [];
 
+    const authUrl = OAuthGrantCodec.buildAuthorizeUrl(options, codeChallenge, state);
+    process.stdout.write(`\nTo authenticate, visit:\n  ${authUrl}\n\nWaiting for authentication to complete in browser...\n`);
+
     if (this._browserLauncher) {
-      const authUrl = OAuthGrantCodec.buildAuthorizeUrl(options, codeChallenge, state);
-      const launchRes = await this._browserLauncher.openUrl(authUrl, signal);
-      signal?.throwIfAborted();
-      if (!launchRes.ok) {
-        return launchRes;
+      try {
+        const launchRes = await this._browserLauncher.openUrl(authUrl, signal);
+        signal?.throwIfAborted();
+        if (!launchRes.ok) {
+          process.stdout.write(`Note: Could not open browser automatically (${launchRes.message}). Please open the URL manually.\n`);
+        }
+      } catch (err: unknown) {
+        process.stdout.write(`Note: Could not open browser automatically (${err}). Please open the URL manually.\n`);
       }
     }
 
@@ -143,6 +150,8 @@ export class OAuthTokenManager {
     if (exchangeRes.value.returnedState !== undefined && exchangeRes.value.returnedState !== state) {
       return fail("oauth: state parameter mismatch on authorization callback", "Forbidden");
     }
+
+    process.stdout.write("Authentication successful.\n");
 
     const nowMs = this._clock();
     const payload = OAuthGrantCodec.encodeGrant({
