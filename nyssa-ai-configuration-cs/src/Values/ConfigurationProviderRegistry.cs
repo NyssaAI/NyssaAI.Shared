@@ -61,8 +61,20 @@ internal sealed class ConfigurationProviderRegistry
     public bool HasCredential(string provider) => _credentials.ContainsKey(provider);
 
     /// <summary>Returns the names of all registered providers eligible for storing secrets (excludes "oauth").</summary>
-    public IReadOnlyList<string> GetAvailableSecretProviders() =>
-        _providers.Keys.Where(k => !string.Equals(k, "oauth", StringComparison.OrdinalIgnoreCase)).ToList();
+    public IReadOnlyList<string> GetAvailableSecretProviders()
+    {
+        var list = new List<string> { "aesLocal", "literal" };
+        foreach (var key in _providers.Keys)
+        {
+            if (!string.Equals(key, "oauth", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(key, "aesLocal", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(key, "literal", StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(key);
+            }
+        }
+        return list;
+    }
 
     public Result<IConfigurationProvider> GetProvider(string name) =>
         _providers.TryGetValue(name, out var provider)

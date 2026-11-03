@@ -13,6 +13,9 @@ public sealed class CaptureSecretOptions
     /// <summary>Preferred storage provider (e.g. "aesLocal" or a loaded cloud vault).</summary>
     public string? PreferredProvider { get; set; }
 
+    /// <summary>Forced storage provider that locks the destination to an explicit setting (e.g. "aesLocal" or "literal").</summary>
+    public string? ForcedProvider { get; set; }
+
     /// <summary>Allowed storage providers that the user can choose between.</summary>
     public IReadOnlyList<string>? AllowedProviders { get; set; }
 

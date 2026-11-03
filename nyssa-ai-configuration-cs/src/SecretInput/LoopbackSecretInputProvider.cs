@@ -198,22 +198,27 @@ internal sealed class LoopbackSecretInputProvider : ISecretInputProvider, IDispo
         if (!string.IsNullOrWhiteSpace(request.PromptMessage))
             sb.Append($"<p style='color:#a1a1aa'>{WebUtility.HtmlEncode(request.PromptMessage)}</p>");
 
-        sb.Append("<form method='POST'>");
+        sb.Append("<form method='POST' onsubmit=\"var s=document.querySelector('input[name=secret]').value; var c=document.querySelector('input[name=confirm_secret]'); if(c &amp;&amp; s!==c.value){ alert('Entered secrets do not match. Please verify.'); return false; }\">");
         sb.Append($"<input type='hidden' name='session_token' value='{SessionToken}' />");
 
-        if (request.AvailableProviders.Count > 1)
+        if (request.AvailableProviders.Count == 1)
+        {
+            var fixedProv = request.AvailableProviders[0];
+            var label = FormatProviderLabel(fixedProv);
+            sb.Append("<label>Storage Destination (Fixed by Application):</label>");
+            sb.Append($"<input type='text' value='{WebUtility.HtmlEncode(label)}' disabled style='background:#3f3f46;color:#a1a1aa' />");
+            sb.Append($"<input type='hidden' name='provider' value='{WebUtility.HtmlEncode(fixedProv)}' />");
+        }
+        else
         {
             sb.Append("<label>Storage Destination:</label><select name='provider'>");
             foreach (var prov in request.AvailableProviders)
             {
                 var isSelected = string.Equals(prov, request.PreferredProvider, StringComparison.OrdinalIgnoreCase) ? " selected" : "";
-                sb.Append($"<option value='{WebUtility.HtmlEncode(prov)}'{isSelected}>{WebUtility.HtmlEncode(prov)}</option>");
+                var label = FormatProviderLabel(prov);
+                sb.Append($"<option value='{WebUtility.HtmlEncode(prov)}'{isSelected}>{WebUtility.HtmlEncode(label)}</option>");
             }
             sb.Append("</select>");
-        }
-        else
-        {
-            sb.Append($"<input type='hidden' name='provider' value='{WebUtility.HtmlEncode(request.PreferredProvider)}' />");
         }
 
         sb.Append("<label>Secret Value:</label><input type='password' name='secret' required autofocus />");
@@ -223,6 +228,17 @@ internal sealed class LoopbackSecretInputProvider : ISecretInputProvider, IDispo
         sb.Append("<button type='submit'>Save Secret</button>");
         sb.Append("</form></body></html>");
         return sb.ToString();
+    }
+
+    private static string FormatProviderLabel(string name)
+    {
+        var lower = name.ToLowerInvariant();
+        if (lower == "aeslocal") return "Encrypted Locally (AES-256-GCM)";
+        if (lower is "literal" or "default" or "plaintext" or "") return "Free Text (Unencrypted Plaintext)";
+        if (lower is "bws" or "bitwarden" or "bitwarden-secrets") return "Key Vault (Bitwarden Secrets Manager)";
+        if (lower.StartsWith("azure", StringComparison.Ordinal)) return "Key Vault (Azure Key Vault)";
+        if (lower.StartsWith("hashi", StringComparison.Ordinal) || lower == "vault") return "Key Vault (HashiCorp Vault)";
+        return $"Key Vault ({name})";
     }
 
     private static Dictionary<string, string> ParseFormEncoded(string body)

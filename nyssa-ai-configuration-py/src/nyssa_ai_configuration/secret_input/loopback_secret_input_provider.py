@@ -25,6 +25,21 @@ from nyssa_ai_configuration.secret_input.secret_prompt_request import SecretProm
 from nyssa_ai_result import Result, fail, ok
 
 
+def _format_provider_label(name: str) -> str:
+    lower = name.lower()
+    if lower == "aeslocal":
+        return "Encrypted Locally (AES-256-GCM)"
+    if lower in ("literal", "default", "plaintext", ""):
+        return "Free Text (Unencrypted Plaintext)"
+    if lower in ("bws", "bitwarden", "bitwarden-secrets"):
+        return "Key Vault (Bitwarden Secrets Manager)"
+    if lower.startswith("azure"):
+        return "Key Vault (Azure Key Vault)"
+    if lower.startswith("hashi") or lower == "vault":
+        return "Key Vault (HashiCorp Vault)"
+    return f"Key Vault ({name})"
+
+
 class LoopbackSecretInputProvider:
     """Ephemeral HTTP loopback server that presents a clean browser form to input the secret."""
 
@@ -87,10 +102,32 @@ class LoopbackSecretInputProvider:
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
 
-                options_html = ""
-                for p in request.available_providers:
-                    sel = ' selected="selected"' if p.lower() == request.preferred_provider.lower() else ""
-                    options_html += f'<option value="{html.escape(p)}"{sel}>{html.escape(p)}</option>'
+                if len(request.available_providers) == 1:
+                    fixed_prov = request.available_providers[0]
+                    label = _format_provider_label(fixed_prov)
+                    dest_html = f"""
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block; margin-bottom: 6px; font-weight: bold;">Storage Destination (Fixed by Application)</label>
+                        <input type="text" value="{html.escape(label)}" disabled="disabled" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #e9ecef; color: #495057; font-size: 14px;" />
+                        <input type="hidden" name="provider" value="{html.escape(fixed_prov)}" />
+                    </div>
+                    """
+                else:
+                    options_html = ""
+                    for p in request.available_providers:
+                        sel = ' selected="selected"' if p.lower() == request.preferred_provider.lower() else ""
+                        label = _format_provider_label(p)
+                        options_html += f'<option value="{html.escape(p)}"{sel}>{html.escape(label)}</option>'
+
+                    dest_html = f"""
+                    <div style="margin-bottom: 16px;">
+                        <label style="display:block; margin-bottom: 6px; font-weight: bold;">Storage Destination</label>
+                        <select name="provider" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white; font-size: 14px;">
+                            {options_html}
+                        </select>
+                        <small style="color: #666; display: block; margin-top: 4px;">Choose how to store the secret: free text (unencrypted), encrypted locally, or in a key vault.</small>
+                    </div>
+                    """
 
                 confirm_html = ""
                 if request.confirm:
@@ -100,19 +137,6 @@ class LoopbackSecretInputProvider:
                         <input type="password" name="confirm_secret" required="required" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" />
                     </div>
                     """
-
-                dest_html = ""
-                if len(request.available_providers) > 1:
-                    dest_html = f"""
-                    <div style="margin-bottom: 16px;">
-                        <label style="display:block; margin-bottom: 6px; font-weight: bold;">Storage Destination</label>
-                        <select name="provider" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-                            {options_html}
-                        </select>
-                    </div>
-                    """
-                else:
-                    dest_html = f'<input type="hidden" name="provider" value="{html.escape(request.preferred_provider)}" />'
 
                 title = request.prompt_message or f"Enter Secret for {request.namespace}:{request.key}"
 
@@ -126,7 +150,7 @@ class LoopbackSecretInputProvider:
     <div style="background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 32px; width: 440px; max-width: 90%;">
         <h2 style="margin-top: 0; color: #111;">Set Configuration Secret</h2>
         <p style="color: #666; font-size: 14px; margin-bottom: 24px;">Enter value for <code>{html.escape(request.namespace)}:{html.escape(request.key)}</code>. Plaintext is sent over local loopback directly to storage and never stored in LLM context.</p>
-        <form method="POST">
+        <form method="POST" onsubmit="var s=document.querySelector('input[name=secret]').value; var c=document.querySelector('input[name=confirm_secret]'); if(c &amp;&amp; s!==c.value){ alert('Entered secrets do not match. Please verify.'); return false; }">
             <input type="hidden" name="session_token" value="{html.escape(session_token)}" />
             <div style="margin-bottom: 16px;">
                 <label style="display:block; margin-bottom: 6px; font-weight: bold;">Secret Value</label>

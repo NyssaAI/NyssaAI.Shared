@@ -115,7 +115,7 @@ internal sealed class ConfigurationEntryHandler
                 if (circular.IsFailure)
                     return circular;
 
-                if (destination.Length == 0)
+                if (destination.Length == 0 || string.Equals(destination, "literal", StringComparison.OrdinalIgnoreCase))
                 {
                     entries[key] = new ConfigurationValue { Value = value, IsJsonValue = isJsonValue };
                     return Result.Success();

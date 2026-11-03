@@ -194,12 +194,16 @@ class ConfigurationClient:
         """Prompt user directly out-of-band for a secret value and store it securely."""
         opts = options or CaptureSecretOptions()
         available = self._store.get_available_secret_providers()
-        if opts.allowed_providers is not None:
+        if opts.forced_provider is not None:
+            if opts.forced_provider not in available:
+                return fail(f"Forced secret storage provider '{opts.forced_provider}' is not available.", "Validation")
+            available = [opts.forced_provider]
+        elif opts.allowed_providers is not None:
             available = [p for p in available if p in opts.allowed_providers]
             if not available:
                 return fail("No allowed secret storage providers are available.", "Validation")
 
-        preferred = opts.preferred_provider
+        preferred = opts.forced_provider or opts.preferred_provider
         if not preferred or preferred not in available:
             preferred = "aesLocal" if "aesLocal" in available else (available[0] if available else "aesLocal")
 
@@ -309,12 +313,9 @@ class ConfigurationClient:
     def authorize_provider(self, provider_name: str, browser_launcher: BrowserLauncher | None = None) -> Result[None]:
         """Run interactive OAuth 2.0 PKCE sign-in for a configured cloud key vault's credential."""
         info = self._vault_auth.get(provider_name)
-        if info is None:
-            return fail(f"Provider '{provider_name}' is not configured with an OAuth credential.", "Validation")
-        ns, key, opts = info
-        if opts is None:
-            return fail(f"Provider '{provider_name}' does not supply OAuth authorization options.", "Validation")
-        return self._store.authorize(ns, key, opts, browser_launcher)
+        if info is None or info[2] is None:
+            return fail(f"Provider '{provider_name}' does not supply OAuth authorization options." if info else f"Provider '{provider_name}' is not configured with an OAuth credential.", "Validation")
+        return self._store.authorize(info[0], info[1], info[2], browser_launcher)
 
     def reauthorize(self, namespace: str, key: str, browser_launcher: BrowserLauncher | None = None) -> Result[None]:
         """Re-run interactive OAuth 2.0 PKCE sign-in using endpoint metadata stored at (namespace, key)."""

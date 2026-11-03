@@ -46,6 +46,16 @@ export class CliSecretInputProvider {
     }
   }
 
+  private formatProviderLabel(name: string): string {
+    const lower = name.toLowerCase();
+    if (lower === "aeslocal") return "Encrypted Locally (AES-256-GCM)";
+    if (lower === "literal" || lower === "default" || lower === "plaintext" || lower === "") return "Free Text (Unencrypted Plaintext)";
+    if (lower === "bws" || lower === "bitwarden" || lower === "bitwarden-secrets") return "Key Vault (Bitwarden Secrets Manager)";
+    if (lower.startsWith("azure")) return "Key Vault (Azure Key Vault)";
+    if (lower.startsWith("hashi") || lower === "vault") return "Key Vault (HashiCorp Vault)";
+    return `Key Vault (${name})`;
+  }
+
   private write(text: string): void {
     this._streamOut.write(text);
   }
@@ -114,7 +124,11 @@ export class CliSecretInputProvider {
         resolve(fail(`CLI input error: ${err}`, "Unexpected"));
       });
 
-      if (request.availableProviders.length > 1) {
+      if (request.availableProviders.length === 1) {
+        const fixedProv = request.availableProviders[0]!;
+        const label = this.formatProviderLabel(fixedProv);
+        this.write(`Storage destination: ${label} [${fixedProv}] (Fixed by application)\n`);
+      } else if (request.availableProviders.length > 1) {
         this.write("Select storage destination:\n");
         let defaultIdx = 1;
         for (let i = 0; i < request.availableProviders.length; i++) {
@@ -124,7 +138,8 @@ export class CliSecretInputProvider {
             defaultIdx = i + 1;
           }
           const defStr = isDef ? " (Default)" : "";
-          this.write(`  [${i + 1}] ${prov}${defStr}\n`);
+          const label = this.formatProviderLabel(prov);
+          this.write(`  [${i + 1}] ${label} [${prov}]${defStr}\n`);
         }
         this.write(`Destination [${defaultIdx}]: `);
       }
@@ -141,7 +156,11 @@ export class CliSecretInputProvider {
   ): Promise<Result<CapturedSecret>> {
     let selectedProvider = request.defaultProvider;
 
-    if (request.availableProviders.length > 1) {
+    if (request.availableProviders.length === 1) {
+      const fixedProv = request.availableProviders[0]!;
+      const label = this.formatProviderLabel(fixedProv);
+      this.write(`Storage destination: ${label} [${fixedProv}] (Fixed by application)\n`);
+    } else if (request.availableProviders.length > 1) {
       this.write("Select storage destination:\n");
       let defaultIdx = 1;
       for (let i = 0; i < request.availableProviders.length; i++) {
@@ -151,7 +170,8 @@ export class CliSecretInputProvider {
           defaultIdx = i + 1;
         }
         const defStr = isDef ? " (Default)" : "";
-        this.write(`  [${i + 1}] ${prov}${defStr}\n`);
+        const label = this.formatProviderLabel(prov);
+        this.write(`  [${i + 1}] ${label} [${prov}]${defStr}\n`);
       }
 
       const choice = await this.readTtyLine(`Destination [${defaultIdx}]: `, signal);

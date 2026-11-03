@@ -260,19 +260,38 @@ internal sealed class ConfigurationClient : IConfiguration, IConfigurationExtens
         cancellationToken.ThrowIfCancellationRequested();
 
         var registered = _entries.GetAvailableSecretProviders();
-        var available = (options?.AllowedProviders is { Count: > 0 } allowed)
-            ? registered.Where(p => allowed.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList()
-            : registered;
-
-        if (available.Count == 0)
+        IReadOnlyList<string> available;
+        if (!string.IsNullOrWhiteSpace(options?.ForcedProvider))
         {
-            available = new List<string> { "aesLocal" };
+            if (!registered.Contains(options.ForcedProvider, StringComparer.OrdinalIgnoreCase))
+            {
+                return Result<SecretReceipt>.Failure(Error.FromMessages(
+                    "The requested secret storage destination is not available.",
+                    $"Forced secret storage provider '{options.ForcedProvider}' is not available.",
+                    ErrorCategory.Validation));
+            }
+            available = [options.ForcedProvider];
+        }
+        else if (options?.AllowedProviders is { Count: > 0 } allowed)
+        {
+            available = registered.Where(p => allowed.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (available.Count == 0)
+            {
+                return Result<SecretReceipt>.Failure(Error.FromMessages(
+                    "No valid secret storage providers were configured.",
+                    "No allowed secret storage providers are available.",
+                    ErrorCategory.Validation));
+            }
+        }
+        else
+        {
+            available = registered;
         }
 
-        var preferred = options?.PreferredProvider;
+        var preferred = options?.ForcedProvider ?? options?.PreferredProvider;
         if (string.IsNullOrWhiteSpace(preferred) || !available.Contains(preferred, StringComparer.OrdinalIgnoreCase))
         {
-            preferred = available.FirstOrDefault(p => !string.Equals(p, "aesLocal", StringComparison.OrdinalIgnoreCase)) ?? available[0];
+            preferred = available.Contains("aesLocal", StringComparer.OrdinalIgnoreCase) ? "aesLocal" : available[0];
         }
 
         var inputProvider = options?.InputProvider ?? new AdaptiveSecretInputProvider(options?.Mode ?? SecretCaptureMode.Auto);

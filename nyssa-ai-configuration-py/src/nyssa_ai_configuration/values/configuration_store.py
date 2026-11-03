@@ -96,8 +96,8 @@ class ConfigurationStore:
         self._write_interceptor = interceptor
 
     def get_available_secret_providers(self) -> list[str]:
-        """Return the list of providers available for secret storage (aesLocal and configured vaults)."""
-        providers = ["aesLocal"]
+        """Return the list of providers available for secret storage (aesLocal, literal, and configured vaults)."""
+        providers = ["aesLocal", "literal"]
         for vault_name in self._vaults:
             if vault_name not in providers:
                 providers.append(vault_name)
@@ -282,7 +282,7 @@ class ConfigurationStore:
         dest_ok = self._check_destination(provider_name, namespace, key)
         if not dest_ok.ok:
             return dest_ok
-        if provider_name == "":
+        if provider_name in ("", "literal"):
             return ok(ConfigurationValue(value=value, is_json_value=is_json))
         if provider_name == "aesLocal":
             c_res = self._get_cipher()
@@ -297,7 +297,7 @@ class ConfigurationStore:
         return ok(ConfigurationValue(value=ptr_res.value.value, provider=provider_name, encrypted=False, is_json_value=is_json)) if ptr_res.ok else ptr_res
 
     def _check_destination(self, provider_name: str, namespace: str, key: str) -> Result[None]:
-        if provider_name == "":
+        if provider_name in ("", "literal"):
             return ok(None)
         if provider_name == "aesLocal":
             c_res = self._get_cipher()

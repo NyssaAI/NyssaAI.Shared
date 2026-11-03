@@ -284,3 +284,68 @@ def test_oauth_flow_client_prints_url_and_continues_if_browser_fails(capsys: pyt
     assert len(auth_res) == 1
     assert auth_res[0].ok
     assert auth_res[0].value.access_token == "acc-123"
+
+
+def test_capture_secret_forced_provider(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+
+    client_res = ConfigurationClient.create(
+        BootstrapOptions(
+            application_name="testapp",
+            manifest_path=str(manifest_path),
+            configuration_directory=str(config_dir),
+        )
+    )
+    assert client_res.ok
+    client = client_res.value
+
+    mock_input = MockSecretInputProvider(CapturedSecret("plain_secret", "literal"))
+    options = CaptureSecretOptions(
+        forced_provider="literal",
+        input_provider=mock_input,
+    )
+    res = client.capture_secret("app", "api_key", options)
+    assert res.ok
+    assert res.value.provider == "literal"
+
+    doc_text = (config_dir / "app.json").read_text("utf-8")
+    assert "plain_secret" in doc_text
+
+    invalid_opts = CaptureSecretOptions(forced_provider="nonexistent_vault", input_provider=mock_input)
+    fail_res = client.capture_secret("app", "api_key2", invalid_opts)
+    assert not fail_res.ok
+    assert "not available" in fail_res.errors[0].technical_message
+
+
+def test_capture_secret_unforced_defaults_to_aeslocal_but_allows_user_selection(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+
+    client_res = ConfigurationClient.create(
+        BootstrapOptions(
+            application_name="testapp",
+            manifest_path=str(manifest_path),
+            configuration_directory=str(config_dir),
+        )
+    )
+    assert client_res.ok
+    client = client_res.value
+
+    captured_reqs: list[SecretPromptRequest] = []
+
+    class InspectingProvider(SecretInputProvider):
+        def capture(self, request: SecretPromptRequest) -> Result[CapturedSecret]:
+            captured_reqs.append(request)
+            return ok(CapturedSecret("user_val", "literal"))
+
+    options = CaptureSecretOptions(input_provider=InspectingProvider())
+    res = client.capture_secret("app", "user_choice", options)
+    assert res.ok
+    assert len(captured_reqs) == 1
+    assert "aesLocal" in captured_reqs[0].available_providers
+    assert "literal" in captured_reqs[0].available_providers
+    assert captured_reqs[0].preferred_provider == "aesLocal"
+    assert res.value.provider == "literal"

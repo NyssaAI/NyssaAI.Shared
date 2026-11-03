@@ -96,11 +96,19 @@ export class ConfigurationClient {
   ): Promise<Result<SecretReceipt>> {
     return this.executeLogged("captureSecret", async () => {
       const opts = options ?? {};
-      const available = this._store.getAvailableSecretProviders();
-      const effectiveProviders = opts.allowedProviders && opts.allowedProviders.length > 0 ? available.filter((p) => opts.allowedProviders!.includes(p)) : available;
-      if (effectiveProviders.length === 0) return fail("No allowed secret storage providers are available.", "Validation");
-      const defaultProvider = opts.targetProvider && effectiveProviders.includes(opts.targetProvider) ? opts.targetProvider : effectiveProviders.includes("aesLocal") ? "aesLocal" : effectiveProviders[0] ?? "aesLocal";
-      const promptRequest: SecretPromptRequest = { namespace, key, promptMessage: opts.promptMessage ?? `Enter secret for '${namespace}/${key}'`, availableProviders: effectiveProviders, defaultProvider, confirm: opts.confirm ?? true, timeoutMs: opts.timeoutMs };
+      let available = this._store.getAvailableSecretProviders();
+      if (opts.forcedProvider !== undefined) {
+        if (!available.includes(opts.forcedProvider)) {
+          return fail(`Forced secret storage provider '${opts.forcedProvider}' is not available.`, "Validation");
+        }
+        available = [opts.forcedProvider];
+      } else if (opts.allowedProviders && opts.allowedProviders.length > 0) {
+        available = available.filter((p) => opts.allowedProviders!.includes(p));
+        if (available.length === 0) return fail("No allowed secret storage providers are available.", "Validation");
+      }
+      const preferred = opts.forcedProvider ?? opts.preferredProvider ?? opts.targetProvider;
+      const defaultProvider = preferred && available.includes(preferred) ? preferred : available.includes("aesLocal") ? "aesLocal" : available[0] ?? "aesLocal";
+      const promptRequest: SecretPromptRequest = { namespace, key, promptMessage: opts.promptMessage ?? `Enter secret for '${namespace}/${key}'`, availableProviders: available, defaultProvider, confirm: opts.confirm ?? true, timeoutMs: opts.timeoutMs };
       const provider = opts.inputProvider ?? new AdaptiveSecretInputProvider(opts.mode);
       const captureRes = await provider.captureSecret(promptRequest, signal);
       if (!captureRes.ok) return captureRes;
@@ -334,14 +342,6 @@ export class ConfigurationClient {
 }
 
 const _typeCheck: Configuration = null as unknown as ConfigurationClient;
-const _typeCheckReader: ConfigurationReader = _typeCheck;
-const _typeCheckWriter: ConfigurationWriter = _typeCheck;
-const _typeCheckOAuth: ConfigurationOAuthWriter = _typeCheck;
-const _typeCheckMaintainer: ConfigurationMaintainer = _typeCheck;
 const _typeCheckLegacy: IConfiguration = _typeCheck;
 void _typeCheck;
-void _typeCheckReader;
-void _typeCheckWriter;
-void _typeCheckOAuth;
-void _typeCheckMaintainer;
 void _typeCheckLegacy;

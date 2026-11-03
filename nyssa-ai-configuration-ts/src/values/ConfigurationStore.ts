@@ -236,7 +236,7 @@ export class ConfigurationStore {
       const circularRes = this._resolver.checkCircularCredential(providerName, namespace, key);
       if (!circularRes.ok) return circularRes;
 
-      if (providerName !== "Default" && providerName !== "aesLocal" && providerName !== "oauth") {
+      if (providerName !== "Default" && providerName !== "literal" && providerName !== "aesLocal" && providerName !== "oauth") {
         const vault = this._resolver.vaultProviders.get(providerName);
         if (!vault) {
           return fail(`Configuration provider '${providerName}' is not registered.`, "Validation");

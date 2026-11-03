@@ -41,7 +41,13 @@ internal sealed class CliSecretInputProvider : ISecretInputProvider
 
             // Provider selection
             var selectedProvider = request.PreferredProvider;
-            if (request.AvailableProviders.Count > 1)
+            if (request.AvailableProviders.Count == 1)
+            {
+                var fixedProv = request.AvailableProviders[0];
+                var label = FormatProviderLabel(fixedProv);
+                _writer.WriteLine($"Storage destination: {label} [{fixedProv}] (Fixed by application)");
+            }
+            else if (request.AvailableProviders.Count > 1)
             {
                 _writer.WriteLine("Select storage destination:");
                 var defaultIdx = 1;
@@ -50,7 +56,8 @@ internal sealed class CliSecretInputProvider : ISecretInputProvider
                     var prov = request.AvailableProviders[i];
                     var isDef = string.Equals(prov, request.PreferredProvider, StringComparison.OrdinalIgnoreCase);
                     if (isDef) defaultIdx = i + 1;
-                    _writer.WriteLine($"  [{i + 1}] {prov}{(isDef ? " (Default)" : "")}");
+                    var label = FormatProviderLabel(prov);
+                    _writer.WriteLine($"  [{i + 1}] {label} [{prov}]{(isDef ? " (Default)" : "")}");
                 }
 
                 _writer.Write($"Destination [{defaultIdx}]: ");
@@ -92,6 +99,17 @@ internal sealed class CliSecretInputProvider : ISecretInputProvider
                     ex.Message,
                     ErrorCategory.Unexpected)));
         }
+    }
+
+    private static string FormatProviderLabel(string name)
+    {
+        var lower = name.ToLowerInvariant();
+        if (lower == "aeslocal") return "Encrypted Locally (AES-256-GCM)";
+        if (lower is "literal" or "default" or "plaintext" or "") return "Free Text (Unencrypted Plaintext)";
+        if (lower is "bws" or "bitwarden" or "bitwarden-secrets") return "Key Vault (Bitwarden Secrets Manager)";
+        if (lower.StartsWith("azure", StringComparison.Ordinal)) return "Key Vault (Azure Key Vault)";
+        if (lower.StartsWith("hashi", StringComparison.Ordinal) || lower == "vault") return "Key Vault (HashiCorp Vault)";
+        return $"Key Vault ({name})";
     }
 
     private string ReadMaskedLine()

@@ -3,6 +3,7 @@
 # `-- CaptureSecretOptions
 #     +-- allowed_providers
 #     +-- confirm
+#     +-- forced_provider
 #     +-- input_provider
 #     +-- mode
 #     +-- preferred_provider
@@ -27,6 +28,7 @@ class CaptureSecretOptions:
 
     prompt_message: str | None = None
     preferred_provider: str | None = None
+    forced_provider: str | None = None
     allowed_providers: list[str] | None = None
     confirm: bool = True
     mode: SecretCaptureMode = SecretCaptureMode.AUTO

@@ -122,7 +122,8 @@ export class LoopbackSecretInputProvider {
           for (const p of request.availableProviders) {
             const isDef = p.toLowerCase() === request.defaultProvider.toLowerCase();
             const sel = isDef ? ' selected="selected"' : "";
-            optionsHtml += `<option value="${this.escapeHtml(p)}"${sel}>${this.escapeHtml(p)}</option>`;
+            const label = this.formatProviderLabel(p);
+            optionsHtml += `<option value="${this.escapeHtml(p)}"${sel}>${this.escapeHtml(label)}</option>`;
           }
 
           const confirmHtml = request.confirm
@@ -132,15 +133,22 @@ export class LoopbackSecretInputProvider {
               </div>`
             : "";
 
+          const fixedProv = request.availableProviders[0] ?? request.defaultProvider;
+          const fixedLabel = this.formatProviderLabel(fixedProv);
           const destHtml =
-            request.availableProviders.length > 1
+            request.availableProviders.length === 1
               ? `<div style="margin-bottom: 16px;">
+                  <label style="display:block; margin-bottom: 6px; font-weight: bold;">Storage Destination (Fixed by Application)</label>
+                  <input type="text" value="${this.escapeHtml(fixedLabel)}" disabled="disabled" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: #e9ecef; color: #495057; font-size: 14px;" />
+                  <input type="hidden" name="provider" value="${this.escapeHtml(fixedProv)}" />
+                </div>`
+              : `<div style="margin-bottom: 16px;">
                   <label style="display:block; margin-bottom: 6px; font-weight: bold;">Storage Destination</label>
-                  <select name="provider" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                  <select name="provider" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white; font-size: 14px;">
                     ${optionsHtml}
                   </select>
-                </div>`
-              : `<input type="hidden" name="provider" value="${this.escapeHtml(request.defaultProvider)}" />`;
+                  <small style="color: #666; display: block; margin-top: 4px;">Choose how to store the secret: free text (unencrypted), encrypted locally, or in a key vault.</small>
+                </div>`;
 
           const title = request.promptMessage || `Enter Secret for ${request.namespace}:${request.key}`;
 
@@ -151,7 +159,7 @@ export class LoopbackSecretInputProvider {
   <div style="background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 32px; width: 440px; max-width: 90%;">
     <h2 style="margin-top: 0; color: #111;">Set Configuration Secret</h2>
     <p style="color: #666; font-size: 14px; margin-bottom: 24px;">Enter value for <code>${this.escapeHtml(request.namespace)}:${this.escapeHtml(request.key)}</code>. Plaintext is sent over local loopback directly to storage and never stored in LLM context.</p>
-    <form method="POST">
+    <form method="POST" onsubmit="var s=document.querySelector('input[name=secret]').value; var c=document.querySelector('input[name=confirm_secret]'); if(c &amp;&amp; s!==c.value){ alert('Entered secrets do not match. Please verify.'); return false; }">
       <input type="hidden" name="session_token" value="${this.escapeHtml(this._sessionToken)}" />
       <div style="margin-bottom: 16px;">
         <label style="display:block; margin-bottom: 6px; font-weight: bold;">Secret Value</label>
@@ -233,6 +241,16 @@ export class LoopbackSecretInputProvider {
         settle(fail(`Loopback secret input server failed: ${err}`, "Unexpected"));
       });
     });
+  }
+
+  private formatProviderLabel(name: string): string {
+    const lower = name.toLowerCase();
+    if (lower === "aeslocal") return "Encrypted Locally (AES-256-GCM)";
+    if (lower === "literal" || lower === "default" || lower === "plaintext" || lower === "") return "Free Text (Unencrypted Plaintext)";
+    if (lower === "bws" || lower === "bitwarden" || lower === "bitwarden-secrets") return "Key Vault (Bitwarden Secrets Manager)";
+    if (lower.startsWith("azure")) return "Key Vault (Azure Key Vault)";
+    if (lower.startsWith("hashi") || lower === "vault") return "Key Vault (HashiCorp Vault)";
+    return `Key Vault (${name})`;
   }
 
   private escapeHtml(str: string): string {

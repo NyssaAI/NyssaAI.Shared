@@ -16,6 +16,21 @@ from nyssa_ai_configuration.secret_input.secret_prompt_request import SecretProm
 from nyssa_ai_result import Result, fail, ok
 
 
+def _format_provider_label(name: str) -> str:
+    lower = name.lower()
+    if lower == "aeslocal":
+        return "Encrypted Locally (AES-256-GCM)"
+    if lower in ("literal", "default", "plaintext", ""):
+        return "Free Text (Unencrypted Literal)"
+    if lower in ("bws", "bitwarden", "bitwarden-secrets"):
+        return "Key Vault (Bitwarden Secrets Manager)"
+    if lower.startswith("azure"):
+        return "Key Vault (Azure Key Vault)"
+    if lower.startswith("hashi") or lower == "vault":
+        return "Key Vault (HashiCorp Vault)"
+    return f"Key Vault ({name})"
+
+
 class CliSecretInputProvider:
     """Masked terminal input provider using getpass."""
 
@@ -31,7 +46,10 @@ class CliSecretInputProvider:
             self._stream_out.write(f"{title} ({request.namespace}:{request.key})\n")
 
             selected_provider = request.preferred_provider
-            if len(request.available_providers) > 1:
+            if len(request.available_providers) == 1:
+                label = _format_provider_label(request.available_providers[0])
+                self._stream_out.write(f"Storage destination: {label} [{request.available_providers[0]}] (Fixed by application)\n")
+            elif len(request.available_providers) > 1:
                 self._stream_out.write("Select storage destination:\n")
                 default_idx = 1
                 for idx, prov in enumerate(request.available_providers, start=1):
@@ -39,7 +57,8 @@ class CliSecretInputProvider:
                     if is_def:
                         default_idx = idx
                     def_str = " (Default)" if is_def else ""
-                    self._stream_out.write(f"  [{idx}] {prov}{def_str}\n")
+                    label = _format_provider_label(prov)
+                    self._stream_out.write(f"  [{idx}] {label} [{prov}]{def_str}\n")
 
                 self._stream_out.write(f"Destination [{default_idx}]: ")
                 self._stream_out.flush()

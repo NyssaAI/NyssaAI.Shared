@@ -3,8 +3,10 @@
 // `-- CaptureSecretOptions
 //     +-- allowedProviders
 //     +-- confirm
+//     +-- forcedProvider
 //     +-- inputProvider
 //     +-- mode
+//     +-- preferredProvider
 //     +-- promptMessage
 //     +-- targetProvider
 //     `-- timeoutMs
@@ -13,6 +15,8 @@ import type { ISecretInputProvider } from "./secretInput/ISecretInputProvider.js
 
 export interface CaptureSecretOptions {
   readonly promptMessage?: string | undefined;
+  readonly preferredProvider?: string | undefined;
+  readonly forcedProvider?: string | undefined;
   readonly targetProvider?: string | undefined;
   readonly allowedProviders?: readonly string[] | undefined;
   readonly confirm?: boolean | undefined;

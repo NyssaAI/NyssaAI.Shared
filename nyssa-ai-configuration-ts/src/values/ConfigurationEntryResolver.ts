@@ -70,7 +70,7 @@ export class ConfigurationEntryResolver {
   }
 
   public getAvailableSecretProviders(): readonly string[] {
-    const list = ["aesLocal"];
+    const list = ["aesLocal", "literal"];
     for (const key of this.vaultProviders.keys()) {
       if (!list.includes(key)) {
         list.push(key);
@@ -101,14 +101,14 @@ export class ConfigurationEntryResolver {
   }
 
   public canonicalProvider(provider?: string): string {
-    if (!provider || provider.trim().length === 0 || provider === "Default") {
+    if (!provider || provider.trim().length === 0 || provider === "Default" || provider.toLowerCase() === "literal") {
       return "Default";
     }
     return provider.trim();
   }
 
   public checkCircularCredential(providerName: string, namespace: string, key: string): Result<void> {
-    if (providerName === "Default" || providerName === "aesLocal" || providerName === "oauth") {
+    if (providerName === "Default" || providerName === "literal" || providerName === "aesLocal" || providerName === "oauth") {
       return ok(undefined);
     }
     const cred = this._vaultCredentials.get(providerName);
@@ -150,7 +150,7 @@ export class ConfigurationEntryResolver {
     signal?.throwIfAborted();
     const providerName = this.normalizeProviderName(entry);
 
-    if (providerName === "Default") {
+    if (providerName === "Default" || providerName === "literal") {
       if (entry.json && typeof entry.value === "string") {
         return this.parseJsonValue(namespace, key, entry.value);
       }
@@ -216,7 +216,7 @@ export class ConfigurationEntryResolver {
     }>
   > {
     signal?.throwIfAborted();
-    if (providerName === "Default") {
+    if (providerName === "Default" || providerName === "literal") {
       return ok({ entry: { value } });
     }
 
