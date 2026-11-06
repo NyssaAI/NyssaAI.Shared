@@ -1,9 +1,10 @@
-// Responsibility: Factory function configuring default Nyssa logging with standard error and optional JSON file.
+// Responsibility: Factory function configuring Nyssa logging with standard error and optional JSON file.
 // Public interface:
 // `-- createNyssaLogging(filePath, minimumLevel, clock)
 
 import type { Clock } from "../fileLogging/Clock.js";
 import type { LogLevel } from "../LogLevel.js";
+import { setActiveLoggingBuilder } from "../getLogger.js";
 import { LoggingBuilder } from "./LoggingBuilder.js";
 
 export function createNyssaLogging(
@@ -16,5 +17,6 @@ export function createNyssaLogging(
   if (filePath) {
     builder.addNyssaJsonFile(filePath, minimumLevel);
   }
-  return builder;
+  return setActiveLoggingBuilder(builder);
 }
+

@@ -11,13 +11,40 @@
 
 ## Simple setup, ordinary logging
 
-Register logging once during startup, then inject `ILogger<T>` into the classes that need it. `AddNyssaLogging()` always registers standard error output, with `Information` and higher levels enabled by default:
+Register logging once during startup, then inject `ILogger<T>` into the classes that need it. `ConfigureNyssaLogging()` sets up safe defaults matching Python and TypeScript: standard error output plus a dated rotating JSONL file at `./logs/{yyyy.MM.dd}-{appname}-log.json`:
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NyssaAI.Logging.Configuration;
+using NyssaAI.Logging.Telemetry;
 
+var telemetry = services.ConfigureNyssaLogging(
+        appName: "billing-worker",
+        logDir: "./logs",
+        minimumLevel: LogLevel.Information,
+        enableOtel: true,
+        packageLevels: new Dictionary<string, LogLevel>
+        {
+            ["NyssaAI.DbGateway"] = LogLevel.Debug,
+            ["System.Net.Http"] = LogLevel.Warning
+        })
+    .SetPackageLevel("Billing.Audit", LogLevel.Debug)
+    .WithConsole();
+
+using (var span = telemetry.StartSpan(
+    "checkout-order",
+    new Dictionary<string, object?> { ["OrderId"] = 1042 },
+    "OrderCheckout"))
+{
+    span.SetAttribute("CustomerTier", "Enterprise");
+    logger.LogInformation("Order {OrderId} placed", 1042);
+}
+```
+
+You can also use `AddNyssaLogging()` for custom destination chaining:
+
+```csharp
 services.AddNyssaLogging()
         .WithRotatingJsonLog("application-log.json") // creates yyyy.MM.dd-application-log.json
         .WithConsole();
@@ -264,51 +291,12 @@ Run the repository's test suites from its root:
 ./scripts/run-tests.ps1
 ```
 
-## Node.js and TypeScript applications
+## Cross-language parity
 
-There is no `@nyssa-ai/logging` package for Node.js. In .NET, `NyssaAI.Logging` exists because `Microsoft.Extensions.Logging` provides a standard `ILogger<T>` interface across the ecosystem but does not include a built-in, Native-AOT-safe rotating JSONL file provider or separate `stderr` and `stdout` console providers.
-
-In Node.js, [`pino`](https://github.com/pinojs/pino) and [`pino-roll`](https://github.com/mcollina/pino-roll) already provide structured JSONL logging, standard error routing, and size-based file rotation without needing a custom wrapper. Use them directly when building Node.js or TypeScript tools and agents that need to keep `stdout` clean for command or protocol output while writing rotating JSON logs to disk:
-
-```ts
-import pino from "pino";
-
-const logger = pino(
-  { level: "info" },
-  pino.transport({
-    targets: [
-      // Route console logs to standard error (fd 2) so stdout stays clean
-      { target: "pino/file", level: "info", options: { destination: 2 } },
-      // Write rotating JSONL files (10 MB threshold, up to 5 backups)
-      {
-        target: "pino-roll",
-        level: "info",
-        options: {
-          file: "./logs/application-log",
-          size: "10m",
-          mkdir: true,
-          limit: { count: 5 },
-        },
-      },
-    ],
-  }),
-);
-```
-
-When a Node.js application also uses `@nyssa-ai/configuration`, pass a small adapter for [`IConfigurationLogger`](../nyssa-ai-configuration-ts/src/logging/IConfigurationLogger.ts) so configuration boundary events flow into the same Pino destinations:
-
-```ts
-import type { IConfigurationLogger } from "@nyssa-ai/configuration/logging/IConfigurationLogger.js";
-
-export const createPinoConfigurationLogger = (logger: pino.Logger): IConfigurationLogger => ({
-  log(record) {
-    logger[record.level](record, record.event);
-  },
-});
-```
+NyssaAI provides sibling packages in Python ([`nyssa-ai-logging-py`](../nyssa-ai-logging-py/README.md)) and TypeScript/Node.js ([`nyssa-ai-logging-ts`](../nyssa-ai-logging-ts/README.md)) with matching defaults (`./logs/{yyyy.mm.dd}-{appname}-log.json`, `stderr` + rotating JSONL file, per-package levels, and OpenTelemetry span correlation via `StartSpan` / `start_span` / `startSpan`).
 
 ## Package and licensing
 
-The package and assembly are both named `NyssaAI.Logging`. The registration extensions are in `NyssaAI.Logging.Configuration`. Its dependencies are Microsoft's logging, console logging, and dependency-injection abstractions packages.
+The package and assembly are both named `NyssaAI.Logging`. The registration extensions are in `NyssaAI.Logging.Configuration` and the span API is in `NyssaAI.Logging.Telemetry`. Its dependencies are Microsoft's logging, console logging, and dependency-injection abstractions packages.
 
 Licensed under the [Apache License, Version 2.0](../LICENSE.txt). See the repository's [licensing notice](../README.md#licensing) for details.

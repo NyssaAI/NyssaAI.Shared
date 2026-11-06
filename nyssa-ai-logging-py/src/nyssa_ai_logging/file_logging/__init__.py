@@ -1,4 +1,4 @@
-# Responsibility: Internal package initialization for file logging destinations.
+# Responsibility: Mark file_logging package namespace.
 # Public interface:
 # (none)
-"""File logging module initialization."""
+"""File logging package namespace."""

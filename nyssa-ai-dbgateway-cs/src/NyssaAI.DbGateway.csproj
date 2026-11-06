@@ -9,7 +9,7 @@
     <AssemblyName>NyssaAI.DbGateway</AssemblyName>
     <RootNamespace>NyssaAI.DbGateway</RootNamespace>
     <ClientContractFile>IDbGateway.cs</ClientContractFile>
-    <Version>0.1.1</Version>
+    <Version>0.2.0</Version>
     <Authors>jamaynor</Authors>
     <Description>AOT-compatible dual-engine database gateway with typed commands, automatic parameter and row type coercion, transaction scopes, and paired migrations for SQLite and PostgreSQL.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>

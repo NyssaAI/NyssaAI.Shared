@@ -1,4 +1,4 @@
-# Responsibility: Internal package initialization for console logging destinations.
+# Responsibility: Mark console_logging package namespace.
 # Public interface:
 # (none)
-"""Console logging module initialization."""
+"""Console logging package namespace."""

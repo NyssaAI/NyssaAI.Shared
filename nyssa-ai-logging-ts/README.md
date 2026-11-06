@@ -1,51 +1,76 @@
 # @nyssa-ai/logging
 
-`@nyssa-ai/logging` provides lightweight, operational logging destinations for TypeScript and Node.js systems, matching the operational behavior and JSON schema of `NyssaAI.Logging` (`nyssa-ai-logging-cs`). It delivers essential operational sinks—structured rotating JSON files, owner-only access controls, independent STDERR/STDOUT routing, and fail-safe execution—without introducing heavy dependencies or complex frameworks.
+`@nyssa-ai/logging` provides lightweight, zero-injection operational logging for TypeScript and Node.js systems, wrapping **Pino** and **OpenTelemetry** while matching the operational behavior and JSON schema of `NyssaAI.Logging` (`nyssa-ai-logging-cs`) and `nyssa-ai-logging` (`nyssa-ai-logging-py`).
 
-* **Rotating JSONL persistence**: Automatically rotates at 10 MiB with 5 numbered backups and 30-day retention.
-* **Clean protocol streams**: Routes diagnostics to STDERR by default while keeping STDOUT unpolluted for machine protocols (e.g. CLI pipes, MCP servers).
-* **Cross-account privacy**: Enforces POSIX 0600 file modes / 0700 directories and Windows DACLs to prevent unauthorized cross-account log reads.
-* **Crash-proof execution**: Degrades gracefully to STDERR diagnostics without throwing exceptions or aborting execution on sink errors.
-* **Zero-ceremony integration**: Provides a fluent configuration builder and an action-taking `Logger` contract for Dependency Injection.
+* **No injected loggers required**: Any module or library package simply calls `getLogger("a.b.c")` at module scope.
+* **One-call safe defaults**: `configureNyssaLogging()` automatically configures `process.stderr` + a rotating JSONL file at `./logs/{yyyy.mm.dd}-{appname}-log.json`.
+* **Per-package level filtering (`a.b.c`)**: Adjust verbosity per package hierarchy via `packageLevels` or `.setPackageLevel("nyssa_ai_dbgateway", "Debug")`.
+* **OpenTelemetry integration**: Turn on OpenTelemetry log bridging with `enableOtel: true` and correlate spans across async workflows with `startSpan(...)`.
+* **Rotating JSONL persistence & privacy**: Automatically rotates at 10 MiB with 5 numbered backups, 30-day retention, and owner-only permissions (`0600` files / `0700` directories on POSIX, Windows `icacls` DACLs).
 
-## Simple setup, ordinary logging
+## 1. Zero-ceremony setup & module-scoped logging
 
-Register logging during startup, then inject `Logger` into the classes that need it. `createNyssaLogging()` registers standard error output by default, with `Information` and higher levels enabled:
+Call `configureNyssaLogging()` once at startup:
 
 ```typescript
-import { createNyssaLogging } from "@nyssa-ai/logging";
+import { configureNyssaLogging, getLogger } from "@nyssa-ai/logging";
 
-const logging = createNyssaLogging("logs/service.log")
-  .withRotatingJsonLog("logs/application.json")
-  .withConsole();
+// Safe defaults: stderr + ./logs/{yyyy.mm.dd}-{appname}-log.json
+configureNyssaLogging();
 
-const logger = logging.createLogger("OrderService");
+// In any module or package — no constructor logger injection needed:
+const logger = getLogger("billing.orders");
 logger.info("Order {OrderId} placed", { OrderId: 1042 }, "OrderPlaced");
 ```
 
-## The JSON file
+## 2. Customizing directories, per-package levels, and OpenTelemetry
 
-The log file contains one complete JSON object per line matching the .NET record schema:
+```typescript
+import { configureNyssaLogging, getLogger, startSpan } from "@nyssa-ai/logging";
+
+const telemetry = configureNyssaLogging({
+  appName: "billing-worker",
+  logDir: "/var/log/nyssa", // Creates /var/log/nyssa/2026.11.05-billing-worker-log.json
+  minimumLevel: "Information",
+  enableOtel: true,
+  packageLevels: {
+    "nyssa_ai_dbgateway": "Debug", // Verbose SQL diagnostics for this package tree
+    "noisy.thirdparty": "Error"    // Silence noisy third-party modules
+  }
+})
+  .setPackageLevel("billing.audit", "Debug")
+  .withConsole();
+
+const logger = getLogger("billing.checkout");
+
+await startSpan("checkout-order", { OrderId: 1042, CustomerTier: "Enterprise" }, "OrderCheckout", async (span) => {
+  logger.info("Validating cart items");
+  span.setAttribute("ItemCount", 3);
+
+  await startSpan("authorize-payment", { Gateway: "Stripe" }, "PaymentAuth", async () => {
+    logger.info("Card authorized for {Amount}", { Amount: 149.99 });
+  });
+});
+```
+
+## 3. Canonical JSON file format
 
 ```json
 {
-  "Timestamp": "2026-10-12T14:23:45.123Z",
+  "Timestamp": "2026-11-05T14:23:45.123Z",
   "Level": "Information",
-  "Message": "Order 1042 placed",
-  "Module": "OrderService",
-  "Operation": "OrderPlaced",
+  "Message": "Card authorized for 149.99",
+  "Module": "billing.checkout",
+  "Operation": "PaymentAuth",
   "Exception": null,
   "AdditionalFields": {
-    "OrderId": 1042
+    "OrderId": 1042,
+    "CustomerTier": "Enterprise",
+    "Gateway": "Stripe",
+    "Amount": 149.99,
+    "TraceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "SpanId": "00f067aa0ba902b7",
+    "ParentSpanId": "b9c7c989f97918e1"
   }
 }
 ```
-
-## Rotation and retention
-
-| Setting | Behavior |
-| --- | --- |
-| Rotation threshold | 10 MiB, or 10,485,760 bytes. |
-| Backup count | Up to five numbered backups beside the active file. |
-| Backup names | `service.log.1` is the newest; `service.log.5` is the oldest. |
-| Age limit | Backups older than 30 days are pruned at startup and during rotation. |

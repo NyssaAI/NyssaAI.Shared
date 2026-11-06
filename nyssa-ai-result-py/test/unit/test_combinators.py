@@ -11,7 +11,6 @@ from nyssa_ai_result.result import Result, fail, ok
 
 def test_combinator_then_on_success_chains_next_operation() -> None:
     res = ok(5).then(lambda v: ok(v * 2))
-
     assert res.is_success is True
     assert res.value == 10
 

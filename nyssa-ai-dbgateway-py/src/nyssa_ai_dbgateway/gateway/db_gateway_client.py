@@ -14,6 +14,7 @@
 #     `-- scalar(sql, params)
 """DbGatewayClient coordinating providers, ad-hoc execution, typed commands, and transaction scopes."""
 
+import logging
 import time
 from typing import Callable, Mapping, Sequence, TypeVar
 from nyssa_ai_dbgateway.types import DbDialect, DbGatewayConfiguration
@@ -26,7 +27,7 @@ from nyssa_ai_dbgateway.providers.db_provider_registration import DbProviderRegi
 from nyssa_ai_dbgateway.providers.db_provider_registry import DbProviderRegistry
 from nyssa_ai_dbgateway.gateway.db_command_executor import DbCommandExecutor
 from nyssa_ai_dbgateway.gateway.db_transaction_scope import DbTransactionScope
-from nyssa_ai_dbgateway.logging.db_gateway_logger import DbGatewayLogger
+from nyssa_ai_dbgateway.logging.db_gateway_logger import DbGatewayLogger, emit_gateway_log
 
 T = TypeVar("T")
 TResult = TypeVar("TResult")
@@ -40,7 +41,7 @@ class DbGatewayClient:
         self,
         provider: DbProvider,
         command_timeout_seconds: int = 30,
-        logger: DbGatewayLogger | None = None,
+        logger: DbGatewayLogger | logging.Logger | None = None,
     ) -> None:
         self._provider = provider
         self._timeout = max(0, command_timeout_seconds)
@@ -58,7 +59,7 @@ class DbGatewayClient:
     def create(
         settings: DbGatewayConfiguration,
         custom_registrations: Sequence[DbProviderRegistration] | None = None,
-        logger: DbGatewayLogger | None = None,
+        logger: DbGatewayLogger | logging.Logger | None = None,
     ) -> "DbGatewayClient":
         factory = DbProviderRegistry.register_database_providers(settings, custom_registrations)
         provider = factory()
@@ -78,12 +79,21 @@ class DbGatewayClient:
                 res = DbCommandExecutor.execute_command(conn, self.dialect, self._timeout, command_or_sql)
             else:
                 res = DbCommandExecutor.execute_non_query(conn, self.dialect, self._timeout, command_or_sql)
-            if self._logger:
-                self._logger.debug("gateway.execute", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"})
+            emit_gateway_log(
+                self._logger,
+                "debug",
+                "gateway.execute",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"},
+            )
             return res
         except Exception as err:
-            if self._logger:
-                self._logger.error("gateway.execute", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
+            emit_gateway_log(
+                self._logger,
+                "error",
+                "gateway.execute",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"},
+                err,
+            )
             raise
         finally:
             conn.close()
@@ -101,12 +111,21 @@ class DbGatewayClient:
         conn = self._provider.open_connection()
         try:
             res = DbCommandExecutor.execute_scalar(conn, self.dialect, self._timeout, sql, params)
-            if self._logger:
-                self._logger.debug("gateway.scalar", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"})
+            emit_gateway_log(
+                self._logger,
+                "debug",
+                "gateway.scalar",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"},
+            )
             return res
         except Exception as err:
-            if self._logger:
-                self._logger.error("gateway.scalar", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
+            emit_gateway_log(
+                self._logger,
+                "error",
+                "gateway.scalar",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"},
+                err,
+            )
             raise
         finally:
             conn.close()
@@ -123,12 +142,21 @@ class DbGatewayClient:
                 rows: list[object] = list(DbCommandExecutor.execute_ad_hoc_query(conn, self.dialect, self._timeout, query_or_sql, params))
             else:
                 rows = list(DbCommandExecutor.execute_query(conn, self.dialect, self._timeout, query_or_sql))
-            if self._logger:
-                self._logger.debug("gateway.query", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success", "count": len(rows)})
+            emit_gateway_log(
+                self._logger,
+                "debug",
+                "gateway.query",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success", "count": len(rows)},
+            )
             return rows
         except Exception as err:
-            if self._logger:
-                self._logger.error("gateway.query", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
+            emit_gateway_log(
+                self._logger,
+                "error",
+                "gateway.query",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"},
+                err,
+            )
             raise
         finally:
             conn.close()

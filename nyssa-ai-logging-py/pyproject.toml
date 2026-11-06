@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nyssa-ai-logging"
-version = "0.2.3"
+version = "0.3.0"
 description = "Lightweight operational logging destinations with rotating JSON files and clean protocol streams matching NyssaAI.Logging."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,7 +31,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "opentelemetry-api>=1.25.0",
+]
 
 [project.optional-dependencies]
 dev = [

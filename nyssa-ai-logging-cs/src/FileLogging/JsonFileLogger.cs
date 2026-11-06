@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace NyssaAI.Logging.FileLogging;
@@ -45,16 +46,20 @@ internal sealed class JsonFileLogger : ILogger
 
         try
         {
+            var activity = Activity.Current;
+            var operation = !string.IsNullOrEmpty(eventId.Name)
+                ? eventId.Name
+                : activity?.OperationName ?? string.Empty;
+
             _logFile.WriteRecord(new LogRecord
             {
                 Timestamp = _timeProvider.GetUtcNow().UtcDateTime.ToString("O"),
                 Level = logLevel.ToString(),
                 Message = formatter(state, exception),
                 Module = _categoryName,
-                // The event name is the one stable per-call routing field ILogger offers.
-                Operation = eventId.Name ?? string.Empty,
+                Operation = operation,
                 Exception = exception?.ToString(),
-                AdditionalFields = ExtractFields(state),
+                AdditionalFields = ExtractFields(state, activity),
             });
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -64,26 +69,47 @@ internal sealed class JsonFileLogger : ILogger
     }
 
     /// <summary>
-    /// Take the structured fields from the logging state. The template itself arrives as a
-    /// field named {OriginalFormat} and is dropped: the formatted message already carries it.
+    /// Take the structured fields from the logging state and active OpenTelemetry <see cref="Activity"/>.
+    /// The template itself arrives as a field named {OriginalFormat} and is dropped: the formatted message already carries it.
     /// </summary>
-    private static IReadOnlyDictionary<string, object?> ExtractFields<TState>(TState state)
+    private static IReadOnlyDictionary<string, object?> ExtractFields<TState>(TState state, Activity? activity)
     {
-        if (state is not IEnumerable<KeyValuePair<string, object>> pairs)
-        {
-            return NoFields;
-        }
-
         Dictionary<string, object?>? fields = null;
-        foreach (var pair in pairs)
+
+        if (activity is not null)
         {
-            if (pair.Key == OriginalFormatKey)
+            fields = new Dictionary<string, object?>();
+            foreach (var tag in activity.TagObjects)
             {
-                continue;
+                if (!string.IsNullOrEmpty(tag.Key) && !tag.Key.StartsWith("exception.", StringComparison.Ordinal))
+                {
+                    fields[tag.Key] = tag.Value;
+                }
             }
 
-            fields ??= new Dictionary<string, object?>();
-            fields[pair.Key] = pair.Value;
+            if (activity.IdFormat == ActivityIdFormat.W3C)
+            {
+                fields["TraceId"] = activity.TraceId.ToHexString();
+                fields["SpanId"] = activity.SpanId.ToHexString();
+                if (activity.ParentSpanId != default)
+                {
+                    fields["ParentSpanId"] = activity.ParentSpanId.ToHexString();
+                }
+            }
+        }
+
+        if (state is IEnumerable<KeyValuePair<string, object>> pairs)
+        {
+            foreach (var pair in pairs)
+            {
+                if (pair.Key == OriginalFormatKey)
+                {
+                    continue;
+                }
+
+                fields ??= new Dictionary<string, object?>();
+                fields[pair.Key] = pair.Value;
+            }
         }
 
         return fields ?? NoFields;

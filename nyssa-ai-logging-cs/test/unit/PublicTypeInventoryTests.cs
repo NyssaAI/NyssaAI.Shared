@@ -15,7 +15,9 @@ public sealed class PublicTypeInventoryTests
         string[] expected =
         [
             "NyssaAI.Logging.Configuration.LoggingBuilderExtensions",
-            "NyssaAI.Logging.Configuration.LoggingServiceCollectionExtensions"
+            "NyssaAI.Logging.Configuration.LoggingServiceCollectionExtensions",
+            "NyssaAI.Logging.Telemetry.NyssaTelemetry",
+            "NyssaAI.Logging.Telemetry.SpanScope"
         ];
 
         var actual = typeof(Configuration.LoggingBuilderExtensions).Assembly.GetExportedTypes()

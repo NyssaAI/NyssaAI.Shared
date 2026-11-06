@@ -26,7 +26,7 @@ import type { DbNonQuery } from "../commands/DbNonQuery.js";
 import type { DbCommand } from "../commands/DbCommand.js";
 import type { DbQuery } from "../commands/DbQuery.js";
 import { DbCommandExecutor } from "./DbCommandExecutor.js";
-import type { DbGatewayLogger } from "../logging/DbGatewayLogger.js";
+import { emitGatewayLog, type DbGatewayLogger } from "../logging/DbGatewayLogger.js";
 
 export class DbTransactionScope {
   public readonly databaseProvider: string;
@@ -107,14 +107,14 @@ export class DbTransactionScope {
           signal
         );
       }
-      this.logger?.debug("transaction.execute", {
+      emitGatewayLog(this.logger, "debug", "transaction.execute", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "success"
       });
       return result;
     } catch (error) {
       this.recordFailure(error instanceof Error ? error : new Error(String(error)));
-      this.logger?.error("transaction.execute", {
+      emitGatewayLog(this.logger, "error", "transaction.execute", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "failure"
       }, error);
@@ -148,14 +148,14 @@ export class DbTransactionScope {
         params,
         signal
       );
-      this.logger?.debug("transaction.scalar", {
+      emitGatewayLog(this.logger, "debug", "transaction.scalar", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "success"
       });
       return result;
     } catch (error) {
       this.recordFailure(error instanceof Error ? error : new Error(String(error)));
-      this.logger?.error("transaction.scalar", {
+      emitGatewayLog(this.logger, "error", "transaction.scalar", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "failure"
       }, error);
@@ -225,7 +225,7 @@ export class DbTransactionScope {
           signal
         );
       }
-      this.logger?.debug("transaction.query", {
+      emitGatewayLog(this.logger, "debug", "transaction.query", {
         elapsedMs: Math.round(performance.now() - started),
         rowCount: results.length,
         outcome: "success"
@@ -233,7 +233,7 @@ export class DbTransactionScope {
       return results;
     } catch (error) {
       this.recordFailure(error instanceof Error ? error : new Error(String(error)));
-      this.logger?.error("transaction.query", {
+      emitGatewayLog(this.logger, "error", "transaction.query", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "failure"
       }, error);

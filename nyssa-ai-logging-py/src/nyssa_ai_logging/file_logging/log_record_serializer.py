@@ -7,9 +7,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
 import json
 import math
-from typing import Final
 
 from nyssa_ai_logging.file_logging.log_record import LogRecord
 
@@ -18,10 +19,14 @@ def _sanitize_field_value(value: object) -> object:
     """Sanitize individual additional field values for JSON compliance."""
     if value is None:
         return None
+    if isinstance(value, Enum):
+        return value.name
     if isinstance(value, (str, bool)):
         return value
     if isinstance(value, int):
         return value
+    if isinstance(value, Decimal):
+        return float(value) if value.is_finite() else str(value)
     if isinstance(value, float):
         return value if math.isfinite(value) else str(value)
     if isinstance(value, (datetime, date)):
@@ -30,7 +35,6 @@ def _sanitize_field_value(value: object) -> object:
         return str(value)
     if isinstance(value, (dict, list, tuple)):
         try:
-            # Test JSON round-trip
             return json.loads(json.dumps(value, default=str))
         except (TypeError, ValueError):
             return str(value)

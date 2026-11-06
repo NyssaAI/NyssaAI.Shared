@@ -1,14 +1,14 @@
 {
   "name": "@nyssa-ai/logging",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Lightweight operational logging destinations with rotating JSON files and clean protocol streams",
   "type": "module",
-  "main": "./dist/configuration/createNyssaLogging.js",
-  "types": "./dist/configuration/createNyssaLogging.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/configuration/createNyssaLogging.js",
-      "types": "./dist/configuration/createNyssaLogging.d.ts"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     },
     "./*": {
       "import": "./dist/*.js",
@@ -51,5 +51,10 @@
   },
   "allowScripts": {
     "esbuild": true
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/api-logs": "^0.223.0",
+    "pino": "^10.4.0"
   }
 }

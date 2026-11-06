@@ -31,7 +31,7 @@ import type { DbTransaction } from "../DbTransaction.js";
 import { DbTransactionScope } from "./DbTransactionScope.js";
 import { DbCommandExecutor } from "./DbCommandExecutor.js";
 import type { DbGatewayConfiguration } from "../configuration/DbGatewayConfiguration.js";
-import type { DbGatewayLogger } from "../logging/DbGatewayLogger.js";
+import { emitGatewayLog, type DbGatewayLogger } from "../logging/DbGatewayLogger.js";
 
 export class DbGatewayClient {
   public readonly databaseProvider: string;
@@ -119,13 +119,13 @@ export class DbGatewayClient {
           signal
         );
       }
-      this.logger?.debug("gateway.execute", {
+      emitGatewayLog(this.logger, "debug", "gateway.execute", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "success"
       });
       return result;
     } catch (error) {
-      this.logger?.error("gateway.execute", {
+      emitGatewayLog(this.logger, "error", "gateway.execute", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "failure"
       }, error);
@@ -158,13 +158,13 @@ export class DbGatewayClient {
         params,
         signal
       );
-      this.logger?.debug("gateway.scalar", {
+      emitGatewayLog(this.logger, "debug", "gateway.scalar", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "success"
       });
       return result;
     } catch (error) {
-      this.logger?.error("gateway.scalar", {
+      emitGatewayLog(this.logger, "error", "gateway.scalar", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "failure"
       }, error);
@@ -233,14 +233,14 @@ export class DbGatewayClient {
           signal
         );
       }
-      this.logger?.debug("gateway.query", {
+      emitGatewayLog(this.logger, "debug", "gateway.query", {
         elapsedMs: Math.round(performance.now() - started),
         rowCount: results.length,
         outcome: "success"
       });
       return results;
     } catch (error) {
-      this.logger?.error("gateway.query", {
+      emitGatewayLog(this.logger, "error", "gateway.query", {
         elapsedMs: Math.round(performance.now() - started),
         outcome: "failure"
       }, error);

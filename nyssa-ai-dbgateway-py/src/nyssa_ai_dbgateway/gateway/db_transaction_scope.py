@@ -13,6 +13,7 @@
 #     `-- scalar(sql, params)
 """Scoped transaction implementation."""
 
+import logging
 import time
 from types import TracebackType
 from typing import Mapping, Sequence, TypeVar
@@ -22,7 +23,7 @@ from nyssa_ai_dbgateway.commands.db_non_query import DbNonQuery
 from nyssa_ai_dbgateway.commands.db_query import DbQuery
 from nyssa_ai_dbgateway.providers.db_connection_adapter import DbConnectionAdapter
 from nyssa_ai_dbgateway.gateway.db_command_executor import DbCommandExecutor
-from nyssa_ai_dbgateway.logging.db_gateway_logger import DbGatewayLogger
+from nyssa_ai_dbgateway.logging.db_gateway_logger import DbGatewayLogger, emit_gateway_log
 
 TResult = TypeVar("TResult")
 TRow = TypeVar("TRow")
@@ -37,7 +38,7 @@ class DbTransactionScope:
         provider_name: str,
         dialect: DbDialect,
         command_timeout_seconds: int = 30,
-        logger: DbGatewayLogger | None = None,
+        logger: DbGatewayLogger | logging.Logger | None = None,
     ) -> None:
         self._conn = conn
         self._provider_name = provider_name
@@ -75,13 +76,22 @@ class DbTransactionScope:
                 res = DbCommandExecutor.execute_command(self._conn, self._dialect, self._timeout, command_or_sql)
             else:
                 res = DbCommandExecutor.execute_non_query(self._conn, self._dialect, self._timeout, command_or_sql)
-            if self._logger:
-                self._logger.debug("tx.execute", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"})
+            emit_gateway_log(
+                self._logger,
+                "debug",
+                "tx.execute",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"},
+            )
             return res
         except Exception as err:
             self._failed = True
-            if self._logger:
-                self._logger.error("tx.execute", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
+            emit_gateway_log(
+                self._logger,
+                "error",
+                "tx.execute",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"},
+                err,
+            )
             raise
 
     def execute_command(self, command: DbCommand[TResult]) -> TResult:
@@ -97,13 +107,22 @@ class DbTransactionScope:
         started = time.monotonic()
         try:
             res = DbCommandExecutor.execute_scalar(self._conn, self._dialect, self._timeout, sql, params)
-            if self._logger:
-                self._logger.debug("tx.scalar", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"})
+            emit_gateway_log(
+                self._logger,
+                "debug",
+                "tx.scalar",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success"},
+            )
             return res
         except Exception as err:
             self._failed = True
-            if self._logger:
-                self._logger.error("tx.scalar", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
+            emit_gateway_log(
+                self._logger,
+                "error",
+                "tx.scalar",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"},
+                err,
+            )
             raise
 
     def query(
@@ -118,13 +137,22 @@ class DbTransactionScope:
                 rows: list[object] = list(DbCommandExecutor.execute_ad_hoc_query(self._conn, self._dialect, self._timeout, query_or_sql, params))
             else:
                 rows = list(DbCommandExecutor.execute_query(self._conn, self._dialect, self._timeout, query_or_sql))
-            if self._logger:
-                self._logger.debug("tx.query", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success", "count": len(rows)})
+            emit_gateway_log(
+                self._logger,
+                "debug",
+                "tx.query",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "success", "count": len(rows)},
+            )
             return rows
         except Exception as err:
             self._failed = True
-            if self._logger:
-                self._logger.error("tx.query", {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"}, err)
+            emit_gateway_log(
+                self._logger,
+                "error",
+                "tx.query",
+                {"elapsed_ms": (time.monotonic() - started) * 1000, "outcome": "failure"},
+                err,
+            )
             raise
 
     def query_single(

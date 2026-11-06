@@ -1,23 +1,20 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { configureNyssaLogging } from "../../src/configuration/configureNyssaLogging.js";
 import { createNyssaLogging } from "../../src/configuration/createNyssaLogging.js";
 import { LoggingBuilder } from "../../src/configuration/LoggingBuilder.js";
-import type { Logger } from "../../src/Logger.js";
+import { getLogger } from "../../src/getLogger.js";
 import { TempLogWorkspace } from "../unit/helpers/TempLogWorkspace.js";
 import { StderrCapture } from "../unit/helpers/StderrCapture.js";
 import { StdoutCapture } from "../unit/helpers/StdoutCapture.js";
 
-// Domain fixture class matching C# OrderService
+// Domain fixture class using module-scoped getLogger without constructor logger injection
+const orderLogger = getLogger("OrderService");
+
 class OrderService {
-  private readonly logger: Logger;
-
-  public constructor(logger: Logger) {
-    this.logger = logger;
-  }
-
   public place(orderId: number): void {
-    this.logger.info("Order {OrderId} placed", { OrderId: orderId });
+    orderLogger.info("Order {OrderId} placed", { OrderId: orderId });
   }
 }
 
@@ -25,8 +22,12 @@ describe("LoggingTutorials", () => {
   it("write_logs_to_a_json_file", () => {
     const workspace = new TempLogWorkspace();
     try {
-      const logging = new LoggingBuilder("Information").addNyssaJsonFile(workspace.logPath);
-      const orderService = new OrderService(logging.createLogger("OrderService"));
+      const logging = configureNyssaLogging({
+        filePath: workspace.logPath,
+        stderr: false,
+        minimumLevel: "Information"
+      });
+      const orderService = new OrderService();
 
       orderService.place(1042);
       logging.dispose();
@@ -47,8 +48,11 @@ describe("LoggingTutorials", () => {
     const stderr = new StderrCapture();
     const workspace = new TempLogWorkspace();
     try {
-      const logging = createNyssaLogging(workspace.logPath, "Information");
-      const orderService = new OrderService(logging.createLogger("OrderService"));
+      const logging = configureNyssaLogging({
+        filePath: workspace.logPath,
+        minimumLevel: "Information"
+      });
+      const orderService = new OrderService();
 
       orderService.place(1042);
       logging.dispose();

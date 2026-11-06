@@ -5,10 +5,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NyssaAI.Logging.ConsoleLogging;
 using NyssaAI.Logging.FileLogging;
+using NyssaAI.Logging.Telemetry;
 
 namespace NyssaAI.Logging.Configuration;
 
-/// <summary>Adds file, standard error, and standard output destinations to Microsoft logging.</summary>
+/// <summary>Adds file, standard error, standard output, per-package filters, and OpenTelemetry span support to Microsoft logging.</summary>
 /// <remarks>
 /// An application configures logging with <c>AddLogging</c> and injects <see cref="ILogger{TCategoryName}"/>, and
 /// this package supplies destinations for it to write to.
@@ -33,6 +34,44 @@ public static class LoggingBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, ConsoleOutputLoggerProvider>());
         return builder;
+    }
+
+    /// <summary>Sets the minimum log level for a specific package or category prefix (e.g. <c>"NyssaAI.DbGateway"</c>).</summary>
+    /// <param name="builder">The logging builder to configure.</param>
+    /// <param name="packagePrefix">The category or namespace prefix to filter.</param>
+    /// <param name="level">The minimum <see cref="LogLevel"/> for categories matching <paramref name="packagePrefix"/>.</param>
+    /// <returns>The same builder for further logging setup.</returns>
+    public static ILoggingBuilder SetPackageLevel(this ILoggingBuilder builder, string packagePrefix, LogLevel level)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrWhiteSpace(packagePrefix);
+        return builder.AddFilter(packagePrefix.Trim(), level);
+    }
+
+    /// <summary>Enables OpenTelemetry W3C <see cref="System.Diagnostics.Activity"/> span sampling and correlation for Nyssa logs.</summary>
+    /// <param name="builder">The logging builder to configure.</param>
+    /// <returns>The same builder for further logging setup.</returns>
+    public static ILoggingBuilder WithOtel(this ILoggingBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        NyssaTelemetry.EnsureListenerRegistered();
+        return builder;
+    }
+
+    /// <summary>Starts a correlated OpenTelemetry / <see cref="System.Diagnostics.Activity"/> span.</summary>
+    /// <param name="builder">The logging builder instance.</param>
+    /// <param name="name">The span name.</param>
+    /// <param name="attributes">Optional initial key-value tags attached to the span and inherited by nested logs.</param>
+    /// <param name="operation">Optional logical operation name (defaults to <paramref name="name"/>).</param>
+    /// <returns>A disposable <see cref="SpanScope"/> that ends the span when disposed.</returns>
+    public static SpanScope StartSpan(
+        this ILoggingBuilder builder,
+        string name,
+        IReadOnlyDictionary<string, object?>? attributes = null,
+        string? operation = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return NyssaTelemetry.StartSpan(name, attributes, operation);
     }
 
     /// <summary>Adds a rotating JSON file whose name starts with its opening date in UTC.</summary>

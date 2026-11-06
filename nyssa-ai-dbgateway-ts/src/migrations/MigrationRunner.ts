@@ -13,7 +13,7 @@ import type { DbConnectionAdapter } from "../providers/DbConnectionAdapter.js";
 import type { DbDialect } from "../DbDialect.js";
 import { MigrationCatalog } from "./MigrationCatalog.js";
 import { MigrationReport } from "./MigrationReport.js";
-import type { MigrationStep } from "./MigrationStep.js";
+import { emitGatewayLog } from "../logging/DbGatewayLogger.js";
 
 const POSTGRES_ADVISORY_LOCK_ID = "564535375002";
 const MIGRATIONS_TABLE = "nyssa_dbgateway_migrations";
@@ -102,6 +102,7 @@ export class MigrationRunner {
     target: number,
     signal?: AbortSignal
   ): Promise<MigrationReport> {
+    const started = performance.now();
     const catalog = this.catalog!;
     const dialect = this.provider.dialect;
     const conn = await this.provider.openConnection(signal);
@@ -180,6 +181,14 @@ export class MigrationRunner {
       await conn.commit(signal);
       inTransaction = false;
 
+      emitGatewayLog(undefined, "info", "migrations.migrate", {
+        elapsedMs: Math.round(performance.now() - started),
+        outcome: "success",
+        fromNumber: current,
+        toNumber: target,
+        appliedCount: applied
+      });
+
       return new MigrationReport({
         fromNumber: current,
         toNumber: target,
@@ -193,6 +202,11 @@ export class MigrationRunner {
           // ignore rollback failure on error
         }
       }
+      emitGatewayLog(undefined, "error", "migrations.migrate", {
+        elapsedMs: Math.round(performance.now() - started),
+        outcome: "failure",
+        target
+      }, error);
       throw error;
     } finally {
       await conn.close();

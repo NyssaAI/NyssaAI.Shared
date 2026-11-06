@@ -11,6 +11,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 import json
+import logging
 import re
 from typing import Final
 
@@ -20,6 +21,7 @@ from nyssa_ai_configuration.logging.types import (
 )
 
 _SAFE_TOKEN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_STDLIB_LOGGER: Final[logging.Logger] = logging.getLogger("nyssa_ai_configuration")
 
 
 class ConfigurationLog:
@@ -29,14 +31,14 @@ class ConfigurationLog:
         self,
         sink: Callable[[str], None] | None = None,
         service: str = "nyssa-ai-configuration",
-        version: str = "0.3.0",
+        version: str = "0.5.0",
         debug_enabled: bool = False,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         """Initialize with an optional borrowed sink, service label, version, debug flag, and UTC clock."""
         self._sink = sink
         self._service = service if _SAFE_TOKEN.match(service) else "nyssa-ai-configuration"
-        self._version = version if _SAFE_TOKEN.match(version) else "0.3.0"
+        self._version = version if _SAFE_TOKEN.match(version) else "0.5.0"
         self._debug_enabled = debug_enabled
         self._now = now
         self._lost = 0
@@ -100,8 +102,8 @@ class ConfigurationLog:
         dependency: str = "local",
         correlation_id: str = "default",
     ) -> None:
-        """Emit debug step telemetry when debug_enabled is True."""
-        if not self._debug_enabled:
+        """Emit debug step telemetry when debug_enabled is True or Python debug logging is enabled."""
+        if not self._debug_enabled and (self._sink is not None or not _STDLIB_LOGGER.isEnabledFor(logging.DEBUG)):
             return
         self._write(
             event=f"{operation}.debug",
@@ -127,8 +129,6 @@ class ConfigurationLog:
         attempts: int,
         correlation_id: str,
     ) -> None:
-        if self._sink is None:
-            return
         if (
             not _SAFE_TOKEN.match(operation)
             or not _SAFE_TOKEN.match(code)
@@ -138,24 +138,45 @@ class ConfigurationLog:
         ):
             self._lost += 1
             return
+
+        bounded_elapsed = round(max(0.0, elapsed_ms), 3)
+        record_fields: dict[str, str | int | float] = {
+            "timestamp": self._now().isoformat(),
+            "level": level,
+            "event": event,
+            "service": self._service,
+            "version": self._version,
+            "correlation_id": correlation_id,
+            "operation": operation,
+            "outcome": outcome,
+            "elapsed_ms": bounded_elapsed,
+            "dependency": dependency,
+            "attempts": attempts,
+            "code": code,
+        }
+
+        if self._sink is not None:
+            try:
+                payload = json.dumps(record_fields, separators=(",", ":"))
+                self._sink(payload)
+            except Exception:
+                self._lost += 1
+
         try:
-            payload = json.dumps(
-                {
-                    "timestamp": self._now().isoformat(),
-                    "level": level,
-                    "event": event,
-                    "service": self._service,
-                    "version": self._version,
-                    "correlation_id": correlation_id,
-                    "operation": operation,
-                    "outcome": outcome,
-                    "elapsed_ms": round(max(0.0, elapsed_ms), 3),
-                    "dependency": dependency,
-                    "attempts": attempts,
-                    "code": code,
-                },
-                separators=(",", ":"),
+            py_level = (
+                logging.ERROR
+                if level == "error"
+                else logging.WARNING
+                if level == "warn"
+                else logging.DEBUG
+                if level == "debug"
+                else logging.INFO
             )
-            self._sink(payload)
+            if _STDLIB_LOGGER.isEnabledFor(py_level):
+                _STDLIB_LOGGER.log(
+                    py_level,
+                    "Configuration {operation} {outcome} ({code})",
+                    extra=record_fields,
+                )
         except Exception:
             self._lost += 1

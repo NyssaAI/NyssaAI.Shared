@@ -1,4 +1,4 @@
-# Responsibility: Internal package initialization for logging configuration.
+# Responsibility: Mark configuration package namespace.
 # Public interface:
 # (none)
-"""Configuration module initialization."""
+"""Configuration package namespace."""

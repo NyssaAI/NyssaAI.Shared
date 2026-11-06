@@ -9,6 +9,8 @@
 #     `-- verify(strict)
 """Migration runner executing versioned database migrations."""
 
+import logging
+import time
 from nyssa_ai_dbgateway.providers.db_provider import DbProvider
 from nyssa_ai_dbgateway.migrations.migration_catalog import MigrationCatalog
 from nyssa_ai_dbgateway.migrations.migration_report import MigrationReport
@@ -20,7 +22,7 @@ from nyssa_ai_dbgateway.migrations.migrations_table_name import (
     SQL_LOCK_POSTGRES,
     SQL_UNLOCK_POSTGRES,
 )
-from nyssa_ai_dbgateway.logging.db_gateway_logger import DbGatewayLogger
+from nyssa_ai_dbgateway.logging.db_gateway_logger import DbGatewayLogger, emit_gateway_log
 
 
 class MigrationRunner:
@@ -30,7 +32,7 @@ class MigrationRunner:
         self,
         provider: DbProvider,
         catalog: MigrationCatalog,
-        logger: DbGatewayLogger | None = None,
+        logger: DbGatewayLogger | logging.Logger | None = None,
     ) -> None:
         self._provider = provider
         self._catalog = catalog
@@ -81,6 +83,7 @@ class MigrationRunner:
         if target_version < 0 or target_version > self._catalog.latest_step_number:
             raise ValueError(f"Target version {target_version} is out of bounds (0..{self._catalog.latest_step_number}).")
 
+        started = time.monotonic()
         conn = self._provider.open_connection()
         dialect = self._provider.dialect
 
@@ -154,6 +157,18 @@ class MigrationRunner:
                         conn.rollback()
                         raise
 
+            emit_gateway_log(
+                self._logger,
+                "info",
+                "migrations.migrate",
+                {
+                    "elapsed_ms": (time.monotonic() - started) * 1000,
+                    "outcome": "success",
+                    "initial_version": initial_version,
+                    "current_version": current,
+                    "target_version": target_version,
+                },
+            )
             return MigrationReport(
                 initial_version=initial_version,
                 current_version=current,
@@ -161,6 +176,19 @@ class MigrationRunner:
                 reverted_steps=reverted,
                 target_version=target_version,
             )
+        except Exception as err:
+            emit_gateway_log(
+                self._logger,
+                "error",
+                "migrations.migrate",
+                {
+                    "elapsed_ms": (time.monotonic() - started) * 1000,
+                    "outcome": "failure",
+                    "target_version": target_version,
+                },
+                err,
+            )
+            raise
         finally:
             if dialect == "postgres":
                 try:

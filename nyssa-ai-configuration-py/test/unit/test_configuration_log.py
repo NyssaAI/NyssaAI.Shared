@@ -2,10 +2,12 @@
 # Public interface:
 # +-- test_configuration_log_contains_sink_failure_and_tracks_lost_records()
 # +-- test_configuration_log_emits_structured_json_with_safe_context_only()
+# +-- test_configuration_log_emits_to_standard_python_logging_by_default()
 # `-- test_configuration_log_gates_debug_records_unless_enabled()
 """Unit tests for ConfigurationLog operational boundary logging (PY-LOG)."""
 
 import json
+import logging
 
 from nyssa_ai_configuration.logging.configuration_log import ConfigurationLog
 
@@ -70,3 +72,29 @@ def test_configuration_log_contains_sink_failure_and_tracks_lost_records() -> No
     record = json.loads(captured[0])
     assert record["outcome"] == "success"
     assert logger.lost_records == 1
+
+
+def test_configuration_log_emits_to_standard_python_logging_by_default() -> None:
+    """Verify ConfigurationLog emits to logging.getLogger('nyssa_ai_configuration') even without a custom sink."""
+    records: list[logging.LogRecord] = []
+
+    class _CaptureHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    pkg_logger = logging.getLogger("nyssa_ai_configuration")
+    prev_level = pkg_logger.level
+    handler = _CaptureHandler()
+    pkg_logger.addHandler(handler)
+    pkg_logger.setLevel(logging.INFO)
+    try:
+        logger = ConfigurationLog()
+        logger.completed("store.set", "success", 2.0, dependency="filesystem", attempts=1)
+        assert len(records) == 1
+        assert getattr(records[0], "operation", None) == "store.set"
+        assert getattr(records[0], "outcome", None) == "success"
+        assert getattr(records[0], "dependency", None) == "filesystem"
+    finally:
+        pkg_logger.removeHandler(handler)
+        pkg_logger.setLevel(prev_level)
+

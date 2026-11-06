@@ -1,6 +1,6 @@
 {
   "name": "@nyssa-ai/configuration",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Secure, cross-process locked, AES-256-GCM encrypted configuration storage matching NyssaAI.Configuration",
   "type": "module",
   "main": "./dist/ConfigurationClient.js",
@@ -45,7 +45,8 @@
   "author": "NyssaAI",
   "license": "Apache-2.0",
   "dependencies": {
-    "@nyssa-ai/result": "^0.2.3"
+    "@nyssa-ai/logging": "^0.3.0",
+    "@nyssa-ai/result": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

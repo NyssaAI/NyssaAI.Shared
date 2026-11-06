@@ -262,4 +262,48 @@ public sealed class LoggingTutorials
             Assert.Equal("Still running", record.GetProperty("Message").GetString());
         }
     }
+
+    /// <summary>Configure logging with safe defaults, per-package levels, and OpenTelemetry span correlation.</summary>
+    [Fact]
+    public void Configure_With_Safe_Defaults_And_OpenTelemetry_Spans()
+    {
+        using (var stderr = new StderrCapture())
+        using (var workspace = new LogWorkspace())
+        {
+            var logDir = Path.GetDirectoryName(workspace.LogPath)!;
+            var services = new ServiceCollection();
+            var telemetry = services.ConfigureNyssaLogging(
+                appName: "billing-worker",
+                logDir: logDir,
+                minimumLevel: LogLevel.Information,
+                enableOtel: true)
+                .SetPackageLevel("NyssaAI.Logging.UseCaseTests", LogLevel.Debug);
+            services.AddScoped<OrderService>();
+
+            using (var provider = ServiceContainer.BuildValidated(services))
+            using (var scope = provider.Services.CreateScope())
+            {
+                using (var span = telemetry.StartSpan(
+                    "place-order",
+                    new Dictionary<string, object?> { ["CustomerTier"] = "Enterprise" },
+                    "OrderPlacement"))
+                {
+                    span.SetAttribute("Region", "US-West");
+                    scope.ServiceProvider.GetRequiredService<OrderService>().Place(1042);
+                }
+            }
+
+            var datedFile = Assert.Single(Directory.GetFiles(logDir, "*-billing-worker-log.json"));
+            using var json = System.Text.Json.JsonDocument.Parse(Assert.Single(File.ReadAllLines(datedFile)));
+            var root = json.RootElement;
+            Assert.Equal("Order 1042 placed", root.GetProperty("Message").GetString());
+            Assert.Equal("OrderPlacement", root.GetProperty("Operation").GetString());
+            var fields = root.GetProperty("AdditionalFields");
+            Assert.Equal(1042, fields.GetProperty("OrderId").GetInt32());
+            Assert.Equal("Enterprise", fields.GetProperty("CustomerTier").GetString());
+            Assert.Equal("US-West", fields.GetProperty("Region").GetString());
+            Assert.False(string.IsNullOrWhiteSpace(fields.GetProperty("TraceId").GetString()));
+            Assert.False(string.IsNullOrWhiteSpace(fields.GetProperty("SpanId").GetString()));
+        }
+    }
 }
