@@ -9,6 +9,7 @@
         "kind": "bitwarden-secrets",
         "endpoint": "https://vault.internal.net",
         "credential": "auth/bitwarden-grant",
+        "cacheTTLSeconds": 60,
         "settings": {
           "organizationId": "11111111-2222-3333-4444-555555555555",
           "apiUrl": "https://api.bitwarden.com"

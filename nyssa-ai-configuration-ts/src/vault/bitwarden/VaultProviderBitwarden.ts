@@ -10,7 +10,8 @@
 //     +-- name
 //     +-- new(options, getCredential, commandRunner)
 //     +-- recovery
-//     `-- setSecret(secretName, secretValue, signal)
+//     +-- setSecret(secretName, secretValue, signal)
+//     `-- setSecretListedCallback(callback)
 
 import { execFile } from "node:child_process";
 import { ok, fail, type Result } from "@nyssa-ai/result";
@@ -40,6 +41,7 @@ export class VaultProviderBitwarden {
   private readonly _hasCredential: boolean;
   private readonly _getCredential: ((signal?: AbortSignal) => Promise<Result<string>>) | undefined;
   private readonly _runner: BwsCommandRunner;
+  private _onSecretListed: ((secretKey: string, secretValue: string) => void) | undefined;
 
   public constructor(
     options: VaultOptions,
@@ -68,6 +70,10 @@ export class VaultProviderBitwarden {
     this._runner = commandRunner ?? VaultProviderBitwarden.defaultCommandRunner;
   }
 
+  public setSecretListedCallback(callback: ((secretKey: string, secretValue: string) => void) | undefined): void {
+    this._onSecretListed = callback;
+  }
+
   public async getSecret(secretName: string, signal?: AbortSignal): Promise<Result<string>> {
     signal?.throwIfAborted();
     const envRes = await this.resolveEnvironment(signal);
@@ -76,12 +82,17 @@ export class VaultProviderBitwarden {
     const listRes = await this.listSecrets(envRes.value, signal);
     if (!listRes.ok) return listRes;
 
+    this.notifyListedSecrets(listRes.value);
     const match = VaultProviderBitwarden.findMatchingItem(listRes.value, secretName);
     if (!match || !match.id) {
       return fail(
         `vault: '${secretName}' was not found in Bitwarden Secrets Manager provider '${this.name}'`,
         "NotFound"
       );
+    }
+
+    if (typeof match.value === "string") {
+      return ok(match.value);
     }
 
     const outRes = await this._runner(
@@ -148,6 +159,25 @@ export class VaultProviderBitwarden {
 
     const delRes = await this._runner(this._binaryPath, ["secret", "delete", existing.id], envRes.value, signal);
     return delRes.ok ? ok({ deleted: true, retained: false }) : delRes;
+  }
+
+  private notifyListedSecrets(items: readonly BwsSecretEntry[]): void {
+    const callback = this._onSecretListed;
+    if (!callback) return;
+    for (const item of items) {
+      if (typeof item.value !== "string") continue;
+      if (typeof item.id === "string" && item.id.trim().length > 0) {
+        callback(item.id.trim(), item.value);
+      }
+      const rawKey = item.key ?? item.slug;
+      if (typeof rawKey === "string" && rawKey.trim().length > 0) {
+        const trimmed = rawKey.trim();
+        callback(trimmed, item.value);
+        if (trimmed.includes(".") && !trimmed.includes("/")) {
+          callback(trimmed.replace(".", "/"), item.value);
+        }
+      }
+    }
   }
 
   private async resolveEnvironment(signal?: AbortSignal): Promise<Result<Readonly<Record<string, string>>>> {

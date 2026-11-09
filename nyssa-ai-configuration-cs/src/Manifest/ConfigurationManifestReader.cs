@@ -92,6 +92,25 @@ internal static class ConfigurationManifestReader
                 return Result<ApplicationManifestSettings>.Failure(privateFile.Errors);
         }
 
+        if (section.KeyVault is not null)
+        {
+            if (section.KeyVault.CacheTTLSeconds is < 0)
+            {
+                return Result<ApplicationManifestSettings>.Failure(Error.FromMessages(
+                    "The configuration manifest is malformed.",
+                    $"manifest: '{path}' names cacheTTLSeconds '{section.KeyVault.CacheTTLSeconds.Value}' for '{applicationName}', which is not a non-negative integer",
+                    ErrorCategory.Validation));
+            }
+            if (section.KeyVault.Settings!.TryGetValue("cacheTTLSeconds", out var rawSettingTtl)
+                && !int.TryParse(rawSettingTtl.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            {
+                return Result<ApplicationManifestSettings>.Failure(Error.FromMessages(
+                    "The configuration manifest is malformed.",
+                    $"manifest: '{path}' names settings['cacheTTLSeconds'] '{rawSettingTtl}' for '{applicationName}', which is not a non-negative integer",
+                    ErrorCategory.Validation));
+            }
+        }
+
         return Result<ApplicationManifestSettings>.Success(new ApplicationManifestSettings
         {
             ConfigurationDirectory = ResolveDirectory(path, section.ConfigurationDirectory),

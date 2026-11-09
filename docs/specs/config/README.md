@@ -75,6 +75,7 @@ Application data (such as database credentials, API keys, or mail server setting
         "kind": "<string>",
         "endpoint": "<URI string>",
         "credential": "<namespace/key>",
+        "cacheTTLSeconds": 60,
         "settings": {
           "<key>": "<string value>"
         },
@@ -91,7 +92,7 @@ Application data (such as database credentials, API keys, or mail server setting
 - **`applications`** (`object`): Map of application sections. Sibling sections are preserved during writes.
 - **`configurationDirectory`** (`string`): Absolute or manifest-relative directory where `<namespace>.json` files reside. Once recorded, this location is canonical.
 - **`lockTimeoutMs`** (`integer`, recommended): Maximum wait duration for cross-process locks specified in integer milliseconds (e.g., `10000` for 10 seconds). For backward compatibility, libraries also accept `"lockTimeout": "hh:mm:ss"`. Defaults to 10000 ms (10 seconds) if omitted.
-- **`keyVault`** (`object`, optional): Replaces code-level vault options in full. Contains `name`, `kind`, optional HTTPS `endpoint`, local OAuth `credential` pointer (`"ns/key"`), `settings` map, and `secrets` map.
+- **`keyVault`** (`object`, optional): Replaces code-level vault options in full. Contains `name`, `kind`, optional HTTPS `endpoint`, local OAuth `credential` pointer (`"ns/key"`), optional `cacheTTLSeconds` (`integer >= 0`, defaults to `60`, `0` disables caching; also accepted under `settings["cacheTTLSeconds"]`), `settings` map, and `secrets` map.
 - **Permissions**: If `keyVault.secrets` has 1+ entries, POSIX `0600` / Windows private-file restrictions are strictly enforced.
 
 ---

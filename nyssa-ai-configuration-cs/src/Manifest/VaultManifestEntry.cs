@@ -25,6 +25,10 @@ internal sealed record VaultManifestEntry
     [JsonPropertyName("credential")]
     public string? Credential { get; init; }
 
+    /// <summary>Gets the secret cache time-to-live in seconds (defaults to 60; 0 disables caching).</summary>
+    [JsonPropertyName("cacheTTLSeconds")]
+    public int? CacheTTLSeconds { get; init; }
+
     /// <summary>Gets the package's own settings, as string pairs the library does not interpret.</summary>
     [JsonPropertyName("settings")]
     public Dictionary<string, string>? Settings { get; init; }

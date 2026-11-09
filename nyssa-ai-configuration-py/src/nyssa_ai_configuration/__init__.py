@@ -33,11 +33,18 @@ from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_factory_b
     CloudKeyVaultFactoryBitwarden,
 )
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault import CloudKeyVault
+from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_caching import (
+    CloudKeyVaultCaching,
+)
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_factory import (
     CloudKeyVaultFactory,
 )
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_recovery import (
     CloudKeyVaultRecovery,
+)
+from nyssa_ai_configuration.cloud_key_vaults.secret_cache import SecretCache
+from nyssa_ai_configuration.cloud_key_vaults.secret_cache_in_memory import (
+    SecretCacheInMemory,
 )
 from nyssa_ai_configuration.cloud_key_vaults.types import (
     CloudKeyVaultAction,
@@ -156,6 +163,7 @@ __all__ = [
     "CloudKeyVault",
     "CloudKeyVaultAction",
     "CloudKeyVaultBitwarden",
+    "CloudKeyVaultCaching",
     "CloudKeyVaultFactory",
     "CloudKeyVaultFactoryBitwarden",
     "CloudKeyVaultOperation",
@@ -223,6 +231,8 @@ __all__ = [
     "Ok",
     "ProtectedFileSystem",
     "Result",
+    "SecretCache",
+    "SecretCacheInMemory",
     "SecretCaptureMode",
     "SecretInputProvider",
     "SecretPromptRequest",

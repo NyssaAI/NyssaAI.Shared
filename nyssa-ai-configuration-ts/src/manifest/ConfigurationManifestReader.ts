@@ -167,6 +167,25 @@ export class ConfigurationManifestReader {
       }
     }
 
+    if (section.keyVault !== undefined) {
+      const rawTtl = section.keyVault.cacheTTLSeconds;
+      if (rawTtl !== undefined && rawTtl !== null) {
+        if (typeof rawTtl !== "number" || !Number.isInteger(rawTtl) || rawTtl < 0) {
+          return fail(
+            `manifest: '${manifestPath}' names cacheTTLSeconds '${String(rawTtl)}' for '${applicationName}', which is not a non-negative integer`,
+            "Validation"
+          );
+        }
+      }
+      const settingTtl = section.keyVault.settings?.["cacheTTLSeconds"];
+      if (settingTtl !== undefined && !/^\d+$/.test(settingTtl.trim())) {
+        return fail(
+          `manifest: '${manifestPath}' names settings['cacheTTLSeconds'] '${settingTtl}' for '${applicationName}', which is not a non-negative integer`,
+          "Validation"
+        );
+      }
+    }
+
     const resolvedDir = this.resolveDirectory(manifestPath, section.configurationDirectory);
 
     return ok({

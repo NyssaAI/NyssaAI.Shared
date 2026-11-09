@@ -130,6 +130,8 @@ class ConfigurationManifestWriter:
             result["endpoint"] = vault.endpoint
         if vault.credential is not None:
             result["credential"] = vault.credential
+        if vault.cache_ttl_seconds is not None:
+            result["cacheTTLSeconds"] = vault.cache_ttl_seconds
         if vault.settings:
             result["settings"] = dict(vault.settings)
         if vault.secrets:

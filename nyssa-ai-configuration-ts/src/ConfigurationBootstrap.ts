@@ -22,6 +22,7 @@ import { NullConfigurationLogger } from "./logging/NullConfigurationLogger.js";
 import { ProtectedFileSystem } from "./fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "./fileSecurity/DirectorySafety.js";
 import { VaultProviderFactoryBitwarden } from "./vault/bitwarden/VaultProviderFactoryBitwarden.js";
+import { VaultProviderCaching } from "./vault/VaultProviderCaching.js";
 import type { ConfigurationOptions } from "./ConfigurationOptions.js";
 import type { IKeyring } from "./keyring/IKeyring.js";
 import type { IVaultProvider } from "./vault/IVaultProvider.js";
@@ -71,7 +72,11 @@ export class ConfigurationBootstrap {
       configDir = readRes.value.configurationDirectory;
       lockTimeoutMs = resolvedOptions.lockTimeoutMs ?? readRes.value.lockTimeoutMs;
       if (readRes.value.keyVault !== undefined) {
-        effectiveVault = readRes.value.keyVault;
+        effectiveVault =
+          resolvedOptions.keyVault?.cacheTTLSeconds !== undefined &&
+          readRes.value.keyVault.cacheTTLSeconds === undefined
+            ? { ...readRes.value.keyVault, cacheTTLSeconds: resolvedOptions.keyVault.cacheTTLSeconds }
+            : readRes.value.keyVault;
       }
     } else if (readRes.category === "NotFound") {
       const defaultDir =
@@ -191,7 +196,17 @@ export class ConfigurationBootstrap {
         return providerRes;
       }
 
-      vaultProviders.set(vaultName, providerRes.value);
+      const wrappedProvider = VaultProviderCaching.wrap(
+        providerRes.value,
+        normalizedVault,
+        resolvedOptions.secretCache,
+        resolvedOptions.clock
+      );
+      if (!wrappedProvider.ok) {
+        return wrappedProvider;
+      }
+
+      vaultProviders.set(vaultName, wrappedProvider.value);
 
       const credAddress = vaultCredentials.get(vaultName);
       if (credAddress !== undefined) {

@@ -10,17 +10,16 @@
 #     +-- read(pointer)
 #     +-- recovery
 #     +-- remove(pointer)
+#     +-- set_secret_listed_callback(callback)
 #     `-- write(namespace, key, value)
 """Bitwarden Secrets Manager (bws) implementation of CloudKeyVault."""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 import json
 import os
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
-
-from nyssa_ai_result import Result, fail, ok
 
 from nyssa_ai_configuration.cloud_key_vaults.access_token_source import AccessTokenSource
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_recovery import (
@@ -28,6 +27,7 @@ from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_recovery import (
 )
 from nyssa_ai_configuration.cloud_key_vaults.types import ConfigurationPointer
 from nyssa_ai_configuration.manifest.types import VaultOptions
+from nyssa_ai_result import Result, fail, ok
 
 type _BwsCommandRunner = Callable[[str, Sequence[str], Mapping[str, str]], Result[str]]
 
@@ -65,6 +65,7 @@ class CloudKeyVaultBitwarden:
         ) or self._read_non_blank(options.secrets.get("machineAccessToken"))
         self._token_source = token_source if self._read_non_blank(options.credential) else None
         self._runner: _BwsCommandRunner = command_runner or self._default_command_runner
+        self._on_secret_listed: Callable[[str, str], None] | None = None
 
     @property
     def name(self) -> str:
@@ -75,6 +76,10 @@ class CloudKeyVaultBitwarden:
     def recovery(self) -> CloudKeyVaultRecovery | None:
         """Return None because Bitwarden Secrets Manager CLI uses direct CRUD without two-phase recovery."""
         return None
+
+    def set_secret_listed_callback(self, callback: Callable[[str, str], None] | None) -> None:
+        """Register an optional callback invoked with (pointer_value, secret_value) when secret list returns values."""
+        self._on_secret_listed = callback
 
     def read(self, pointer: ConfigurationPointer) -> Result[str]:
         """Read the cleartext secret referenced by pointer from Bitwarden Secrets Manager."""
@@ -89,8 +94,20 @@ class CloudKeyVaultBitwarden:
         if not list_res.ok:
             return list_res
 
-        match_id = self._find_matching_id(list_res.value, pointer.value)
-        if match_id is None:
+        self._notify_listed_secrets(list_res.value)
+        match = self._find_matching_item(list_res.value, pointer.value)
+        if match is None:
+            return fail(
+                f"Secret '{pointer.value}' was not found in Bitwarden Secrets Manager vault '{self._name}'.",
+                "NotFound",
+            )
+
+        inline_val = match.get("value")
+        if isinstance(inline_val, str):
+            return ok(inline_val)
+
+        match_id = match.get("id")
+        if not isinstance(match_id, str) or not match_id.strip():
             return fail(
                 f"Secret '{pointer.value}' was not found in Bitwarden Secrets Manager vault '{self._name}'.",
                 "NotFound",
@@ -134,8 +151,9 @@ class CloudKeyVaultBitwarden:
         if not list_res.ok:
             return list_res
 
-        existing_id = self._find_matching_id(list_res.value, secret_name)
-        if existing_id is not None:
+        existing = self._find_matching_item(list_res.value, secret_name)
+        existing_id = existing.get("id") if existing is not None else None
+        if isinstance(existing_id, str) and existing_id.strip():
             args = ["secret", "edit", existing_id, "--value", value, "--output", "json"]
         else:
             if not self._project_id:
@@ -164,8 +182,9 @@ class CloudKeyVaultBitwarden:
         if not list_res.ok:
             return list_res
 
-        existing_id = self._find_matching_id(list_res.value, pointer.value)
-        if existing_id is None:
+        existing = self._find_matching_item(list_res.value, pointer.value)
+        existing_id = existing.get("id") if existing is not None else None
+        if not isinstance(existing_id, str) or not existing_id.strip():
             return ok(False)
 
         del_res = self._runner(
@@ -176,6 +195,24 @@ class CloudKeyVaultBitwarden:
         if not del_res.ok:
             return del_res
         return ok(False)
+
+    def _notify_listed_secrets(self, items: Sequence[Mapping[str, object]]) -> None:
+        callback = self._on_secret_listed
+        if callback is None:
+            return
+        for item in items:
+            val = item.get("value")
+            if not isinstance(val, str):
+                continue
+            item_id = item.get("id")
+            if isinstance(item_id, str) and item_id.strip():
+                callback(item_id.strip(), val)
+            raw_key = item.get("key") if isinstance(item.get("key"), str) else item.get("slug")
+            if isinstance(raw_key, str) and raw_key.strip():
+                key_trimmed = raw_key.strip()
+                callback(key_trimmed, val)
+                if "." in key_trimmed and "/" not in key_trimmed:
+                    callback(key_trimmed.replace(".", "/", 1), val)
 
     def _resolve_environment(self) -> Result[dict[str, str]]:
         token = self._static_access_token
@@ -232,7 +269,10 @@ class CloudKeyVaultBitwarden:
         return ok(items)
 
     @staticmethod
-    def _find_matching_id(items: Sequence[Mapping[str, object]], pointer_value: str) -> str | None:
+    def _find_matching_item(
+        items: Sequence[Mapping[str, object]],
+        pointer_value: str,
+    ) -> Mapping[str, object] | None:
         dot_name = pointer_value.replace("/", ".")
         for item in items:
             item_id = item.get("id")
@@ -241,7 +281,7 @@ class CloudKeyVaultBitwarden:
             raw_key = item.get("key") if isinstance(item.get("key"), str) else item.get("slug")
             resolved_key = raw_key if isinstance(raw_key, str) else ""
             if resolved_key in (pointer_value, dot_name) or item_id == pointer_value:
-                return item_id
+                return item
         return None
 
     @staticmethod

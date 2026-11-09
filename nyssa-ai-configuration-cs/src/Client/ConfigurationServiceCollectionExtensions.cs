@@ -20,24 +20,10 @@ namespace NyssaAI.Configuration.Client;
 
 /// <summary>Registers Nyssa configuration for one application.</summary>
 /// <remarks>
-/// <para>
-/// One call, three shapes: nothing, a <see cref="NyssaConfigurationOptions"/> instance, or a
-/// delegate that edits one. Nothing is the ordinary shape:
-/// <see cref="NyssaConfigurationOptions"/> arrives with every value already set — the application
-/// named by its entry assembly, its configuration directory beneath the application's base directory, the
-/// user's manifest beneath the profile directory — so which directory, which vaults, and whether
-/// encryption is on are decided by its manifest section and by this package.
-/// </para>
-/// <para>
-/// Every registration is scoped and the first one wins. Resolving <see cref="IConfiguration"/> is
-/// what opens the store, so a machine whose manifest cannot be read fails there, at startup, with
-/// the path and the section in the message. The application may replace the credential store, the
-/// clock, the browser, and the HTTP client by registering <see cref="IKeyring"/>,
-/// <see cref="TimeProvider"/>, <see cref="IBrowserLauncher"/>, and an <c>IHttpClientFactory</c>;
-/// a vault package registers its <see cref="ICloudKeyVaultFactory"/>. Everything an application
-/// could substitute is resolved from the container by its framework type, so a test replaces the
-/// OS without a single Nyssa seam.
-/// </para>
+/// Every registration is scoped and the first one wins. Resolving <see cref="IConfiguration"/> opens
+/// the store, so an unreadable manifest fails at startup naming the path and section. Applications
+/// may replace <see cref="IKeyring"/>, <see cref="ISecretCache"/>, <see cref="TimeProvider"/>,
+/// <see cref="IBrowserLauncher"/>, <c>IHttpClientFactory</c>, and <see cref="ICloudKeyVaultFactory"/>.
 /// </remarks>
 public static class ConfigurationServiceCollectionExtensions
 {
@@ -255,6 +241,7 @@ public static class ConfigurationServiceCollectionExtensions
             Kind = fromManifest.Kind,
             Endpoint = endpoint,
             Credential = fromManifest.Credential,
+            CacheTTLSeconds = fromManifest.CacheTTLSeconds ?? fromCode?.CacheTTLSeconds ?? VaultOptions.DefaultCacheTTLSeconds,
         };
 
         foreach (var (key, value) in fromManifest.Settings!)
@@ -307,7 +294,15 @@ public static class ConfigurationServiceCollectionExtensions
         if (built.IsFailure)
             return Result.Failure(built.Errors);
 
-        providers.Add(new CloudKeyVaultProvider(built.Value, name));
+        var wrapped = CloudKeyVaultCaching.Wrap(
+            built.Value,
+            entry,
+            services.GetService<ISecretCache>(),
+            services.GetService<TimeProvider>());
+        if (wrapped.IsFailure)
+            return Result.Failure(wrapped.Errors);
+
+        providers.Add(new CloudKeyVaultProvider(wrapped.Value, name));
         return Result.Success();
     }
 

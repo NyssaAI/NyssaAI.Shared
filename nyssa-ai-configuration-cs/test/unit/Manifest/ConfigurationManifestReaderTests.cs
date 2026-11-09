@@ -106,7 +106,7 @@ public sealed class ConfigurationManifestReaderTests
                 "tool": {
                   "configurationDirectory": "tool",
                   "lockTimeout": "00:00:02",
-                  "keyVault": { "name": "hsm", "kind": "fabrikam", "endpoint": "https://vault.example", "credential": "vault/token", "settings": { "tenant": "prod" }, },
+                  "keyVault": { "name": "hsm", "kind": "fabrikam", "endpoint": "https://vault.example", "credential": "vault/token", "cacheTTLSeconds": 120, "settings": { "tenant": "prod" }, },
                 },
               },
             }
@@ -121,9 +121,23 @@ public sealed class ConfigurationManifestReaderTests
         Assert.Equal("fabrikam", hsm.Kind);
         Assert.Equal("https://vault.example", hsm.Endpoint);
         Assert.Equal("vault/token", hsm.Credential);
+        Assert.Equal(120, hsm.CacheTTLSeconds);
         Assert.Equal(new Dictionary<string, string> { ["tenant"] = "prod" }, hsm.Settings);
         // An absent settings or secrets key is an empty map, never null
         Assert.Empty(hsm.Secrets!);
+    }
+
+    [Fact]
+    public void Read_AVaultWithNegativeCacheTTLSeconds_IsAValidationFailure()
+    {
+        using var home = new TemporaryDirectory();
+        var path = Write(home.Path, """{ "version": 1, "applications": { "tool": { "configurationDirectory": "tool", "keyVault": { "name": "x", "kind": "fabrikam", "cacheTTLSeconds": -1 } } } }""");
+
+        var read = ConfigurationManifestReader.Read(path);
+
+        Assert.True(read.IsFailure);
+        Assert.Equal(ErrorCategory.Validation, Assert.Single(read.Errors).Category);
+        Assert.Contains("cacheTTLSeconds", read.Errors[0].TechnicalMessage, StringComparison.Ordinal);
     }
 
     [Fact]

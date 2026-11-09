@@ -16,6 +16,7 @@
 # |   +-- applications
 # |   `-- version
 # `-- VaultOptions
+#     +-- cache_ttl_seconds
 #     +-- credential
 #     +-- endpoint
 #     +-- kind
@@ -38,6 +39,7 @@ class VaultOptions:
     credential: str | None = None
     settings: Mapping[str, str] = field(default_factory=dict)
     secrets: Mapping[str, str] = field(default_factory=dict, repr=False)
+    cache_ttl_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using NyssaAI.Configuration.Client;
+using NyssaAI.Configuration.CloudKeyVaults;
 using NyssaAI.Configuration.CloudKeyVaults.Bitwarden;
+using NyssaAI.Configuration.Contracts;
 using NyssaAI.Configuration.UseCaseTests.fixtures;
 using NyssaAI.Results;
 using Xunit;
@@ -20,6 +22,7 @@ public sealed class BitwardenVaultTutorials
         var cancellationToken = TestContext.Current.CancellationToken;
         var remoteStore = new Dictionary<string, (string Id, string Value)>(StringComparer.Ordinal);
         var nextId = 0;
+        var listCalls = 0;
 
         ValueTask<Result<string>> Runner(
             string binary,
@@ -37,7 +40,8 @@ public sealed class BitwardenVaultTutorials
 
             if (args is ["secret", "list", ..])
             {
-                var items = remoteStore.Select(kv => new { id = kv.Value.Id, key = kv.Key }).ToList();
+                listCalls++;
+                var items = remoteStore.Select(kv => new { id = kv.Value.Id, key = kv.Key, value = kv.Value.Value }).ToList();
                 return ValueTask.FromResult(Result<string>.Success(JsonSerializer.Serialize(items)));
             }
 
@@ -89,6 +93,7 @@ public sealed class BitwardenVaultTutorials
                     "name": "bitwarden",
                     "kind": "bitwarden-secrets",
                     "endpoint": "https://api.bitwarden.com",
+                    "cacheTTLSeconds": 60,
                     "settings": {
                       "organizationId": "11111111-2222-3333-4444-555555555555",
                       "projectId": "99999999-8888-7777-6666-555555555555"
@@ -102,7 +107,9 @@ public sealed class BitwardenVaultTutorials
             }
             """);
 
+        ISecretCache secretCache = new SecretCacheInMemory(workstation.Clock);
         var services = workstation.CreateServices();
+        services.AddSingleton(secretCache);
         services.AddBitwardenSecretsVault(new CloudKeyVaultFactoryBitwarden(runner: Runner));
         services.AddNyssaConfiguration(workstation.Locate);
         workstation.StartApplication(services);
@@ -114,10 +121,20 @@ public sealed class BitwardenVaultTutorials
             "whsec_live_bws_987",
             provider: "bitwarden",
             cancellationToken: cancellationToken);
+        var listCallsAfterWrite = listCalls;
         var resolved = await configuration.GetAsync("payments", "webhookSecret", cancellationToken);
+        var resolvedCached = await configuration.GetAsync("payments", "webhookSecret", cancellationToken);
+        Assert.Equal(listCallsAfterWrite + 1, listCalls);
+
+        workstation.Clock.Advance(TimeSpan.FromSeconds(CloudKeyVaultCaching.DefaultCacheTTLSeconds + 1));
+        var resolvedAfterExpiry = await configuration.GetAsync("payments", "webhookSecret", cancellationToken);
+        Assert.Equal(listCallsAfterWrite + 2, listCalls);
+
         var removal = await configuration.RemoveAsync("payments", "webhookSecret", cancellationToken);
 
         Assert.Equal("whsec_live_bws_987", resolved);
+        Assert.Equal("whsec_live_bws_987", resolvedCached);
+        Assert.Equal("whsec_live_bws_987", resolvedAfterExpiry);
         Assert.False(removal.RemoteValueRemains);
         Assert.Empty(remoteStore);
     }

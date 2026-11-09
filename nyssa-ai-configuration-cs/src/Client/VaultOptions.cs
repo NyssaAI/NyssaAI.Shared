@@ -9,6 +9,9 @@ namespace NyssaAI.Configuration.Client;
 /// </summary>
 public sealed class VaultOptions
 {
+    /// <summary>The default cache TTL in seconds when <see cref="CacheTTLSeconds"/> is not specified.</summary>
+    public const int DefaultCacheTTLSeconds = 60;
+
     /// <summary>Gets or sets the provider name stored entries record.</summary>
     public required string Name { get; set; }
 
@@ -24,6 +27,9 @@ public sealed class VaultOptions
     /// entry in local storage, and may never itself be stored in this vault.
     /// </summary>
     public string? Credential { get; set; }
+
+    /// <summary>Gets or sets the secret cache TTL in seconds. Zero disables caching; defaults to 60.</summary>
+    public int CacheTTLSeconds { get; set; } = DefaultCacheTTLSeconds;
 
     /// <summary>Gets the package's own settings, as string pairs the library does not interpret.</summary>
     public IDictionary<string, string> Settings { get; } = new Dictionary<string, string>(StringComparer.Ordinal);

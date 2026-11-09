@@ -85,6 +85,7 @@ describe("ConfigurationManifestReader and Writer", () => {
             "name": "corpVault",
             "kind": "azure-key-vault",
             "credential": "vault/token",
+            "cacheTTLSeconds": 90,
             "settings": {
               "vaultUri": "https://corp.vault.azure.net/",
             },
@@ -101,6 +102,7 @@ describe("ConfigurationManifestReader and Writer", () => {
       expect(readRes.value.lockTimeoutMs).toBe(2000);
       expect(readRes.value.keyVault?.name).toBe("corpVault");
       expect(readRes.value.keyVault?.credential).toBe("vault/token");
+      expect(readRes.value.keyVault?.cacheTTLSeconds).toBe(90);
       expect(readRes.value.keyVault?.settings).toEqual({
         vaultUri: "https://corp.vault.azure.net/"
       });

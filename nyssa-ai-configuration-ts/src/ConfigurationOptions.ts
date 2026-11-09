@@ -11,6 +11,7 @@
 //     +-- lockTimeoutMs
 //     +-- logger
 //     +-- oauthClient
+//     +-- secretCache
 //     +-- systemdCredentialName
 //     `-- vaultFactories
 
@@ -18,6 +19,7 @@ import type { IKeyring } from "./keyring/IKeyring.js";
 import type { IConfigurationLogger } from "./logging/IConfigurationLogger.js";
 import type { VaultOptions } from "./manifest/VaultOptions.js";
 import type { IVaultProviderFactory } from "./vault/IVaultProviderFactory.js";
+import type { SecretCache } from "./vault/SecretCache.js";
 import type { IOAuthFlowClient } from "./oauth/IOAuthFlowClient.js";
 import type { IBrowserLauncher } from "./oauth/IBrowserLauncher.js";
 
@@ -37,6 +39,8 @@ export interface ConfigurationOptions {
   readonly vaultFactories?: ReadonlyArray<IVaultProviderFactory> | undefined;
   /** Custom keyring implementation for master key custody. */
   readonly keyring?: IKeyring | undefined;
+  /** Optional custom secret cache store (e.g. OS keyring cache for CLI processes) used by VaultProviderCaching. */
+  readonly secretCache?: SecretCache | undefined;
   /** Name of the systemd credential file in CREDENTIALS_DIRECTORY (defaults to applicationName or master-key). */
   readonly systemdCredentialName?: string | undefined;
   /** Custom OAuth 2.0 flow client for authorization code and refresh token exchange. */

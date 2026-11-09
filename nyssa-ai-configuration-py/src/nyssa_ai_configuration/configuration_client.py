@@ -4,7 +4,7 @@
 #     +-- authorize(namespace, key, options, browser_launcher)
 #     +-- authorize_provider(provider_name, browser_launcher)
 #     +-- capture_secret(namespace, key, options)
-#     +-- create(options, keyring, vault_factories, oauth_flow_client, browser_launcher, logger, clock)
+#     +-- create(options, keyring, vault_factories, oauth_flow_client, browser_launcher, logger, clock, secret_cache)
 #     +-- get(namespace, key)
 #     +-- get_as(namespace, key, target_type)
 #     +-- get_namespace(namespace, target_type)
@@ -32,7 +32,9 @@ from pathlib import Path
 from nyssa_ai_configuration.capture_secret_options import CaptureSecretOptions
 from nyssa_ai_configuration.cloud_key_vaults.bitwarden.cloud_key_vault_factory_bitwarden import CloudKeyVaultFactoryBitwarden
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault import CloudKeyVault
+from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_caching import CloudKeyVaultCaching
 from nyssa_ai_configuration.cloud_key_vaults.cloud_key_vault_factory import CloudKeyVaultFactory
+from nyssa_ai_configuration.cloud_key_vaults.secret_cache import SecretCache
 from nyssa_ai_configuration.configuration_secret_writer import ConfigurationSecretWriter
 from nyssa_ai_configuration.encryption.configuration_cipher_aes_gcm import ConfigurationCipherAesGcm
 from nyssa_ai_configuration.file_security.directory_safety import DirectorySafety
@@ -89,19 +91,14 @@ class ConfigurationClient:
         browser_launcher: BrowserLauncher | None = None,
         logger: ConfigurationLogger | None = None,
         clock: Callable[[], float] = time.monotonic,
+        secret_cache: SecretCache | None = None,
     ) -> Result[ConfigurationClient]:
         """Resolve manifest, verify directory safety, unlock/create master key, wire vaults, and return ConfigurationClient."""
         app_name_res = DirectorySafety.validate_segment(options.application_name, "application_name")
         if not app_name_res.ok:
             return app_name_res
         app_name = app_name_res.value
-
-        manifest_path = (
-            Path(options.manifest_path).resolve()
-            if options.manifest_path and options.manifest_path.strip()
-            else ConfigurationManifestReader.default_manifest_path(options.home_directory)
-        )
-
+        manifest_path = Path(options.manifest_path).resolve() if options.manifest_path and options.manifest_path.strip() else ConfigurationManifestReader.default_manifest_path(options.home_directory)
         entry_res = ConfigurationManifestReader.read_application(manifest_path, app_name)
         if not entry_res.ok and entry_res.category != "NotFound":
             return entry_res
@@ -113,6 +110,8 @@ class ConfigurationClient:
             if timeout_ms <= 0:
                 return fail("lockTimeoutMs must be a positive integer.", "Validation")
             vault_opt: VaultOptions | None = existing.key_vault if existing.key_vault is not None else options.key_vault
+            if existing.key_vault is not None and options.key_vault is not None and options.key_vault.cache_ttl_seconds is not None:
+                vault_opt = dataclasses.replace(existing.key_vault, cache_ttl_seconds=options.key_vault.cache_ttl_seconds)
         else:
             config_dir = str(Path(options.configuration_directory).resolve()) if options.configuration_directory and options.configuration_directory.strip() else str((manifest_path.parent / app_name).resolve())
             timeout_ms = options.lock_timeout_ms if options.lock_timeout_ms is not None else 10000
@@ -171,16 +170,17 @@ class ConfigurationClient:
             created_vault = factory.create(vault_opt, tok_src)
             if not created_vault.ok:
                 return created_vault
-            vaults[vault_opt.name] = created_vault.value
+            wrapped_vault = CloudKeyVaultCaching.wrap(created_vault.value, vault_opt, cache=secret_cache, clock=clock)
+            if not wrapped_vault.ok:
+                return wrapped_vault
+            vaults[vault_opt.name] = wrapped_vault.value
             auth_opts_res = factory.authorization(vault_opt)
             if not auth_opts_res.ok:
                 return auth_opts_res
             if cred_ns and cred_key:
                 vault_auth[vault_opt.name] = (cred_ns, cred_key, auth_opts_res.value)
 
-        store = ConfigurationStore(
-            config_dir, timeout_ms, cipher, vaults, credentials, oauth_provider, protector, logger, clock
-        )
+        store = ConfigurationStore(config_dir, timeout_ms, cipher, vaults, credentials, oauth_provider, protector, logger, clock)
         store_box.append(store)
         return ok(cls(app_name, config_dir, timeout_ms, store, vault_auth, browser_launcher))
 

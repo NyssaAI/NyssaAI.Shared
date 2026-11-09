@@ -1,6 +1,7 @@
 // Responsibility: Data contract representing external vault configuration in the manifest or client options.
 // Public interface:
 // `-- VaultOptions
+//     +-- cacheTTLSeconds
 //     +-- credential
 //     +-- endpoint
 //     +-- kind
@@ -20,6 +21,8 @@ export interface VaultOptions {
   readonly endpoint?: string | undefined;
   /** Optional 'namespace/key' address holding the OAuth or bearer credential used to authenticate to this vault. */
   readonly credential?: string | undefined;
+  /** Optional secret cache TTL in seconds (defaults to 60; 0 disables caching). */
+  readonly cacheTTLSeconds?: number | undefined;
   /** Non-sensitive provider settings, normalized to {} when omitted. */
   readonly settings?: Readonly<Record<string, string>> | undefined;
   /** Sensitive provider secrets, normalized to {} when omitted. */

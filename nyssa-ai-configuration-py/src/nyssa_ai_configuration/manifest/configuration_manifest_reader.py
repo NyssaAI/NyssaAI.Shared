@@ -235,6 +235,9 @@ class ConfigurationManifestReader:
         secrets_map = ConfigurationManifestReader._parse_str_map(vault_raw.get("secrets"), "secrets")
         if not secrets_map.ok:
             return secrets_map
+        cache_ttl_res = ConfigurationManifestReader._parse_cache_ttl(app_name, vault_raw, settings_map.value)
+        if not cache_ttl_res.ok:
+            return cache_ttl_res
         return ok(
             VaultOptions(
                 name=name.strip(),
@@ -243,8 +246,33 @@ class ConfigurationManifestReader:
                 credential=credential.strip() if isinstance(credential, str) else None,
                 settings=settings_map.value,
                 secrets=secrets_map.value,
+                cache_ttl_seconds=cache_ttl_res.value,
             )
         )
+
+    @staticmethod
+    def _parse_cache_ttl(
+        app_name: str,
+        vault_raw: dict[object, object],
+        settings: dict[str, str],
+    ) -> Result[int | None]:
+        if "cacheTTLSeconds" in vault_raw and vault_raw["cacheTTLSeconds"] is not None:
+            raw_ttl = vault_raw["cacheTTLSeconds"]
+            if isinstance(raw_ttl, int) and not isinstance(raw_ttl, bool) and raw_ttl >= 0:
+                return ok(raw_ttl)
+            return fail(
+                f"manifest: '{app_name}' keyVault cacheTTLSeconds must be a non-negative integer",
+                "Validation",
+            )
+        if "cacheTTLSeconds" in settings:
+            raw_str = settings["cacheTTLSeconds"].strip()
+            if raw_str.isdigit():
+                return ok(int(raw_str))
+            return fail(
+                f"manifest: '{app_name}' keyVault settings['cacheTTLSeconds'] must be a non-negative integer",
+                "Validation",
+            )
+        return ok(None)
 
     @staticmethod
     def _parse_str_map(raw_map: object, field_name: str) -> Result[dict[str, str]]:

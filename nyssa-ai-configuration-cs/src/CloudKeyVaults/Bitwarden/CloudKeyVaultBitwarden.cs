@@ -32,6 +32,7 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
     private readonly string? _serverUrl;
     private readonly string _binaryPath;
     private readonly Func<string, IReadOnlyList<string>, IReadOnlyDictionary<string, string>, CancellationToken, ValueTask<Result<string>>> _runner;
+    private Action<string, string>? _onSecretListed;
 
     /// <summary>
     /// Creates a Bitwarden Secrets Manager vault adapter from <paramref name="settings"/> and an optional <paramref name="tokens"/> source.
@@ -64,6 +65,10 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
     /// <summary>Gets the configured provider name for this vault instance.</summary>
     public string Name => _name;
 
+    /// <summary>Registers an optional callback invoked with <c>(pointerKey, secretValue)</c> whenever <c>bws secret list</c> returns inline secret values.</summary>
+    /// <param name="callback">The callback to notify for each listed secret with a non-null string value.</param>
+    public void SetSecretListedCallback(Action<string, string>? callback) => _onSecretListed = callback;
+
     /// <inheritdoc/>
     public async ValueTask<Result<string?>> ReadAsync(ConfigurationPointer pointer, CancellationToken cancellationToken = default)
     {
@@ -78,9 +83,13 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
         if (list.IsFailure)
             return Result<string?>.Failure(list.Errors);
 
+        NotifyListedSecrets(list.Value);
         var target = FindMatchingItem(list.Value, pointer);
         if (target is null || string.IsNullOrWhiteSpace(target.Id))
             return Result<string?>.Success(null);
+
+        if (target.Value is not null)
+            return Result<string?>.Success(target.Value);
 
         var output = await _runner(
             _binaryPath,
@@ -163,12 +172,7 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
 
         var existing = FindMatchingItem(list.Value, pointer);
         if (existing is null || string.IsNullOrWhiteSpace(existing.Id))
-        {
-            return Result<ConfigurationRemoval>.Success(new ConfigurationRemoval
-            {
-                RemoteValueRemains = false,
-            });
-        }
+            return Result<ConfigurationRemoval>.Success(new ConfigurationRemoval { RemoteValueRemains = false });
 
         var deleted = await _runner(
             _binaryPath,
@@ -178,10 +182,7 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
 
         return deleted.IsFailure
             ? Result<ConfigurationRemoval>.Failure(deleted.Errors)
-            : Result<ConfigurationRemoval>.Success(new ConfigurationRemoval
-            {
-                RemoteValueRemains = false,
-            });
+            : Result<ConfigurationRemoval>.Success(new ConfigurationRemoval { RemoteValueRemains = false });
     }
 
     /// <summary>The failure returned when creating a secret without a configured Bitwarden projectId.</summary>
@@ -216,6 +217,30 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
             $"vault: '{vault}' command failed: {detail}",
             category);
 
+    private void NotifyListedSecrets(List<BwsSecretEntry> items)
+    {
+        var callback = _onSecretListed;
+        if (callback is null)
+            return;
+
+        foreach (var item in items)
+        {
+            if (item.Value is null)
+                continue;
+            if (!string.IsNullOrWhiteSpace(item.Id))
+                callback(item.Id.Trim(), item.Value);
+            var resolvedKey = item.ResolvedKey;
+            if (!string.IsNullOrWhiteSpace(resolvedKey))
+            {
+                var trimmed = resolvedKey.Trim();
+                callback(trimmed, item.Value);
+                var dotIndex = trimmed.IndexOf('.', StringComparison.Ordinal);
+                if (dotIndex > 0 && !trimmed.Contains('/', StringComparison.Ordinal))
+                    callback(string.Concat(trimmed.AsSpan(0, dotIndex), "/", trimmed.AsSpan(dotIndex + 1)), item.Value);
+            }
+        }
+    }
+
     private async ValueTask<Result<IReadOnlyDictionary<string, string>>> ResolveEnvironmentAsync(
         CancellationToken cancellationToken)
     {
@@ -231,10 +256,7 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
         if (string.IsNullOrWhiteSpace(token))
             return Result<IReadOnlyDictionary<string, string>>.Failure(AccessTokenRequired(_name));
 
-        var env = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [AccessTokenEnvironmentVariable] = token,
-        };
+        var env = new Dictionary<string, string>(StringComparer.Ordinal) { [AccessTokenEnvironmentVariable] = token };
         if (!string.IsNullOrWhiteSpace(_organizationId))
             env[OrganizationIdEnvironmentVariable] = _organizationId;
         if (!string.IsNullOrWhiteSpace(_serverUrl))
@@ -255,12 +277,8 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
         if (output.IsFailure)
         {
             var message = output.Errors[0].TechnicalMessage;
-            if (message.Contains("404", StringComparison.Ordinal)
-                && message.Contains("not found", StringComparison.OrdinalIgnoreCase))
-            {
+            if (message.Contains("404", StringComparison.Ordinal) && message.Contains("not found", StringComparison.OrdinalIgnoreCase))
                 return Result<List<BwsSecretEntry>>.Success([]);
-            }
-
             return Result<List<BwsSecretEntry>>.Failure(output.Errors);
         }
 
@@ -288,9 +306,7 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
     }
 
     private static string? TryGetSetting(IDictionary<string, string> dictionary, string key) =>
-        dictionary.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value.Trim()
-            : null;
+        dictionary.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
 
     private async ValueTask<Result<string>> RunProcessAsync(
         string binaryPath,
@@ -300,22 +316,13 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = binaryPath,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
+            FileName = binaryPath, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
         };
-        foreach (var argument in arguments)
-            startInfo.ArgumentList.Add(argument);
-        foreach (var (key, value) in environment)
-            startInfo.Environment[key] = value;
+        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
+        foreach (var (key, value) in environment) startInfo.Environment[key] = value;
 
         using var process = new Process { StartInfo = startInfo };
-        try
-        {
-            process.Start();
-        }
+        try { process.Start(); }
         catch (Exception exception) when (exception is Win32Exception or FileNotFoundException or InvalidOperationException)
         {
             return Result<string>.Failure(CommandFailed(_name, $"CLI binary could not be started ({exception.GetType().Name})"));
@@ -330,10 +337,8 @@ public sealed class CloudKeyVaultBitwarden : ICloudKeyVault
         if (process.ExitCode == 0)
             return Result<string>.Success(stdOut);
 
-        var category = stdErr.Contains("401", StringComparison.Ordinal)
-            || stdErr.Contains("403", StringComparison.Ordinal)
-            || stdErr.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
-            || stdErr.Contains("unauthenticated", StringComparison.OrdinalIgnoreCase)
+        var category = stdErr.Contains("401", StringComparison.Ordinal) || stdErr.Contains("403", StringComparison.Ordinal)
+            || stdErr.Contains("unauthorized", StringComparison.OrdinalIgnoreCase) || stdErr.Contains("unauthenticated", StringComparison.OrdinalIgnoreCase)
             ? ErrorCategory.Forbidden
             : ErrorCategory.Unavailable;
 

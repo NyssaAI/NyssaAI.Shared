@@ -32,6 +32,7 @@ def test_manifest_reader_parses_jsonc_and_legacy_dotnet_timespan(tmp_path: Path)
             "name": "corp-vault",
             "kind": "bitwarden",
             "credential": "oauth://github/pat",
+            "cacheTTLSeconds": 120,
           },
         },
       },
@@ -50,6 +51,7 @@ def test_manifest_reader_parses_jsonc_and_legacy_dotnet_timespan(tmp_path: Path)
     assert entry.key_vault.name == "corp-vault"
     assert entry.key_vault.kind == "bitwarden"
     assert entry.key_vault.credential == "oauth://github/pat"
+    assert entry.key_vault.cache_ttl_seconds == 120
 
 
 def test_manifest_writer_preserves_sibling_applications_and_writes_lock_timeout_ms(tmp_path: Path) -> None:
