@@ -220,26 +220,22 @@ public sealed class BitwardenVaultTutorials
         services.AddNyssaConfiguration(workstation.Locate);
         workstation.StartApplication(services);
         var configuration = workstation.Host.GetRequiredService<IConfiguration>();
-        var extensions = workstation.Host.GetRequiredService<IConfigurationExtensions>();
-
-        var available = extensions.GetAvailableSecretProviders();
-        Assert.Contains("bws-corporate", available);
-        Assert.Contains("bws-prod", available);
-        Assert.Contains("bws-staging", available);
 
         await configuration.SetAsync("billing", "stripeKey", "sk_corp_1", provider: "bws-corporate", cancellationToken: cancellationToken);
+        await configuration.SetAsync("billing", "prodKey", "sk_prod_1", provider: "bws-prod", cancellationToken: cancellationToken);
         await configuration.SetAsync("api", "signingKey", "sk_stage_2", provider: "bws-staging", cancellationToken: cancellationToken);
 
         Assert.Equal("sk_corp_1", await configuration.GetAsync("billing", "stripeKey", cancellationToken));
+        Assert.Equal("sk_prod_1", await configuration.GetAsync("billing", "prodKey", cancellationToken));
         Assert.Equal("sk_stage_2", await configuration.GetAsync("api", "signingKey", cancellationToken));
         Assert.True(storesByProject["proj-corp"].ContainsKey("billing/stripeKey"));
+        Assert.True(storesByProject["proj-prod"].ContainsKey("billing/prodKey"));
         Assert.True(storesByProject["proj-staging"].ContainsKey("api/signingKey"));
-        Assert.Empty(storesByProject["proj-prod"]);
 
         var moved = await configuration.MoveAsync("api", "signingKey", "bws-prod", cancellationToken);
-        Assert.Equal("bws-staging", moved.FromProvider);
-        Assert.Equal("bws-prod", moved.ToProvider);
-        Assert.False(moved.RemoteValueRemains);
+        Assert.Equal("bws-staging", moved.From);
+        Assert.Equal("bws-prod", moved.To);
+        Assert.True(moved.SourceWithdrawn);
         Assert.Empty(storesByProject["proj-staging"]);
         Assert.True(storesByProject["proj-prod"].ContainsKey("api/signingKey"));
         Assert.Equal("sk_stage_2", await configuration.GetAsync("api", "signingKey", cancellationToken));

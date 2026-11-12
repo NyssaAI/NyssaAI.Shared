@@ -18,6 +18,7 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
     private readonly ICloudKeyVault _inner;
     private readonly ISecretCache _cache;
     private readonly TimeSpan _ttl;
+    private readonly string _name;
 
     /// <summary>
     /// Initializes a caching decorator around <paramref name="inner"/>.
@@ -27,30 +28,34 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
     /// <param name="cache">Optional custom cache backend (defaults to <see cref="SecretCacheInMemory"/>).</param>
     /// <param name="cacheScope">Optional scope prefix isolating entries across vault targets.</param>
     /// <param name="clock">Optional time provider used when constructing the default in-memory cache.</param>
+    /// <param name="providerName">Optional configured vault provider name when <paramref name="inner"/> does not expose one directly.</param>
     public CloudKeyVaultCaching(
         ICloudKeyVault inner,
         int cacheTTLSeconds = DefaultCacheTTLSeconds,
         ISecretCache? cache = null,
         string? cacheScope = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        string? providerName = null)
     {
         ArgumentNullException.ThrowIfNull(inner);
 
         _inner = inner;
+        _name = ResolveProviderName(inner, cacheScope, providerName);
         CacheTTLSeconds = Math.Max(0, cacheTTLSeconds);
         _ttl = TimeSpan.FromSeconds(CacheTTLSeconds);
         _cache = cache ?? new SecretCacheInMemory(clock);
-        CacheScope = string.IsNullOrWhiteSpace(cacheScope) ? inner.Name : cacheScope.Trim();
+        CacheScope = string.IsNullOrWhiteSpace(cacheScope) ? _name : cacheScope.Trim();
 
         if (CacheTTLSeconds > 0 && inner is CloudKeyVaultBitwarden bitwarden)
         {
+            var resolvedName = _name;
             bitwarden.SetSecretListedCallback((secretKey, secretValue) =>
-                SafeSet(FormatKey(inner.Name, secretKey), secretValue));
+                SafeSet(FormatKey(resolvedName, secretKey), secretValue));
         }
     }
 
     /// <summary>Gets the configured provider name of the wrapped vault instance.</summary>
-    public string Name => _inner.Name;
+    public string Name => _name;
 
     /// <summary>Gets the configured cache time-to-live in seconds.</summary>
     public int CacheTTLSeconds { get; }
@@ -116,7 +121,7 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
             ? $"{options.Name}:{options.Kind}"
             : $"{options.Name}:{options.Kind}:{targetId}";
 
-        return Result<ICloudKeyVault>.Success(new CloudKeyVaultCaching(inner, ttl.Value, cache, scope, clock));
+        return Result<ICloudKeyVault>.Success(new CloudKeyVaultCaching(inner, ttl.Value, cache, scope, clock, options.Name));
     }
 
     /// <inheritdoc/>
@@ -128,7 +133,7 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
         if (CacheTTLSeconds <= 0 || string.IsNullOrWhiteSpace(pointer.Value))
             return await _inner.ReadAsync(pointer, cancellationToken).ConfigureAwait(false);
 
-        var provider = string.IsNullOrWhiteSpace(pointer.Provider) ? _inner.Name : pointer.Provider.Trim();
+        var provider = string.IsNullOrWhiteSpace(pointer.Provider) ? _name : pointer.Provider.Trim();
         var cacheKey = FormatKey(provider, pointer.Value.Trim());
         var cached = SafeGet(cacheKey);
         if (cached is not null)
@@ -178,7 +183,7 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
         CancellationToken cancellationToken = default)
     {
         if (_inner is not ICloudKeyVaultRecovery recovery)
-            return ValueTask.FromResult(Result<CloudKeyVaultPreparation>.Failure(RecoveryUnsupported(_inner.Name)));
+            return ValueTask.FromResult(Result<CloudKeyVaultPreparation>.Failure(RecoveryUnsupported(_name)));
         return recovery.PrepareAsync(operation, cancellationToken);
     }
 
@@ -189,7 +194,7 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
         CancellationToken cancellationToken = default)
     {
         if (_inner is not ICloudKeyVaultRecovery recovery)
-            return Result<CloudKeyVaultEffect>.Failure(RecoveryUnsupported(_inner.Name));
+            return Result<CloudKeyVaultEffect>.Failure(RecoveryUnsupported(_name));
 
         EvictRecoveryKeys(operation, preparation);
         var effect = await recovery.ExecuteAsync(operation, preparation, cancellationToken).ConfigureAwait(false);
@@ -205,7 +210,7 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
         CancellationToken cancellationToken = default)
     {
         if (_inner is not ICloudKeyVaultRecovery recovery)
-            return Result<CloudKeyVaultEffect>.Failure(RecoveryUnsupported(_inner.Name));
+            return Result<CloudKeyVaultEffect>.Failure(RecoveryUnsupported(_name));
 
         EvictRecoveryKeys(operation, preparation);
         var effect = await recovery.ReconcileAsync(operation, preparation, cancellationToken).ConfigureAwait(false);
@@ -240,7 +245,7 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
     {
         if (string.IsNullOrWhiteSpace(pointerValue))
             return;
-        SafeRemove(FormatKey(_inner.Name, pointerValue.Trim()));
+        SafeRemove(FormatKey(_name, pointerValue.Trim()));
     }
 
     private string FormatKey(string provider, string pointerValue) =>
@@ -262,6 +267,23 @@ public sealed class CloudKeyVaultCaching : ICloudKeyVault, ICloudKeyVaultRecover
     {
         try { _cache.Remove(key); }
         catch { /* Fail-open */ }
+    }
+
+    private static string ResolveProviderName(ICloudKeyVault inner, string? cacheScope, string? providerName)
+    {
+        if (!string.IsNullOrWhiteSpace(providerName))
+            return providerName.Trim();
+        if (inner is CloudKeyVaultBitwarden bitwarden && !string.IsNullOrWhiteSpace(bitwarden.Name))
+            return bitwarden.Name;
+        if (inner is CloudKeyVaultCaching nested && !string.IsNullOrWhiteSpace(nested.Name))
+            return nested.Name;
+        if (!string.IsNullOrWhiteSpace(cacheScope))
+        {
+            var trimmed = cacheScope.Trim();
+            var colon = trimmed.IndexOf(':', StringComparison.Ordinal);
+            return colon > 0 ? trimmed[..colon] : trimmed;
+        }
+        return "vault";
     }
 
     private static string? TryGetNonBlank(IDictionary<string, string> settings, string key) =>
