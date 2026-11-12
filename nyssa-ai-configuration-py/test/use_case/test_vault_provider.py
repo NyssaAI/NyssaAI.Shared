@@ -24,6 +24,7 @@ from nyssa_ai_configuration import (
     CloudKeyVault,
     CloudKeyVaultRecovery,
     ConfigurationClient,
+    ConfigurationManifestWriter,
     ConfigurationPointer,
     KeyringInMemory,
     OAuthOptions,
@@ -183,3 +184,83 @@ def test_circular_credential_is_blocked_on_both_write_and_read(tmp_path: Path) -
     read_circular = client.get("auth", "vaultToken")
     assert not read_circular.ok
     assert read_circular.category == "Conflict"
+
+
+def test_manifest_vault_without_secrets_skips_manifest_keyring_and_layers_over_programmatic_vaults(
+    tmp_path: Path,
+) -> None:
+    """Verify 0-secret manifest vaults never query _manifest keyring, replace same-named code vaults whole, and inherit code TTL when omitted."""
+    manifest_path = tmp_path / "config-manifest.json"
+    store_dir = tmp_path / "store"
+    writer = ConfigurationManifestWriter()
+
+    # Write a root vault with OAuth credential and NO static secrets (failing keyring proves _manifest is never touched)
+    failing_manifest_kr = KeyringInMemory(fail_on_read=True, fail_on_write=True)
+    set_res = writer.set_vault(
+        manifest_path=manifest_path,
+        vault=VaultOptions(
+            name="bitwarden",
+            kind="bitwarden",
+            endpoint="https://manifest-vault.example",
+            credential="oauth://auth/vaultToken",
+            settings={"manifestOnly": "true"},
+        ),
+        keyring=failing_manifest_kr,
+    )
+    assert set_res.ok
+
+    seen_options: list[VaultOptions] = []
+
+    class _InspectingFactory(FakeCloudVaultFactory):
+        def create(self, options: VaultOptions, token_source: AccessTokenSource | None = None) -> Result[CloudKeyVault]:
+            seen_options.append(options)
+            return super().create(options, token_source)
+
+    factory = _InspectingFactory()
+    created = ConfigurationClient.create(
+        BootstrapOptions(
+            application_name="nyssa-app",
+            configuration_directory=str(store_dir),
+            manifest_path=str(manifest_path),
+            key_vault=VaultOptions(
+                name="bitwarden",
+                kind="bitwarden",
+                endpoint="https://code-default.example",
+                settings={"codeOnly": "should-not-bleed"},
+                cache_ttl_seconds=45,
+            ),
+            key_vaults=[
+                VaultOptions(
+                    name="bitwarden-secondary",
+                    kind="bitwarden",
+                    endpoint="https://secondary.example",
+                ),
+            ],
+        ),
+        keyring=KeyringInMemory(),
+        manifest_keyring=failing_manifest_kr,
+        vault_factories=[factory],
+    )
+    assert created.ok
+    by_name = {opt.name: opt for opt in seen_options}
+    assert set(by_name.keys()) == {"bitwarden", "bitwarden-secondary"}
+    # Manifest replaces 'bitwarden' whole, inheriting only cache_ttl_seconds=45 because manifest omitted cacheTTLSeconds
+    assert by_name["bitwarden"].endpoint == "https://manifest-vault.example"
+    assert by_name["bitwarden"].settings == {"manifestOnly": "true"}
+    assert by_name["bitwarden"].cache_ttl_seconds == 45
+    assert by_name["bitwarden-secondary"].endpoint == "https://secondary.example"
+
+    # Duplicate programmatic vault names fail closed with Validation
+    dup = ConfigurationClient.create(
+        BootstrapOptions(
+            application_name="nyssa-app",
+            configuration_directory=str(store_dir),
+            manifest_path=str(manifest_path),
+            key_vault=VaultOptions(name="dup-vault", kind="bitwarden"),
+            key_vaults=[VaultOptions(name="dup-vault", kind="bitwarden")],
+        ),
+        keyring=KeyringInMemory(),
+        vault_factories=[factory],
+    )
+    assert not dup.ok
+    assert dup.category == "Validation"

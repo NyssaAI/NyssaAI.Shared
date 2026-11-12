@@ -1,10 +1,11 @@
-// Responsibility: Store the 32-byte master key in a protected file (.nyssa-key) for headless and container environments.
+// Responsibility: Store the 32-byte master key in a protected file (.nyssa-key or .nyssa-manifest-key) for headless and container environments.
 // Public interface:
 // `-- KeyringProtectedFile
 //     +-- KEY_FILENAME
+//     +-- MANIFEST_KEY_FILENAME
 //     +-- delete(service, account, signal)
 //     +-- get(service, account, signal)
-//     +-- new(configurationDirectory)
+//     +-- new(configurationDirectory, manifestDirectory)
 //     `-- set(service, account, secret, signal)
 
 import * as fs from "node:fs";
@@ -12,6 +13,7 @@ import * as path from "node:path";
 import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ProtectedFileSystem } from "../fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "../fileSecurity/DirectorySafety.js";
+import { KeyringDefault } from "./KeyringDefault.js";
 import type { IKeyring } from "./IKeyring.js";
 
 /**
@@ -20,11 +22,14 @@ import type { IKeyring } from "./IKeyring.js";
  */
 export class KeyringProtectedFile {
   public static readonly KEY_FILENAME = ".nyssa-key";
+  public static readonly MANIFEST_KEY_FILENAME = ".nyssa-manifest-key";
 
-  private readonly _keyFilePath: string;
+  private readonly _configurationDirectory: string;
+  private readonly _manifestDirectory: string;
 
-  public constructor(configurationDirectory: string) {
-    this._keyFilePath = path.join(configurationDirectory, KeyringProtectedFile.KEY_FILENAME);
+  public constructor(configurationDirectory: string, manifestDirectory?: string) {
+    this._configurationDirectory = configurationDirectory;
+    this._manifestDirectory = manifestDirectory ?? configurationDirectory;
   }
 
   public async get(service: string, account: string, signal?: AbortSignal): Promise<Result<Buffer | null>> {
@@ -34,17 +39,18 @@ export class KeyringProtectedFile {
       return fail("Keyring service and account must be non-empty.", "Validation");
     }
 
-    if (!fs.existsSync(this._keyFilePath)) {
+    const keyFilePath = this.resolveKeyFilePath(account);
+    if (!fs.existsSync(keyFilePath)) {
       return ok(null);
     }
 
-    const safetyRes = DirectorySafety.verifyPrivateFile(this._keyFilePath);
+    const safetyRes = DirectorySafety.verifyPrivateFile(keyFilePath);
     if (!safetyRes.ok) {
       return fail(`Insecure key file rejected: ${safetyRes.error}`, safetyRes.category ?? "Forbidden");
     }
 
     try {
-      const b64 = fs.readFileSync(this._keyFilePath, "utf8").trim();
+      const b64 = fs.readFileSync(keyFilePath, "utf8").trim();
       if (!/^[A-Za-z0-9+/]+=*$/.test(b64)) {
         return fail(
           `keyring: '${service}/${account}' does not hold 32 bytes of base64 material`,
@@ -54,14 +60,14 @@ export class KeyringProtectedFile {
       const keyBuf = Buffer.from(b64, "base64");
       if (keyBuf.length !== 32) {
         return fail(
-          `Stored key in '${this._keyFilePath}' is ${keyBuf.length} bytes; expected 32.`,
+          `Stored key in '${keyFilePath}' is ${keyBuf.length} bytes; expected 32.`,
           "Validation"
         );
       }
       return ok(keyBuf);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to read key file '${this._keyFilePath}': ${message}`, "Unavailable");
+      return fail(`Failed to read key file '${keyFilePath}': ${message}`, "Unavailable");
     }
   }
 
@@ -76,16 +82,17 @@ export class KeyringProtectedFile {
       return fail(`Key must be exactly 32 bytes; ${secret.length} bytes supplied.`, "Validation");
     }
 
+    const keyFilePath = this.resolveKeyFilePath(account);
     try {
       const b64 = secret.toString("base64");
-      const writeRes = ProtectedFileSystem.createFile(this._keyFilePath, b64);
+      const writeRes = ProtectedFileSystem.createFile(keyFilePath, b64);
       if (!writeRes.ok) {
         return writeRes;
       }
       return ok(undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to write key file '${this._keyFilePath}': ${message}`, "Unavailable");
+      return fail(`Failed to write key file '${keyFilePath}': ${message}`, "Unavailable");
     }
   }
 
@@ -96,15 +103,23 @@ export class KeyringProtectedFile {
       return fail("Keyring service and account must be non-empty.", "Validation");
     }
 
+    const keyFilePath = this.resolveKeyFilePath(account);
     try {
-      if (fs.existsSync(this._keyFilePath)) {
-        fs.unlinkSync(this._keyFilePath);
+      if (fs.existsSync(keyFilePath)) {
+        fs.unlinkSync(keyFilePath);
       }
       return ok(undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return fail(`Failed to delete key file '${this._keyFilePath}': ${message}`, "Unavailable");
+      return fail(`Failed to delete key file '${keyFilePath}': ${message}`, "Unavailable");
     }
+  }
+
+  private resolveKeyFilePath(account: string): string {
+    if (account.trim() === KeyringDefault.MANIFEST_ACCOUNT) {
+      return path.join(this._manifestDirectory, KeyringProtectedFile.MANIFEST_KEY_FILENAME);
+    }
+    return path.join(this._configurationDirectory, KeyringProtectedFile.KEY_FILENAME);
   }
 }
 

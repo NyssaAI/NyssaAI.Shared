@@ -4,6 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
+import { ConfigurationManifestWriter } from "../../src/manifest/ConfigurationManifestWriter.js";
 import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
 import { VaultProviderBitwarden } from "../../src/vault/bitwarden/VaultProviderBitwarden.js";
 import { VaultProviderFactoryBitwarden } from "../../src/vault/bitwarden/VaultProviderFactoryBitwarden.js";
@@ -137,6 +138,125 @@ describe("Bitwarden Secrets Manager (bws) Use Cases", () => {
     expect((await client.remove("payments", "webhookSecret")).ok).toBe(true);
     expect((await client.remove("payments", "apiKey")).ok).toBe(true);
     expect(remoteStore.size).toBe(0);
+  });
+
+  it("bitwardenVault_multiVaultRootManifestCoexistence_routesSecretsAndMigratesAcrossCorporateProdAndStaging", async () => {
+    const projectStores = new Map<string, Map<string, { id: string; value: string }>>([
+      ["proj-corporate", new Map()],
+      ["proj-prod", new Map()],
+      ["proj-staging", new Map()]
+    ]);
+    const tokenToProject = new Map<string, string>([
+      ["token-corporate", "proj-corporate"],
+      ["token-prod", "proj-prod"],
+      ["token-staging", "proj-staging"]
+    ]);
+    let nextId = 0;
+
+    const factory = new VaultProviderFactoryBitwarden(
+      VaultProviderFactoryBitwarden.DEFAULT_KIND,
+      async (_binary, args, env): Promise<Result<string>> => {
+        const token = env[VaultProviderBitwarden.ACCESS_TOKEN_ENV] ?? "";
+        const expectedProject = tokenToProject.get(token);
+        if (!expectedProject) {
+          return fail("unauthorized token", "Forbidden");
+        }
+        const store = projectStores.get(expectedProject)!;
+
+        if (args[0] === "secret" && args[1] === "list") {
+          expect(args[2]).toBe(expectedProject);
+          const items = [...store.entries()].map(([key, v]) => ({ id: v.id, key, value: v.value }));
+          return ok(JSON.stringify(items));
+        }
+        if (args[0] === "secret" && args[1] === "create") {
+          const key = args[2]!;
+          const value = args[3]!;
+          expect(args[4]).toBe(expectedProject);
+          const id = `${expectedProject}-uuid-${++nextId}`;
+          store.set(key, { id, value });
+          return ok(JSON.stringify({ id, key, value }));
+        }
+        if (args[0] === "secret" && args[1] === "edit") {
+          const editId = args[2]!;
+          const newVal = args[4]!;
+          for (const [k, v] of store.entries()) {
+            if (v.id === editId) {
+              store.set(k, { id: editId, value: newVal });
+              return ok(JSON.stringify({ id: editId, key: k, value: newVal }));
+            }
+          }
+          return fail("404 Not Found", "NotFound");
+        }
+        if (args[0] === "secret" && args[1] === "delete") {
+          const delId = args[2]!;
+          for (const [k, v] of store.entries()) {
+            if (v.id === delId) {
+              store.delete(k);
+            }
+          }
+          return ok("");
+        }
+        return fail("unexpected bws command", "Unavailable");
+      }
+    );
+
+    const keyring = new InMemoryKeyring();
+    for (const [name, projectId, accessToken] of [
+      ["bws-corporate", "proj-corporate", "token-corporate"],
+      ["bws-prod", "proj-prod", "token-prod"],
+      ["bws-staging", "proj-staging", "token-staging"]
+    ] as const) {
+      const setVaultRes = await ConfigurationManifestWriter.setVault(
+        manifestPath,
+        {
+          name,
+          kind: "bitwarden-secrets",
+          cacheTTLSeconds: 60,
+          settings: { projectId },
+          secrets: { accessToken }
+        },
+        { keyring }
+      );
+      expect(setVaultRes.ok).toBe(true);
+    }
+
+    const clientRes = await ConfigurationClient.initialize({
+      applicationName: "MultiProjectVpsAgent",
+      configManifest: manifestPath,
+      configDirectory: configDir,
+      keyring,
+      vaultFactories: [factory]
+    });
+    expect(clientRes.ok).toBe(true);
+    if (!clientRes.ok) return;
+    const client = clientRes.value;
+
+    expect((await client.set("infra", "cloudflareToken", "cf-corp-secret", { provider: "bws-corporate" })).ok).toBe(true);
+    expect((await client.set("infra", "stripeKey", "sk_live_prod_1", { provider: "bws-prod" })).ok).toBe(true);
+    expect((await client.set("infra", "stagingApiKey", "sk_test_stage_1", { provider: "bws-staging" })).ok).toBe(true);
+
+    const assembled = await client.getNamespace<{
+      cloudflareToken: string;
+      stripeKey: string;
+      stagingApiKey: string;
+    }>("infra");
+    expect(assembled.ok).toBe(true);
+    if (assembled.ok) {
+      expect(assembled.value).toEqual({
+        cloudflareToken: "cf-corp-secret",
+        stripeKey: "sk_live_prod_1",
+        stagingApiKey: "sk_test_stage_1"
+      });
+    }
+
+    // Migrate stagingApiKey from bws-staging -> bws-prod
+    const moveRes = await client.move("infra", "stagingApiKey", "bws-prod");
+    expect(moveRes.ok).toBe(true);
+    expect(projectStores.get("proj-staging")?.has("infra/stagingApiKey")).toBe(false);
+    expect(projectStores.get("proj-prod")?.get("infra/stagingApiKey")?.value).toBe("sk_test_stage_1");
+
+    const afterMove = await client.get("infra", "stagingApiKey");
+    expect(afterMove.ok && afterMove.value).toBe("sk_test_stage_1");
   });
 
   it("bitwardenVault_customSecretCacheAndCacheTTLSeconds_sharesCacheAcrossShortLivedClientInstances", async () => {

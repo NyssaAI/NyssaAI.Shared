@@ -217,15 +217,16 @@ public sealed class OAuthTutorials
                 """
                 {
                   "version": 1,
+                  "keyVaults": {
+                    "contoso": {
+                      "kind": "fake",
+                      "endpoint": "https://vault.contoso.example",
+                      "credential": "vault/contoso-token"
+                    }
+                  },
                   "applications": {
                     "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": {
-                        "name": "contoso",
-                        "kind": "fake",
-                        "endpoint": "https://vault.contoso.example",
-                        "credential": "vault/contoso-token"
-                      }
+                      "configurationDirectory": "SomeApp-cli"
                     }
                   }
                 }
@@ -305,10 +306,12 @@ public sealed class OAuthTutorials
                 """
                 {
                   "version": 1,
+                  "keyVaults": {
+                    "contoso": { "kind": "fake", "credential": "vault/contoso-token" }
+                  },
                   "applications": {
                     "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": { "name": "contoso", "kind": "fake", "credential": "vault/contoso-token" }
+                      "configurationDirectory": "SomeApp-cli"
                     }
                   }
                 }

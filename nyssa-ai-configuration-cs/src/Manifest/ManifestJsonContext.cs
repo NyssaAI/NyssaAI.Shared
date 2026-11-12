@@ -10,6 +10,8 @@ namespace NyssaAI.Configuration.Manifest;
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ConfigurationManifest))]
+[JsonSerializable(typeof(ManifestSecretEnvelope))]
+[JsonSerializable(typeof(Dictionary<string, ManifestSecretEnvelope>))]
 internal sealed partial class ManifestJsonContext : JsonSerializerContext
 {
 }

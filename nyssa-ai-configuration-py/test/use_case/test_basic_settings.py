@@ -15,10 +15,12 @@ from nyssa_ai_configuration import (
     ConfigurationClient,
     ConfigurationLog,
     ConfigurationMaintainer,
+    ConfigurationManifestWriter,
     ConfigurationOAuthWriter,
     ConfigurationReader,
     ConfigurationWriter,
     KeyringInMemory,
+    VaultOptions,
 )
 
 
@@ -184,3 +186,34 @@ def test_list_sorts_by_utf16_code_unit_ordinal_order(tmp_path: Path) -> None:
     keys_res = reader.list("sorting")
     assert keys_res.ok
     assert keys_res.value == ["alpha", supplementary_emoji, bmp_private_use]
+
+
+def test_first_run_bootstrap_preserves_preexisting_root_key_vaults(tmp_path: Path) -> None:
+    """Verify first-run application auto-provisioning preserves existing root keyVaults in config-manifest.json."""
+    manifest_path = tmp_path / ".nyssa-ai" / "config-manifest.json"
+    keyring = KeyringInMemory()
+    writer = ConfigurationManifestWriter()
+
+    assert writer.set_vault(
+        manifest_path=manifest_path,
+        vault=VaultOptions(
+            name="bws-corporate",
+            kind="bitwarden-secrets",
+            settings={"projectId": "proj-1"},
+            secrets={"accessToken": "corp-token"},
+        ),
+        keyring=keyring,
+    ).ok
+
+    created = ConfigurationClient.create(
+        BootstrapOptions(
+            application_name="AcmeCommerce",
+            home_directory=str(tmp_path),
+        ),
+        keyring=keyring,
+    )
+    assert created.ok
+
+    manifest_json = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert "bws-corporate" in manifest_json["keyVaults"]
+    assert "AcmeCommerce" in manifest_json["applications"]

@@ -3,6 +3,7 @@
 // `-- KeyringOsPlatform
 //     +-- delete(service, account, signal)
 //     +-- get(service, account, signal)
+//     +-- hasLinuxCredentialFile(service, account)
 //     +-- new(options)
 //     `-- set(service, account, secret, signal)
 
@@ -38,6 +39,15 @@ export class KeyringOsPlatform {
           encoding: "utf8",
           stdio: input !== undefined ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"]
         }));
+  }
+
+  public static hasLinuxCredentialFile(service: string, account: string): boolean {
+    try {
+      const { credFilePath } = this.resolveLinuxCredentialPaths(service, account);
+      return fs.existsSync(credFilePath) && fs.statSync(credFilePath).isFile();
+    } catch {
+      return false;
+    }
   }
 
   public async get(service: string, account: string, signal?: AbortSignal): Promise<Result<Buffer | null>> {
@@ -204,7 +214,7 @@ export class KeyringOsPlatform {
   }
 
   private static sanitizeSegment(segment: string): string {
-    return segment.replace(/[^A-Za-z0-9._-]/g, "_");
+    return KeyringSystemdCreds.sanitizeSegment(segment);
   }
 
   private static resolveLinuxCredentialPaths(service: string, account: string): {
@@ -228,50 +238,15 @@ export class KeyringOsPlatform {
     const { credName, credFilePath } = KeyringOsPlatform.resolveLinuxCredentialPaths(service, account);
 
     if (KeyringSystemdCreds.isAvailable()) {
-      const rawDir = process.env["CREDENTIALS_DIRECTORY"]!.trim();
-      const credentialsDir = path.resolve(rawDir);
-      const candidates = [
-        credName,
-        `${service}.key`,
-        `${account}.key`,
-        service,
-        account,
-        "nyssa-key",
-        "nyssa-key.key",
-        "master-key",
-        "master-key.key"
-      ];
-      for (const name of candidates) {
-        if (name.includes("/") || name.includes("\\") || name === ".." || name === ".") {
-          continue;
+      const credentialsDir = path.resolve(process.env["CREDENTIALS_DIRECTORY"]!.trim());
+      const found = KeyringSystemdCreds.findCredentialFile(credentialsDir, service.trim(), account.trim());
+      if (found.ok && found.value !== null) {
+        try {
+          const rawBytes = fs.readFileSync(found.value);
+          return ok(rawBytes.length === 32 ? rawBytes.toString("base64") : rawBytes.toString("utf8").trim());
+        } catch {
+          // fall through to credFilePath
         }
-        const candidatePath = path.join(credentialsDir, name);
-        if (path.dirname(candidatePath) === credentialsDir && fs.existsSync(candidatePath)) {
-          try {
-            if (fs.statSync(candidatePath).isFile()) {
-              const rawBytes = fs.readFileSync(candidatePath);
-              if (rawBytes.length === 32) {
-                return ok(rawBytes.toString("base64"));
-              }
-              return ok(rawBytes.toString("utf8").trim());
-            }
-          } catch {
-            // continue
-          }
-        }
-      }
-      try {
-        const entries = fs.readdirSync(credentialsDir, { withFileTypes: true }).filter((e) => e.isFile());
-        if (entries.length === 1 && entries[0] !== undefined) {
-          const singlePath = path.join(credentialsDir, entries[0].name);
-          const rawBytes = fs.readFileSync(singlePath);
-          if (rawBytes.length === 32) {
-            return ok(rawBytes.toString("base64"));
-          }
-          return ok(rawBytes.toString("utf8").trim());
-        }
-      } catch {
-        // fall through to credFilePath
       }
     }
 

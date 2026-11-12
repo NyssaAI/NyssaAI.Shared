@@ -8,7 +8,7 @@ status: planned
 
 ## Summary
 
-Registers and composes `IConfiguration` and `IConfigurationExtensions` (`AddNyssaConfiguration` in .NET; `ConfigurationClient.create` in TypeScript/Node.js), resolves default application identity and paths, executes the ordered startup sequence, and provides dependency-injection seams for isolated testing.
+Registers and composes `IConfiguration` and `IConfigurationExtensions` (`AddNyssaConfiguration` in .NET; `ConfigurationClient.create` in TypeScript/Node.js and Python), resolves default application identity and paths, executes the ordered startup sequence, and provides dependency-injection seams for isolated testing.
 
 ## User Need
 
@@ -22,21 +22,21 @@ Developers need a one-line registration experience with sensible defaults for pr
 
 ## Scope
 
-- Registration entry points (`AddNyssaConfiguration()` with defaults, `NyssaConfigurationOptions` instance, or configuration callback; `ConfigurationClient.create(options)` in TypeScript/Node.js).
+- Registration entry points (`AddNyssaConfiguration()` with defaults, `NyssaConfigurationOptions` instance, or configuration callback; `ConfigurationClient.create(options)` in TypeScript/Node.js and Python).
 - First-registration-wins semantics in dependency injection containers.
 - Default option resolution:
-  - `ApplicationName`: entry assembly `AssemblyTitle` / assembly name in .NET, or caller-supplied/package application name in Node.js (failing startup if blank or missing).
+  - `ApplicationName`: entry assembly `AssemblyTitle` / assembly name in .NET, or caller-supplied/package application name in Node.js and Python (failing startup if blank or missing).
   - `ConfigDirectory`: `<AppContext.BaseDirectory>/.nyssa-ai/config` (or `<cwd>/.nyssa-ai/config`).
   - `Bootstrap.ConfigManifest`: `~/.nyssa-ai/config-manifest.json`.
   - `Bootstrap.LockTimeout`: 10 seconds.
 - Ordered 6-step startup initialization pipeline upon first resolution:
-  1. Validate options and application identity.
-  2. Read or provision the application's manifest section (`F-002`) and apply manifest overrides (`configurationDirectory`, `lockTimeout`, `keyVault`).
+  1. Validate options, application identity, and programmatic `BootstrapOptions` (`KeyVault` / `KeyVaults`).
+  2. Read the manifest and read or provision the application's manifest section (`F-002`), unsealing any root `keyVaults.<name>.secrets` envelopes via `nyssa-ai-configuration/_manifest` (read-only) and applying manifest overrides (`configurationDirectory`, `lockTimeout`, and root `keyVaults` layered by vault name).
   3. Verify and prepare the canonical configuration directory (`F-001`).
   4. Retrieve or generate the 256-bit local protection key in `IKeyring` (`F-003`), even if the application initially writes only plaintext settings.
-  5. Instantiate built-in providers (`"aesLocal"`, `"oauth"`) and optional cloud vault adapter (`F-203`).
+  5. Instantiate built-in providers (`"aesLocal"`, `"oauth"`) and optional cloud vault adapters for all configured vaults (`F-203`).
   6. Compose `ConfigurationStore` and `ConfigurationClient` for lazy per-namespace reads and writes.
-- Test and host substitution seams for `IKeyring`, `IBrowserLauncher`, `TimeProvider` / clock, `IHttpClientFactory` / `fetch`, `IConfigurationLogger`, and `ICloudKeyVaultFactory`.
+- Test and host substitution seams for `IKeyring` (and optional `manifestKeyring`), `IBrowserLauncher`, `TimeProvider` / clock, `IHttpClientFactory` / `fetch`, `IConfigurationLogger`, and `ICloudKeyVaultFactory`.
 
 ## Out of Scope
 
@@ -56,9 +56,9 @@ Developers need a one-line registration experience with sensible defaults for pr
 ## Acceptance
 
 - Resolving `IConfiguration` with default options provisions the manifest section, prepares the configuration folder, and ensures the encryption key exists in `IKeyring`.
-- Startup fails immediately if `IKeyring` is unavailable or if the manifest/configuration directory fails `DirectorySafety` checks.
+- Startup fails immediately if `IKeyring` is unavailable, if a secret-bearing manifest is missing `nyssa-ai-configuration/_manifest`, or if the manifest/configuration directory fails `DirectorySafety` checks.
 - Tests can substitute fakes for `IKeyring`, `IBrowserLauncher`, clock, HTTP transport, and vault factories without touching the host machine's real `~/.nyssa-ai/config-manifest.json` or OS credential store.
-- Both `.NET` and `TypeScript/Node.js` implementations pass setup and isolation test suites.
+- `.NET`, `TypeScript/Node.js`, and `Python` implementations pass setup and isolation test suites.
 - The path contract matches `.plan-product/config.json`.
 
 ## Dependencies

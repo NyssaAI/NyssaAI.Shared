@@ -49,11 +49,21 @@ export class CliSecretInputProvider {
   private formatProviderLabel(name: string): string {
     const lower = name.toLowerCase();
     if (lower === "aeslocal") return "Encrypted Locally (AES-256-GCM)";
-    if (lower === "literal" || lower === "default" || lower === "plaintext" || lower === "") return "Free Text (Unencrypted Plaintext)";
-    if (lower === "bws" || lower === "bitwarden" || lower === "bitwarden-secrets") return "Key Vault (Bitwarden Secrets Manager)";
-    if (lower.startsWith("azure")) return "Key Vault (Azure Key Vault)";
-    if (lower.startsWith("hashi") || lower === "vault") return "Key Vault (HashiCorp Vault)";
-    return `Key Vault (${name})`;
+    if (lower === "literal" || lower === "default" || lower === "plaintext" || lower === "") {
+      return "Free Text (Unencrypted Plaintext)";
+    }
+    if (
+      lower === "bws" ||
+      lower === "bitwarden" ||
+      lower === "bitwarden-secrets" ||
+      lower.startsWith("bws-") ||
+      lower.startsWith("bitwarden-")
+    ) {
+      return `Key Vault (Bitwarden Secrets Manager) [${name}]`;
+    }
+    if (lower.startsWith("azure")) return `Key Vault (Azure Key Vault) [${name}]`;
+    if (lower.startsWith("hashi") || lower === "vault") return `Key Vault (HashiCorp Vault) [${name}]`;
+    return `Key Vault (${name}) [${name}]`;
   }
 
   private write(text: string): void {
@@ -127,7 +137,7 @@ export class CliSecretInputProvider {
       if (request.availableProviders.length === 1) {
         const fixedProv = request.availableProviders[0]!;
         const label = this.formatProviderLabel(fixedProv);
-        this.write(`Storage destination: ${label} [${fixedProv}] (Fixed by application)\n`);
+        this.write(`Storage destination: ${label} (Fixed by application)\n`);
       } else if (request.availableProviders.length > 1) {
         this.write("Select storage destination:\n");
         let defaultIdx = 1;
@@ -139,7 +149,7 @@ export class CliSecretInputProvider {
           }
           const defStr = isDef ? " (Default)" : "";
           const label = this.formatProviderLabel(prov);
-          this.write(`  [${i + 1}] ${label} [${prov}]${defStr}\n`);
+          this.write(`  [${i + 1}] ${label}${defStr}\n`);
         }
         this.write(`Destination [${defaultIdx}]: `);
       }
@@ -159,7 +169,7 @@ export class CliSecretInputProvider {
     if (request.availableProviders.length === 1) {
       const fixedProv = request.availableProviders[0]!;
       const label = this.formatProviderLabel(fixedProv);
-      this.write(`Storage destination: ${label} [${fixedProv}] (Fixed by application)\n`);
+      this.write(`Storage destination: ${label} (Fixed by application)\n`);
     } else if (request.availableProviders.length > 1) {
       this.write("Select storage destination:\n");
       let defaultIdx = 1;
@@ -171,7 +181,7 @@ export class CliSecretInputProvider {
         }
         const defStr = isDef ? " (Default)" : "";
         const label = this.formatProviderLabel(prov);
-        this.write(`  [${i + 1}] ${label} [${prov}]${defStr}\n`);
+        this.write(`  [${i + 1}] ${label}${defStr}\n`);
       }
 
       const choice = await this.readTtyLine(`Destination [${defaultIdx}]: `, signal);
@@ -268,3 +278,6 @@ export class CliSecretInputProvider {
     });
   }
 }
+
+const _typeCheck: ISecretInputProvider = null as unknown as CliSecretInputProvider;
+void _typeCheck;

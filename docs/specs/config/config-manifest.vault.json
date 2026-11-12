@@ -1,36 +1,41 @@
 {
   "version": 1,
-  "applications": {
-    "PaymentGatewayService": {
-      "configurationDirectory": "/var/app/payments/config",
-      "lockTimeoutMs": 15000,
-      "keyVault": {
-        "name": "paymentSecretsVault",
-        "kind": "bitwarden-secrets",
-        "endpoint": "https://vault.internal.net",
-        "credential": "auth/bitwarden-grant",
-        "cacheTTLSeconds": 60,
-        "settings": {
-          "organizationId": "11111111-2222-3333-4444-555555555555",
-          "apiUrl": "https://api.bitwarden.com"
-        },
-        "secrets": {
-          "accessToken": "<bitwarden-machine-account-access-token>"
+  "keyVaults": {
+    "bws-prod": {
+      "kind": "bitwarden-secrets",
+      "endpoint": "https://vault.internal.net",
+      "credential": "auth/bitwarden-grant",
+      "cacheTTLSeconds": 60,
+      "settings": {
+        "organizationId": "11111111-2222-3333-4444-555555555555",
+        "projectId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "apiUrl": "https://api.bitwarden.com"
+      },
+      "secrets": {
+        "accessToken": {
+          "value": "AggQ3bN5qT8zU2rP0vA4cF9gH0iJ1kL2mN3oP4qR5sT6uV7wX8yZ9aB0cD1e",
+          "provider": "aesLocal",
+          "encrypted": true
         }
       }
     },
+    "azureVault": {
+      "kind": "azure-key-vault",
+      "endpoint": "https://corp-kv.vault.azure.net",
+      "credential": "auth/azure-oauth-token",
+      "settings": {
+        "tenantId": "77777777-8888-9999-aaaa-bbbbccccdddd"
+      }
+    }
+  },
+  "applications": {
+    "PaymentGatewayService": {
+      "configurationDirectory": "/var/app/payments/config",
+      "lockTimeoutMs": 15000
+    },
     "CustomerPortalApp": {
       "configurationDirectory": "./config",
-      "lockTimeoutMs": 8000,
-      "keyVault": {
-        "name": "azureVault",
-        "kind": "azure-key-vault",
-        "endpoint": "https://corp-kv.vault.azure.net",
-        "credential": "auth/azure-oauth-token",
-        "settings": {
-          "tenantId": "77777777-8888-9999-aaaa-bbbbccccdddd"
-        }
-      }
+      "lockTimeoutMs": 8000
     }
   }
 }

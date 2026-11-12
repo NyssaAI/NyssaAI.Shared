@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace NyssaAI.Configuration.Manifest;
@@ -17,7 +18,15 @@ internal sealed record ApplicationManifestEntry
     [JsonPropertyName("lockTimeoutMs")]
     public int? LockTimeoutMs { get; init; }
 
-    /// <summary>Gets the key vault this application reads sealed values through, or null when it uses none.</summary>
+    /// <summary>
+    /// Gets any legacy per-application <c>keyVault</c> element solely so the reader can enforce
+    /// the private-file gate first and reject legacy per-application vault sections with a clear
+    /// migration error. Always omitted when writing.
+    /// </summary>
     [JsonPropertyName("keyVault")]
-    public VaultManifestEntry? KeyVault { get; init; }
+    public JsonElement? KeyVault { get; init; }
+
+    /// <summary>Returns a redacted representation that omits any legacy <c>keyVault</c> JSON element.</summary>
+    public override string ToString() =>
+        $"ApplicationManifestEntry {{ ConfigurationDirectory = {ConfigurationDirectory}, LockTimeout = {LockTimeout}, LockTimeoutMs = {LockTimeoutMs} }}";
 }

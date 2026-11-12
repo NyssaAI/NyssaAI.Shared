@@ -246,11 +246,21 @@ export class LoopbackSecretInputProvider {
   private formatProviderLabel(name: string): string {
     const lower = name.toLowerCase();
     if (lower === "aeslocal") return "Encrypted Locally (AES-256-GCM)";
-    if (lower === "literal" || lower === "default" || lower === "plaintext" || lower === "") return "Free Text (Unencrypted Plaintext)";
-    if (lower === "bws" || lower === "bitwarden" || lower === "bitwarden-secrets") return "Key Vault (Bitwarden Secrets Manager)";
-    if (lower.startsWith("azure")) return "Key Vault (Azure Key Vault)";
-    if (lower.startsWith("hashi") || lower === "vault") return "Key Vault (HashiCorp Vault)";
-    return `Key Vault (${name})`;
+    if (lower === "literal" || lower === "default" || lower === "plaintext" || lower === "") {
+      return "Free Text (Unencrypted Plaintext)";
+    }
+    if (
+      lower === "bws" ||
+      lower === "bitwarden" ||
+      lower === "bitwarden-secrets" ||
+      lower.startsWith("bws-") ||
+      lower.startsWith("bitwarden-")
+    ) {
+      return `Key Vault (Bitwarden Secrets Manager) [${name}]`;
+    }
+    if (lower.startsWith("azure")) return `Key Vault (Azure Key Vault) [${name}]`;
+    if (lower.startsWith("hashi") || lower === "vault") return `Key Vault (HashiCorp Vault) [${name}]`;
+    return `Key Vault (${name}) [${name}]`;
   }
 
   private escapeHtml(str: string): string {
@@ -262,3 +272,6 @@ export class LoopbackSecretInputProvider {
       .replace(/'/g, "&#039;");
   }
 }
+
+const _typeCheck: ISecretInputProvider = null as unknown as LoopbackSecretInputProvider;
+void _typeCheck;

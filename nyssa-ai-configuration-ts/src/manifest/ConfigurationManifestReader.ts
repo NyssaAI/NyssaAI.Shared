@@ -1,4 +1,4 @@
-// Responsibility: Read and validate application sections from the configuration manifest.
+// Responsibility: Read and validate root keyVaults and application sections from the configuration manifest.
 // Public interface:
 // `-- ConfigurationManifestReader
 //     +-- DEFAULT_LOCK_TIMEOUT_MS
@@ -16,8 +16,10 @@ import * as os from "node:os";
 import { ok, fail, type Result } from "@nyssa-ai/result";
 import { DirectorySafety } from "../fileSecurity/DirectorySafety.js";
 import { TimeSpanParser } from "./TimeSpanParser.js";
+import { ManifestVaultValidator } from "./ManifestVaultValidator.js";
 import type { ConfigurationManifest } from "./ConfigurationManifest.js";
 import type { ApplicationManifestEntry } from "./ApplicationManifestEntry.js";
+import type { VaultManifestEntry } from "./VaultManifestEntry.js";
 import type { ResolvedApplicationSettings } from "./ResolvedApplicationSettings.js";
 
 /**
@@ -38,7 +40,17 @@ export class ConfigurationManifestReader {
   }
 
   /**
-   * Reads and parses a ConfigurationManifest file, verifying file safety and normalizing sections.
+   * Resolves a configuration directory: relative paths resolve relative to the manifest directory.
+   */
+  public static resolveDirectory(manifestPath: string, configurationDirectory: string): string {
+    if (path.isAbsolute(configurationDirectory)) {
+      return path.resolve(configurationDirectory);
+    }
+    return path.resolve(path.dirname(manifestPath), configurationDirectory);
+  }
+
+  /**
+   * Reads and parses a ConfigurationManifest file, enforcing private-file permissions and schema rules.
    */
   public static readManifest(manifestPath: string): Result<ConfigurationManifest> {
     const resolved = path.resolve(manifestPath);
@@ -59,51 +71,92 @@ export class ConfigurationManifestReader {
       return fail(`manifest: reading '${manifestPath}' failed: ${message}`, "Forbidden");
     }
 
+    let parsed: unknown;
     try {
       const stripped = this.stripJsonCommentsAndTrailingCommas(raw);
-      const parsed = JSON.parse(stripped) as unknown;
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        return fail(`manifest: '${manifestPath}' failed validation: root must be a JSON object`, "Validation");
-      }
-
-      const candidate = parsed as { version?: unknown; applications?: unknown };
-      if (candidate.version !== this.SUPPORTED_VERSION) {
-        return fail(
-          `manifest: '${manifestPath}' is not a version ${this.SUPPORTED_VERSION} manifest`,
-          "Validation"
-        );
-      }
-
-      if (
-        candidate.applications !== undefined &&
-        candidate.applications !== null &&
-        (typeof candidate.applications !== "object" || Array.isArray(candidate.applications))
-      ) {
-        return fail(
-          `manifest: '${manifestPath}' failed validation: 'applications' must be an object`,
-          "Validation"
-        );
-      }
-
-      return ok(this.normalize(candidate as ConfigurationManifest));
+      parsed = JSON.parse(stripped) as unknown;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return fail(`manifest: '${manifestPath}' failed validation: ${message}`, "Validation");
     }
-  }
 
-  /**
-   * Resolves a configuration directory: relative paths resolve relative to the manifest directory.
-   */
-  public static resolveDirectory(manifestPath: string, configurationDirectory: string): string {
-    if (path.isAbsolute(configurationDirectory)) {
-      return path.resolve(configurationDirectory);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return fail(`manifest: '${manifestPath}' failed validation: root must be a JSON object`, "Validation");
     }
-    return path.resolve(path.dirname(manifestPath), configurationDirectory);
+
+    const root = parsed as Record<string, unknown>;
+    if (ManifestVaultValidator.hasAnySecrets(root)) {
+      const privateSafe = DirectorySafety.verifyPrivateFile(manifestPath);
+      if (!privateSafe.ok) {
+        return privateSafe;
+      }
+    }
+
+    if (root["version"] !== this.SUPPORTED_VERSION) {
+      return fail(
+        `manifest: '${manifestPath}' is not a version ${this.SUPPORTED_VERSION} manifest`,
+        "Validation"
+      );
+    }
+
+    const rawApps = root["applications"];
+    if (rawApps !== undefined && rawApps !== null && (typeof rawApps !== "object" || Array.isArray(rawApps))) {
+      return fail(
+        `manifest: '${manifestPath}' failed validation: 'applications' must be an object`,
+        "Validation"
+      );
+    }
+
+    const rawKeyVaults = root["keyVaults"];
+    if (
+      rawKeyVaults !== undefined &&
+      rawKeyVaults !== null &&
+      (typeof rawKeyVaults !== "object" || Array.isArray(rawKeyVaults))
+    ) {
+      return fail(
+        `manifest: '${manifestPath}' failed validation: 'keyVaults' must be an object`,
+        "Validation"
+      );
+    }
+
+    const normalizedApps: Record<string, ApplicationManifestEntry> = {};
+    for (const [appName, rawSection] of Object.entries((rawApps as Record<string, unknown> | undefined) ?? {})) {
+      if (!rawSection || typeof rawSection !== "object" || Array.isArray(rawSection)) {
+        return fail(
+          `manifest: applications.${appName} in '${manifestPath}' must be an object`,
+          "Validation"
+        );
+      }
+      const sectionObj = rawSection as Record<string, unknown>;
+      if (sectionObj["keyVault"] !== undefined && sectionObj["keyVault"] !== null) {
+        return fail(
+          `manifest: applications.${appName}.keyVault is no longer supported; move vault definitions to root 'keyVaults'`,
+          "Validation"
+        );
+      }
+      const { keyVault: _ignored, ...rest } = sectionObj;
+      void _ignored;
+      normalizedApps[appName] = rest as ApplicationManifestEntry;
+    }
+
+    const normalizedVaults: Record<string, VaultManifestEntry> = {};
+    for (const [vaultName, rawVault] of Object.entries((rawKeyVaults as Record<string, unknown> | undefined) ?? {})) {
+      const entryRes = ManifestVaultValidator.validateManifestEntry(vaultName, rawVault);
+      if (!entryRes.ok) {
+        return entryRes;
+      }
+      normalizedVaults[vaultName] = entryRes.value;
+    }
+
+    return ok({
+      version: this.SUPPORTED_VERSION,
+      keyVaults: normalizedVaults,
+      applications: normalizedApps
+    });
   }
 
   /**
-   * Reads the configuration section for one application, validating timeout and private-file rules.
+   * Reads the configuration section for one application, returning its settled settings and root keyVaults.
    */
   public static readApplication(
     manifestPath: string,
@@ -159,68 +212,11 @@ export class ConfigurationManifestReader {
       }
     }
 
-    const secretsMap = section.keyVault?.secrets ?? {};
-    if (Object.keys(secretsMap).length > 0) {
-      const privateSafe = DirectorySafety.verifyPrivateFile(manifestPath);
-      if (!privateSafe.ok) {
-        return privateSafe;
-      }
-    }
-
-    if (section.keyVault !== undefined) {
-      const rawTtl = section.keyVault.cacheTTLSeconds;
-      if (rawTtl !== undefined && rawTtl !== null) {
-        if (typeof rawTtl !== "number" || !Number.isInteger(rawTtl) || rawTtl < 0) {
-          return fail(
-            `manifest: '${manifestPath}' names cacheTTLSeconds '${String(rawTtl)}' for '${applicationName}', which is not a non-negative integer`,
-            "Validation"
-          );
-        }
-      }
-      const settingTtl = section.keyVault.settings?.["cacheTTLSeconds"];
-      if (settingTtl !== undefined && !/^\d+$/.test(settingTtl.trim())) {
-        return fail(
-          `manifest: '${manifestPath}' names settings['cacheTTLSeconds'] '${settingTtl}' for '${applicationName}', which is not a non-negative integer`,
-          "Validation"
-        );
-      }
-    }
-
-    const resolvedDir = this.resolveDirectory(manifestPath, section.configurationDirectory);
-
     return ok({
-      configurationDirectory: resolvedDir,
+      configurationDirectory: this.resolveDirectory(manifestPath, section.configurationDirectory),
       lockTimeoutMs,
-      ...(section.keyVault !== undefined ? { keyVault: section.keyVault } : {})
+      keyVaults: manifest.keyVaults ?? {}
     });
-  }
-
-  private static normalize(manifest: ConfigurationManifest): ConfigurationManifest {
-    const normalizedApps: Record<string, ApplicationManifestEntry> = {};
-    const rawApps = manifest.applications ?? {};
-
-    for (const [name, section] of Object.entries(rawApps)) {
-      if (!section || typeof section !== "object") {
-        continue;
-      }
-      if (!section.keyVault) {
-        normalizedApps[name] = section;
-      } else {
-        normalizedApps[name] = {
-          ...section,
-          keyVault: {
-            ...section.keyVault,
-            settings: section.keyVault.settings ?? {},
-            secrets: section.keyVault.secrets ?? {}
-          }
-        };
-      }
-    }
-
-    return {
-      version: manifest.version,
-      applications: normalizedApps
-    };
   }
 
   /**
@@ -230,54 +226,30 @@ export class ConfigurationManifestReader {
     let out = "";
     let inString = false;
     let escaped = false;
-    let i = 0;
-
-    while (i < input.length) {
+    for (let i = 0; i < input.length; i++) {
       const ch = input[i]!;
       const next = input[i + 1];
-
       if (inString) {
         out += ch;
-        if (escaped) {
-          escaped = false;
-        } else if (ch === "\\") {
-          escaped = true;
-        } else if (ch === "\"") {
-          inString = false;
-        }
-        i++;
-        continue;
-      }
-
-      if (ch === "\"") {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === "\"") inString = false;
+      } else if (ch === "\"") {
         inString = true;
         out += ch;
+      } else if (ch === "/" && next === "/") {
+        i += 2;
+        while (i < input.length && input[i] !== "\n") i++;
+        i--;
+      } else if (ch === "/" && next === "*") {
+        i += 2;
+        while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) i++;
         i++;
-        continue;
+      } else {
+        out += ch;
       }
-
-      if (ch === "/" && next === "/") {
-        i += 2;
-        while (i < input.length && input[i] !== "\n") {
-          i++;
-        }
-        continue;
-      }
-
-      if (ch === "/" && next === "*") {
-        i += 2;
-        while (i < input.length && !(input[i] === "*" && input[i + 1] === "/")) {
-          i++;
-        }
-        i += 2;
-        continue;
-      }
-
-      out += ch;
-      i++;
     }
 
-    // Remove trailing commas outside string literals before } or ]
     let finalOut = "";
     inString = false;
     escaped = false;
@@ -285,35 +257,21 @@ export class ConfigurationManifestReader {
       const ch = out[j]!;
       if (inString) {
         finalOut += ch;
-        if (escaped) {
-          escaped = false;
-        } else if (ch === "\\") {
-          escaped = true;
-        } else if (ch === "\"") {
-          inString = false;
-        }
-        continue;
-      }
-
-      if (ch === "\"") {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === "\"") inString = false;
+      } else if (ch === "\"") {
         inString = true;
         finalOut += ch;
-        continue;
-      }
-
-      if (ch === ",") {
+      } else if (ch === ",") {
         let k = j + 1;
-        while (k < out.length && /\s/.test(out[k]!)) {
-          k++;
-        }
-        if (k < out.length && (out[k] === "}" || out[k] === "]")) {
-          continue;
-        }
+        while (k < out.length && /\s/.test(out[k]!)) k++;
+        if (k < out.length && (out[k] === "}" || out[k] === "]")) continue;
+        finalOut += ch;
+      } else {
+        finalOut += ch;
       }
-
-      finalOut += ch;
     }
-
     return finalOut;
   }
 }

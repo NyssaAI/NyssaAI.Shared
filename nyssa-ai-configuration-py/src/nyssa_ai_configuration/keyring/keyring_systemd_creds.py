@@ -19,6 +19,15 @@ from nyssa_ai_result import Result, fail, ok
 
 _BASE64_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 _CONTROL_CHAR_RE: Final[re.Pattern[str]] = re.compile(r"[\x00-\x1f\x7f]")
+_SANITIZE_RE: Final[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9._-]")
+_MANIFEST_ACCOUNT: Final[str] = "_manifest"
+_MANIFEST_CREDENTIAL_NAMES: Final[tuple[str, ...]] = (
+    "nyssa-ai-configuration._manifest",
+    "_manifest.key",
+    "_manifest",
+    "nyssa-manifest-key",
+    "nyssa-manifest-key.key",
+)
 
 
 class KeyringSystemdCreds:
@@ -87,10 +96,19 @@ class KeyringSystemdCreds:
         return fail(self.IMMUTABLE_ERROR_MESSAGE, "Forbidden")
 
     def _resolve_credential_file(self, credentials_dir: Path, service: str, account: str) -> Result[Path]:
-        candidates: tuple[str, ...] = (
-            (self._credential_name, f"{self._credential_name}.key")
-            if self._credential_name is not None
-            else (
+        is_manifest = account == _MANIFEST_ACCOUNT
+        sanitized_service = _SANITIZE_RE.sub("_", service)
+        sanitized_account = _SANITIZE_RE.sub("_", account)
+        candidates: tuple[str, ...]
+        if is_manifest:
+            candidates = (f"{sanitized_service}._manifest", *_MANIFEST_CREDENTIAL_NAMES)
+        elif self._credential_name is not None:
+            candidates = (self._credential_name, f"{self._credential_name}.key")
+        else:
+            sanitized_pair = f"{sanitized_service}.{sanitized_account}"
+            candidates = (
+                sanitized_pair,
+                f"{sanitized_pair}.key",
                 f"{service}.key",
                 f"{account}.key",
                 service,
@@ -100,7 +118,6 @@ class KeyringSystemdCreds:
                 "master-key",
                 "master-key.key",
             )
-        )
 
         for name in candidates:
             if "/" in name or "\\" in name or name in (".", ".."):
@@ -112,9 +129,16 @@ class KeyringSystemdCreds:
             except OSError:
                 continue
 
-        if self._credential_name is None:
+        if self._credential_name is None and not is_manifest:
+            excluded = set(_MANIFEST_CREDENTIAL_NAMES) | {f"{sanitized_service}._manifest"}
             try:
-                files = [entry for entry in credentials_dir.iterdir() if entry.is_file()]
+                files = [
+                    entry
+                    for entry in credentials_dir.iterdir()
+                    if entry.is_file()
+                    and entry.name not in excluded
+                    and not entry.name.endswith("._manifest")
+                ]
                 if len(files) == 1:
                     return ok(files[0])
             except Exception as exc:

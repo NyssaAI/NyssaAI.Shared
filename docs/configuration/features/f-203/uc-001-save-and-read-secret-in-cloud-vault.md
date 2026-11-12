@@ -16,7 +16,7 @@ Store a sensitive value in an external cloud key vault while keeping only a non-
 
 ## Starting Context
 
-A cloud key vault factory (`ICloudKeyVaultFactory`) is registered for the vault's `kind` (e.g. `"bitwarden-secrets"`), and the vault is configured under a provider name (e.g. `"mailVault"`) in `config-manifest.json` or `BootstrapOptions.KeyVault`.
+A cloud key vault factory (`ICloudKeyVaultFactory`) is registered for the vault's `kind` (e.g. `"bitwarden-secrets"`), and the vault is configured under a provider name (e.g. `"mailVault"`) in root `keyVaults` of `config-manifest.json` or `BootstrapOptions` (`KeyVault` / `KeyVaults`).
 
 ## Entry Route
 
@@ -62,7 +62,7 @@ The secret is stored in the remote cloud vault, `<namespace>.json` records only 
 
 ## Failure Cases
 
-- `Validation`: The named vault provider is not configured, or no `ICloudKeyVaultFactory` matching `keyVault.kind` was registered at startup.
+- `Validation`: The named vault provider is not configured, or no `ICloudKeyVaultFactory` matching the vault's `kind` was registered at startup.
 - `NotFound`: The local pointer exists in `<namespace>.json`, but the secret was deleted directly in the remote vault.
 - `Forbidden` / `Unavailable`: The vault rejected credentials or could not be reached.
 

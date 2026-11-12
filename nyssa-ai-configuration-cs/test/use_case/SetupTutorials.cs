@@ -388,10 +388,12 @@ public sealed class SetupTutorials
                 """
                 {
                   "version": 1,
+                  "keyVaults": {
+                    "contoso": { "kind": "fake", "endpoint": "https://vault.contoso.example" }
+                  },
                   "applications": {
                     "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": { "name": "contoso", "kind": "fake", "endpoint": "https://vault.contoso.example" }
+                      "configurationDirectory": "SomeApp-cli"
                     }
                   }
                 }
@@ -439,10 +441,12 @@ public sealed class SetupTutorials
                 """
                 {
                   "version": 1,
+                  "keyVaults": {
+                    "hsm": { "kind": "fabrikam" }
+                  },
                   "applications": {
                     "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": { "name": "hsm", "kind": "fabrikam" }
+                      "configurationDirectory": "SomeApp-cli"
                     }
                   }
                 }
@@ -534,10 +538,12 @@ public sealed class SetupTutorials
                 """
                 {
                   "version": 1,
+                  "keyVaults": {
+                    "contoso": { "kind": "fake", "endpoint": "https://vault.contoso.example/admin" }
+                  },
                   "applications": {
                     "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": { "name": "contoso", "kind": "fake", "endpoint": "https://vault.contoso.example/admin" }
+                      "configurationDirectory": "SomeApp-cli"
                     }
                   }
                 }
@@ -610,9 +616,10 @@ public sealed class SetupTutorials
         }
     }
 
-    /// <summary>UC-018. A headless service cannot sign in, so its vault authenticates with secrets the
-    /// operator wrote into the manifest section. The vault package receives them as data; the library never
-    /// opens a browser, never logs them, and never repeats them.
+    /// <summary>UC-018. A headless service cannot sign in, so its vault authenticates with encrypted
+    /// secrets the operator sealed into root <c>keyVaults</c>. The vault package receives them unsealed
+    /// in memory; the library never stores plaintext secrets on disk, never opens a browser, never logs
+    /// them, and never repeats them.
     /// </summary>
     [Fact]
     public async Task SetAsync_ManifestSecrets_AuthenticatesWithoutBrowserAsync()
@@ -622,24 +629,17 @@ public sealed class SetupTutorials
         {
             var cancellationToken = TestContext.Current.CancellationToken;
             workstation.VaultPackage = new FakeVaultFactory();
-            workstation.WriteManifest(
-                """
+            ConfigurationServiceCollectionExtensions.SetManifestKeyVault(
+                workstation.ManifestPath,
+                new VaultOptions
                 {
-                  "version": 1,
-                  "applications": {
-                    "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": {
-                        "name": "contoso",
-                        "kind": "fake",
-                        "endpoint": "https://vault.contoso.example",
-                        "settings": { "tenant": "prod" },
-                        "secrets": { "clientSecret": "fictional-client-secret" }
-                      }
-                    }
-                  }
-                }
-                """
+                    Name = "contoso",
+                    Kind = "fake",
+                    Endpoint = new Uri("https://vault.contoso.example"),
+                    Settings = { ["tenant"] = "prod" },
+                    Secrets = { ["clientSecret"] = "fictional-client-secret" },
+                },
+                workstation.Keyring
             );
 
             // Act
@@ -663,6 +663,11 @@ public sealed class SetupTutorials
             Assert.Equal("prod", vault.Settings.Settings["tenant"]);
             Assert.Equal(0, workstation.Browser.Launches);
             Assert.DoesNotContain(
+                "fictional-client-secret",
+                File.ReadAllText(workstation.ManifestPath),
+                StringComparison.Ordinal
+            );
+            Assert.DoesNotContain(
                 workstation.Log.Messages,
                 message => message.Contains("fictional-client-secret", StringComparison.Ordinal)
             );
@@ -680,18 +685,15 @@ public sealed class SetupTutorials
         using (var workstation = new Workstation())
         {
             workstation.VaultPackage = new FakeVaultFactory();
-            workstation.WriteManifest(
-                """
+            ConfigurationServiceCollectionExtensions.SetManifestKeyVault(
+                workstation.ManifestPath,
+                new VaultOptions
                 {
-                  "version": 1,
-                  "applications": {
-                    "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": { "name": "contoso", "kind": "fake", "secrets": { "clientSecret": "fictional-client-secret" } }
-                    }
-                  }
-                }
-                """
+                    Name = "contoso",
+                    Kind = "fake",
+                    Secrets = { ["clientSecret"] = "fictional-client-secret" },
+                },
+                workstation.Keyring
             );
             // An operator left the file group-readable
             if (!OperatingSystem.IsWindows())
@@ -728,18 +730,15 @@ public sealed class SetupTutorials
         using (var workstation = new Workstation())
         {
             workstation.VaultPackage = new FakeVaultFactory();
-            workstation.WriteManifest(
-                """
+            ConfigurationServiceCollectionExtensions.SetManifestKeyVault(
+                workstation.ManifestPath,
+                new VaultOptions
                 {
-                  "version": 1,
-                  "applications": {
-                    "SomeApp-cli": {
-                      "configurationDirectory": "SomeApp-cli",
-                      "keyVault": { "name": "contoso", "kind": "fake", "secrets": { "clientSecret": "fictional-client-secret" } }
-                    }
-                  }
-                }
-                """
+                    Name = "contoso",
+                    Kind = "fake",
+                    Secrets = { ["clientSecret"] = "fictional-client-secret" },
+                },
+                workstation.Keyring
             );
             if (OperatingSystem.IsWindows())
             {
@@ -772,6 +771,179 @@ public sealed class SetupTutorials
             Assert.Contains(workstation.ManifestPath, failure.Message, StringComparison.Ordinal);
             Assert.DoesNotContain("fictional-client-secret", failure.Message, StringComparison.Ordinal);
             Assert.Empty(workstation.VaultPackage.Created);
+        }
+    }
+
+    /// <summary>Legacy per-application keyVault sections are rejected with a migration error naming root keyVaults.</summary>
+    [Fact]
+    public void AddNyssaConfiguration_LegacyPerAppKeyVault_ThrowsNamingRootKeyVaults()
+    {
+        using (var workstation = new Workstation())
+        {
+            workstation.VaultPackage = new FakeVaultFactory();
+            workstation.WriteManifest(
+                """
+                {
+                  "version": 1,
+                  "applications": {
+                    "SomeApp-cli": {
+                      "configurationDirectory": "SomeApp-cli",
+                      "keyVault": { "name": "contoso", "kind": "fake" }
+                    }
+                  }
+                }
+                """
+            );
+
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(workstation.Locate);
+            workstation.StartApplication(services);
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+                workstation.Host.GetRequiredService<IConfiguration>()
+            );
+
+            Assert.Contains("applications.SomeApp-cli.keyVault", failure.Message, StringComparison.Ordinal);
+            Assert.Contains("keyVaults", failure.Message, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>Plaintext vault secrets on disk are rejected without echoing the secret.</summary>
+    [Fact]
+    public void AddNyssaConfiguration_PlaintextManifestSecret_ThrowsWithoutExposingSecret()
+    {
+        using (var workstation = new Workstation())
+        {
+            workstation.VaultPackage = new FakeVaultFactory();
+            workstation.WriteManifest(
+                """
+                {
+                  "version": 1,
+                  "keyVaults": {
+                    "contoso": {
+                      "kind": "fake",
+                      "secrets": { "clientSecret": "unencrypted-client-secret" }
+                    }
+                  },
+                  "applications": {
+                    "SomeApp-cli": { "configurationDirectory": "SomeApp-cli" }
+                  }
+                }
+                """
+            );
+
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(workstation.Locate);
+            workstation.StartApplication(services);
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+                workstation.Host.GetRequiredService<IConfiguration>()
+            );
+
+            Assert.Contains("keyVaults.contoso.secrets.clientSecret", failure.Message, StringComparison.Ordinal);
+            Assert.Contains("plaintext secrets are forbidden", failure.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("unencrypted-client-secret", failure.Message, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>When the manifest holds encrypted secrets but the _manifest key is absent, bootstrap fails closed without inventing a key.</summary>
+    [Fact]
+    public void AddNyssaConfiguration_MissingManifestKey_ThrowsWithoutCreatingManifestKey()
+    {
+        using (var workstation = new Workstation())
+        {
+            workstation.VaultPackage = new FakeVaultFactory();
+            ConfigurationServiceCollectionExtensions.SetManifestKeyVault(
+                workstation.ManifestPath,
+                new VaultOptions
+                {
+                    Name = "contoso",
+                    Kind = "fake",
+                    Secrets = { ["clientSecret"] = "fictional-client-secret" },
+                },
+                workstation.Keyring
+            );
+            workstation.Keyring.Delete(
+                ConfigurationServiceCollectionExtensions.KeyringService,
+                ConfigurationServiceCollectionExtensions.ManifestKeyAccount
+            );
+            workstation.Keyring.Writes.Clear();
+
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(workstation.Locate);
+            workstation.StartApplication(services);
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+                workstation.Host.GetRequiredService<IConfiguration>()
+            );
+
+            Assert.Contains(
+                $"{ConfigurationServiceCollectionExtensions.KeyringService}/{ConfigurationServiceCollectionExtensions.ManifestKeyAccount}",
+                failure.Message,
+                StringComparison.Ordinal
+            );
+            Assert.Empty(workstation.Keyring.Writes);
+        }
+    }
+
+    /// <summary>Ciphertext sealed for one vault fails AES-256-GCM AAD authentication when transplanted to another vault.</summary>
+    [Fact]
+    public void AddNyssaConfiguration_TransplantedVaultSecretCiphertext_ThrowsAtResolution()
+    {
+        using (var workstation = new Workstation())
+        {
+            workstation.VaultPackage = new FakeVaultFactory();
+            ConfigurationServiceCollectionExtensions.SetManifestKeyVault(
+                workstation.ManifestPath,
+                new VaultOptions
+                {
+                    Name = "contoso-staging",
+                    Kind = "fake",
+                    Secrets = { ["clientSecret"] = "staging-secret" },
+                },
+                workstation.Keyring
+            );
+
+            using (var parsed = System.Text.Json.JsonDocument.Parse(File.ReadAllText(workstation.ManifestPath)))
+            {
+                var ciphertext = parsed.RootElement
+                    .GetProperty("keyVaults")
+                    .GetProperty("contoso-staging")
+                    .GetProperty("secrets")
+                    .GetProperty("clientSecret")
+                    .GetProperty("value")
+                    .GetString()!;
+
+                workstation.WriteManifest(
+                    $$"""
+                    {
+                      "version": 1,
+                      "keyVaults": {
+                        "contoso-prod": {
+                          "kind": "fake",
+                          "secrets": {
+                            "clientSecret": {
+                              "value": "{{ciphertext}}",
+                              "provider": "aesLocal",
+                              "encrypted": true
+                            }
+                          }
+                        }
+                      },
+                      "applications": {
+                        "SomeApp-cli": { "configurationDirectory": "SomeApp-cli" }
+                      }
+                    }
+                    """
+                );
+            }
+
+            var services = workstation.CreateServices();
+            services.AddNyssaConfiguration(workstation.Locate);
+            workstation.StartApplication(services);
+            var failure = Assert.Throws<InvalidOperationException>(() =>
+                workstation.Host.GetRequiredService<IConfiguration>()
+            );
+
+            Assert.Contains("keyVaults.contoso-prod.secrets.clientSecret", failure.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("staging-secret", failure.Message, StringComparison.Ordinal);
         }
     }
 }

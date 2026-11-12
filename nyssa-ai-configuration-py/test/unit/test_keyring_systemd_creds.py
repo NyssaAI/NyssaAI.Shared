@@ -19,11 +19,15 @@ from pathlib import Path
 import pytest
 
 from nyssa_ai_configuration import (
+    MANIFEST_KEY_ACCOUNT,
     BootstrapOptions,
     ConfigurationClient,
+    KeyringDefault,
     KeyringProtectedFile,
     KeyringSystemdCreds,
+    get_or_create_key,
     resolve_keyring,
+    resolve_manifest_keyring,
 )
 
 
@@ -264,3 +268,107 @@ def test_configuration_bootstrap_selects_keyring_systemd_creds_when_credentials_
     )
     fallback_keyring = resolve_keyring(protected_dir)
     assert isinstance(fallback_keyring, KeyringProtectedFile)
+
+
+def test_keyring_protected_file_isolates_app_and_manifest_keys_across_directories(tmp_path: Path) -> None:
+    """Verify KeyringProtectedFile stores app keys in config_dir/.nyssa-key and _manifest in manifest_dir/.nyssa-manifest-key."""
+    config_dir = tmp_path / "app-store"
+    manifest_dir = tmp_path / "manifest-root"
+    keyring = KeyringProtectedFile(config_dir, manifest_directory=manifest_dir)
+
+    app_key = get_or_create_key("OrdersService", keyring)
+    manifest_key = get_or_create_key(MANIFEST_KEY_ACCOUNT, keyring)
+    assert app_key.ok and manifest_key.ok
+    assert app_key.value != manifest_key.value
+
+    assert (config_dir / ".nyssa-key").is_file()
+    assert not (config_dir / ".nyssa-manifest-key").exists()
+    assert (manifest_dir / ".nyssa-manifest-key").is_file()
+    assert not (manifest_dir / ".nyssa-key").exists()
+
+    reloaded = KeyringProtectedFile(config_dir, manifest_directory=manifest_dir)
+    rel_app = reloaded.get_key("nyssa-ai-configuration", "OrdersService")
+    rel_man = reloaded.get_key("nyssa-ai-configuration", MANIFEST_KEY_ACCOUNT)
+    assert rel_app.ok and rel_app.value == app_key.value
+    assert rel_man.ok and rel_man.value == manifest_key.value
+
+    assert reloaded.delete_key("nyssa-ai-configuration", MANIFEST_KEY_ACCOUNT).ok
+    del_man = reloaded.get_key("nyssa-ai-configuration", MANIFEST_KEY_ACCOUNT)
+    still_app = reloaded.get_key("nyssa-ai-configuration", "OrdersService")
+    assert del_man.ok and del_man.value is None
+    assert still_app.ok and still_app.value == app_key.value
+
+
+def test_keyring_systemd_creds_isolates_manifest_and_application_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify KeyringSystemdCreds never cross-contaminates _manifest and application credentials."""
+    creds_dir = tmp_path / "credentials"
+    creds_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(creds_dir))
+
+    app_only_key = os.urandom(32)
+    (creds_dir / "nyssa-key").write_bytes(app_only_key)
+
+    keyring = KeyringSystemdCreds()
+    # Single app file must NOT satisfy _manifest!
+    manifest_missing = keyring.get_key("nyssa-ai-configuration", MANIFEST_KEY_ACCOUNT)
+    assert not manifest_missing.ok
+    assert manifest_missing.category == "NotFound"
+
+    # Conversely, when only a manifest credential exists, an app query must NOT steal it via len(files) == 1!
+    (creds_dir / "nyssa-key").unlink()
+    manifest_key = os.urandom(32)
+    (creds_dir / "nyssa-manifest-key").write_bytes(manifest_key)
+
+    app_missing = keyring.get_key("nyssa-ai-configuration", "OrdersService")
+    assert not app_missing.ok
+    assert app_missing.category == "NotFound"
+
+    manifest_found = keyring.get_key("nyssa-ai-configuration", MANIFEST_KEY_ACCOUNT)
+    assert manifest_found.ok
+    assert manifest_found.value == manifest_key
+
+    # When both a manifest credential and a single custom app credential file exist, both resolve cleanly!
+    single_app_key = os.urandom(32)
+    (creds_dir / "systemd-app-secret").write_bytes(single_app_key)
+    app_found = keyring.get_key("nyssa-ai-configuration", "OrdersService")
+    man_found_again = keyring.get_key("nyssa-ai-configuration", MANIFEST_KEY_ACCOUNT)
+    assert app_found.ok
+    assert app_found.value == single_app_key
+    assert man_found_again.ok and man_found_again.value == manifest_key
+
+
+def test_resolve_keyring_prefers_existing_linux_cred_file_before_headless_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify resolve_keyring and resolve_manifest_keyring select KeyringDefault when a .cred file already exists on Linux."""
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    monkeypatch.setenv("NYSSA_CONFIG_DIR", str(tmp_path / "env-cfg"))
+    monkeypatch.setattr("nyssa_ai_configuration.keyring.keyring.sys.platform", "linux")
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    creds_store = tmp_path / "creds-store"
+    creds_store.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("NYSSA_SYSTEMD_CREDS_DIR", str(creds_store))
+
+    config_dir = tmp_path / "app-cfg"
+    manifest_path = tmp_path / "manifest" / "config-manifest.json"
+    opts = BootstrapOptions(
+        application_name="OrdersApp",
+        configuration_directory=str(config_dir),
+        manifest_path=str(manifest_path),
+    )
+
+    # Before .cred exists -> KeyringProtectedFile
+    assert isinstance(resolve_keyring(config_dir, opts), KeyringProtectedFile)
+    assert isinstance(resolve_manifest_keyring(manifest_path), KeyringProtectedFile)
+
+    # Once .cred exists -> KeyringDefault
+    (creds_store / "nyssa-ai-configuration.OrdersApp.cred").write_text("encrypted-cred", encoding="utf-8")
+    (creds_store / "nyssa-ai-configuration._manifest.cred").write_text("encrypted-manifest-cred", encoding="utf-8")
+
+    assert isinstance(resolve_keyring(config_dir, opts), KeyringDefault)
+    assert isinstance(resolve_manifest_keyring(manifest_path), KeyringDefault)

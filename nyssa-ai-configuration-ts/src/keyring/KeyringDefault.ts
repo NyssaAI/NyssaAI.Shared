@@ -3,6 +3,7 @@
 // `-- KeyringDefault
 //     +-- KEY_ACCOUNT
 //     +-- KEY_LENGTH
+//     +-- MANIFEST_ACCOUNT
 //     +-- SERVICE_NAME
 //     +-- getKey(applicationName, keyring, signal)
 //     `-- getOrCreateKey(applicationName, keyring, signal)
@@ -19,6 +20,7 @@ import type { IKeyring } from "./IKeyring.js";
 export class KeyringDefault {
   public static readonly SERVICE_NAME = "nyssa-ai-configuration";
   public static readonly KEY_ACCOUNT = "configuration-key";
+  public static readonly MANIFEST_ACCOUNT = "_manifest";
   public static readonly KEY_LENGTH = 32;
 
   /**

@@ -1,18 +1,28 @@
-// Responsibility: Write and provision application sections in the configuration manifest atomically under lock.
+// Responsibility: Write and provision root keyVaults and application sections in the configuration manifest atomically under lock.
 // Public interface:
 // `-- ConfigurationManifestWriter
 //     +-- DEFAULT_LOCK_TIMEOUT_MS
-//     `-- setConfigurationDirectory(manifestPath, applicationName, configurationDirectory, lockTimeoutMs)
+//     +-- removeVault(manifestPath, vaultName, lockTimeoutMs)
+//     +-- setConfigurationDirectory(manifestPath, applicationName, configurationDirectory, lockTimeoutMs)
+//     `-- setVault(manifestPath, vault, options)
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as crypto from "node:crypto";
-import { ok, fail, type Result } from "@nyssa-ai/result";
+import { ok, type Result } from "@nyssa-ai/result";
 import { ProtectedFileSystem } from "../fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "../fileSecurity/DirectorySafety.js";
+import { ConfigurationCipherAesGcm } from "../encryption/ConfigurationCipherAesGcm.js";
+import { KeyringDefault } from "../keyring/KeyringDefault.js";
+import { ConfigurationBootstrap } from "../ConfigurationBootstrap.js";
 import { ConfigurationManifestReader } from "./ConfigurationManifestReader.js";
+import { ManifestVaultValidator } from "./ManifestVaultValidator.js";
+import { ManifestFileLock } from "./ManifestFileLock.js";
+import type { IKeyring } from "../keyring/IKeyring.js";
 import type { ConfigurationManifest } from "./ConfigurationManifest.js";
 import type { ApplicationManifestEntry } from "./ApplicationManifestEntry.js";
+import type { VaultManifestEntry } from "./VaultManifestEntry.js";
+import type { ManifestSecretEnvelope } from "./ManifestSecretEnvelope.js";
+import type { VaultOptions } from "./VaultOptions.js";
 
 /**
  * ConfigurationManifestWriter updates configuration manifest sections atomically under a lock file.
@@ -34,41 +44,24 @@ export class ConfigurationManifestWriter {
     const timeoutMs = lockTimeoutMs ?? this.DEFAULT_LOCK_TIMEOUT_MS;
 
     const dirRes = ProtectedFileSystem.createDirectory(parentDir);
-    if (!dirRes.ok) {
-      return dirRes;
-    }
-
+    if (!dirRes.ok) return dirRes;
     const safeRes = DirectorySafety.verify(parentDir);
-    if (!safeRes.ok) {
-      return safeRes;
-    }
+    if (!safeRes.ok) return safeRes;
 
-    const lockRes = this.acquireLockSync(resolvedPath, timeoutMs);
-    if (!lockRes.ok) {
-      return lockRes;
-    }
-
-    const lockInfo = lockRes.value;
-    try {
+    return ManifestFileLock.withLockSync(resolvedPath, timeoutMs, () => {
       let manifest: ConfigurationManifest = {
         version: ConfigurationManifestReader.SUPPORTED_VERSION,
         applications: {}
       };
-
       if (fs.existsSync(resolvedPath)) {
         const readRes = ConfigurationManifestReader.readManifest(resolvedPath);
-        if (!readRes.ok) {
-          return readRes;
-        }
+        if (!readRes.ok) return readRes;
         manifest = readRes.value;
       }
 
-      const apps: Record<string, ApplicationManifestEntry> = {
-        ...(manifest.applications ?? {})
-      };
-
+      const apps: Record<string, ApplicationManifestEntry> = { ...(manifest.applications ?? {}) };
       const existingSection = apps[applicationName] ?? {};
-      const updatedSection: ApplicationManifestEntry = {
+      apps[applicationName] = {
         ...existingSection,
         configurationDirectory,
         ...(lockTimeoutMs !== undefined
@@ -80,156 +73,181 @@ export class ConfigurationManifestWriter {
               : { lockTimeoutMs: this.DEFAULT_LOCK_TIMEOUT_MS })
       };
 
-      apps[applicationName] = updatedSection;
+      const writeRes = ManifestFileLock.writeJsonAtomically(
+        resolvedPath,
+        manifestPath,
+        this.prepareForDisk({
+          version: manifest.version || ConfigurationManifestReader.SUPPORTED_VERSION,
+          ...(manifest.keyVaults !== undefined ? { keyVaults: manifest.keyVaults } : {}),
+          applications: apps
+        })
+      );
+      return writeRes.ok ? ok(configurationDirectory) : writeRes;
+    });
+  }
 
-      const updatedManifest: ConfigurationManifest = {
-        version: manifest.version || ConfigurationManifestReader.SUPPORTED_VERSION,
-        applications: apps
+  /**
+   * Adds or updates a root keyVaults entry, sealing any secrets with AES-256-GCM under '_manifest'.
+   */
+  public static async setVault(
+    manifestPath: string,
+    vault: VaultOptions,
+    options?: {
+      readonly keyring?: IKeyring | undefined;
+      readonly lockTimeoutMs?: number | undefined;
+      readonly preserveExistingSecrets?: boolean | undefined;
+    }
+  ): Promise<Result<VaultManifestEntry>> {
+    const validVaultRes = ManifestVaultValidator.validateVaultOptions(vault);
+    if (!validVaultRes.ok) return validVaultRes;
+    const normalizedVault = validVaultRes.value;
+
+    const resolvedPath = path.resolve(manifestPath);
+    const parentDir = path.dirname(resolvedPath);
+    const timeoutMs = options?.lockTimeoutMs ?? this.DEFAULT_LOCK_TIMEOUT_MS;
+
+    const dirRes = ProtectedFileSystem.createDirectory(parentDir);
+    if (!dirRes.ok) return dirRes;
+    const safeRes = DirectorySafety.verify(parentDir);
+    if (!safeRes.ok) return safeRes;
+
+    if (fs.existsSync(resolvedPath)) {
+      const preRead = ConfigurationManifestReader.readManifest(resolvedPath);
+      if (!preRead.ok) return preRead;
+    }
+
+    const incomingSecrets = normalizedVault.secrets ?? {};
+    const sealedSecrets: Record<string, ManifestSecretEnvelope> = {};
+    if (Object.keys(incomingSecrets).length > 0) {
+      const manifestKeyring = options?.keyring ?? ConfigurationBootstrap.resolveManifestKeyring(resolvedPath);
+      const keyRes = await KeyringDefault.getOrCreateKey(KeyringDefault.MANIFEST_ACCOUNT, manifestKeyring);
+      if (!keyRes.ok) return keyRes;
+
+      const keyBuf = keyRes.value;
+      try {
+        const cipherRes = ConfigurationCipherAesGcm.create(keyBuf);
+        if (!cipherRes.ok) return cipherRes;
+        const aadNamespace = `keyVaults/${normalizedVault.name}`;
+        for (const [secretKey, plaintext] of Object.entries(incomingSecrets)) {
+          const sealRes = cipherRes.value.seal(plaintext, aadNamespace, secretKey);
+          if (!sealRes.ok) return sealRes;
+          const env: ManifestSecretEnvelope = {
+            value: sealRes.value,
+            provider: "aesLocal",
+            encrypted: true
+          };
+          Object.defineProperty(env, "toString", {
+            value: () => "ManifestSecretEnvelope { [REDACTED] }",
+            enumerable: false
+          });
+          sealedSecrets[secretKey] = env;
+        }
+      } finally {
+        keyBuf.fill(0);
+      }
+    }
+
+    return ManifestFileLock.withLockSync(resolvedPath, timeoutMs, () => {
+      let manifest: ConfigurationManifest = {
+        version: ConfigurationManifestReader.SUPPORTED_VERSION,
+        applications: {}
+      };
+      if (fs.existsSync(resolvedPath)) {
+        const readRes = ConfigurationManifestReader.readManifest(resolvedPath);
+        if (!readRes.ok) return readRes;
+        manifest = readRes.value;
+      }
+
+      const mergedSecrets: Record<string, ManifestSecretEnvelope> =
+        options?.preserveExistingSecrets === true
+          ? { ...(manifest.keyVaults?.[normalizedVault.name]?.secrets ?? {}), ...sealedSecrets }
+          : { ...sealedSecrets };
+
+      const entry: VaultManifestEntry = {
+        name: normalizedVault.name,
+        kind: normalizedVault.kind,
+        ...(normalizedVault.endpoint !== undefined ? { endpoint: normalizedVault.endpoint } : {}),
+        ...(normalizedVault.credential !== undefined ? { credential: normalizedVault.credential } : {}),
+        ...(normalizedVault.cacheTTLSeconds !== undefined ? { cacheTTLSeconds: normalizedVault.cacheTTLSeconds } : {}),
+        settings: { ...(normalizedVault.settings ?? {}) },
+        secrets: mergedSecrets
       };
 
-      const tempFile = `${resolvedPath}.tmp.${crypto.randomUUID().replace(/-/g, "")}`;
-      try {
-        const json = JSON.stringify(updatedManifest, null, 2);
-        const writeRes = ProtectedFileSystem.createFile(tempFile, json);
-        if (!writeRes.ok) {
-          return writeRes;
-        }
-        fs.renameSync(tempFile, resolvedPath);
-        return ok(configurationDirectory);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return fail(`manifest: writing '${manifestPath}' failed: ${message}`, "Forbidden");
-      } finally {
-        try {
-          if (fs.existsSync(tempFile)) {
-            fs.unlinkSync(tempFile);
-          }
-        } catch {
-          // ignore cleanup failure
-        }
-      }
-    } finally {
-      this.releaseLockSync(resolvedPath, lockInfo);
-    }
+      const updatedVaults: Record<string, VaultManifestEntry> = {
+        ...(manifest.keyVaults ?? {}),
+        [normalizedVault.name]: entry
+      };
+
+      const writeRes = ManifestFileLock.writeJsonAtomically(
+        resolvedPath,
+        manifestPath,
+        this.prepareForDisk({
+          version: manifest.version || ConfigurationManifestReader.SUPPORTED_VERSION,
+          keyVaults: updatedVaults,
+          applications: { ...(manifest.applications ?? {}) }
+        })
+      );
+      return writeRes.ok ? ok(entry) : writeRes;
+    });
   }
 
-  private static acquireLockSync(
-    manifestPath: string,
-    timeoutMs: number
-  ): Result<{ readonly fd: number; readonly createdExclusively: boolean }> {
-    const lockPath = `${manifestPath}.lock`;
-    const start = Date.now();
-    let backoffMs = 5;
+  /**
+   * Removes a named vault from root keyVaults atomically under lock.
+   */
+  public static removeVault(manifestPath: string, vaultName: string, lockTimeoutMs?: number): Result<boolean> {
+    const validName = ManifestVaultValidator.validateVaultName(vaultName);
+    if (!validName.ok) return validName;
 
-    while (true) {
-      try {
-        const fd = fs.openSync(lockPath, "wx+", 0o600);
-        try {
-          fs.writeFileSync(fd, `node:${process.pid}:${Date.now()}`, "utf8");
-        } catch {
-          // ignore
-        }
-        return ok({ fd, createdExclusively: true });
-      } catch (err: unknown) {
-        const code = (err as { code?: string }).code;
-        if (code === "EEXIST") {
-          try {
-            const fd = fs.openSync(lockPath, "r+");
-            let content = "";
-            try {
-              const buf = Buffer.alloc(128);
-              const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
-              content = buf.subarray(0, bytesRead).toString("utf8").trim();
-            } catch {
-              // ignore
-            }
+    const resolvedPath = path.resolve(manifestPath);
+    if (!fs.existsSync(resolvedPath)) return ok(false);
 
-            if (content.startsWith("node:")) {
-              const holderPid = Number.parseInt(content.split(":")[1] ?? "", 10);
-              fs.closeSync(fd);
-              if (!Number.isNaN(holderPid) && this.isProcessAlive(holderPid)) {
-                // held by live process
-              } else {
-                try {
-                  fs.unlinkSync(lockPath);
-                } catch {
-                  // ignore
-                }
-                continue;
-              }
-            } else {
-              try {
-                fs.ftruncateSync(fd, 0);
-                fs.writeSync(fd, `node:${process.pid}:${Date.now()}`, 0, "utf8");
-              } catch {
-                // ignore
-              }
-              return ok({ fd, createdExclusively: false });
-            }
-          } catch (openErr: unknown) {
-            const openCode = (openErr as { code?: string }).code;
-            if (openCode === "ENOENT") {
-              continue;
-            }
-            if (openCode !== "EBUSY" && openCode !== "EPERM" && openCode !== "EACCES") {
-              const message = openErr instanceof Error ? openErr.message : String(openErr);
-              return fail(`manifest: writing '${manifestPath}' failed: ${message}`, "Forbidden");
-            }
-          }
-        } else if (code !== "EBUSY" && code !== "EPERM" && code !== "EACCES") {
-          const message = err instanceof Error ? err.message : String(err);
-          return fail(`manifest: writing '${manifestPath}' failed: ${message}`, "Forbidden");
-        }
+    const safeRes = DirectorySafety.verify(path.dirname(resolvedPath));
+    if (!safeRes.ok) return safeRes;
+
+    const timeoutMs = lockTimeoutMs ?? this.DEFAULT_LOCK_TIMEOUT_MS;
+    return ManifestFileLock.withLockSync(resolvedPath, timeoutMs, () => {
+      if (!fs.existsSync(resolvedPath)) return ok(false);
+      const readRes = ConfigurationManifestReader.readManifest(resolvedPath);
+      if (!readRes.ok) return readRes;
+
+      const updatedVaults: Record<string, VaultManifestEntry> = { ...(readRes.value.keyVaults ?? {}) };
+      if (!Object.prototype.hasOwnProperty.call(updatedVaults, vaultName)) {
+        return ok(false);
       }
+      delete updatedVaults[vaultName];
 
-      const elapsed = Date.now() - start;
-      if (elapsed >= timeoutMs) {
-        return fail(
-          `manifest: could not take the lock on '${manifestPath}' within ${(elapsed / 1000).toFixed(3)}s`,
-          "Unavailable"
-        );
-      }
-
-      const sleepMs = Math.min(backoffMs, timeoutMs - elapsed);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleepMs);
-      backoffMs = Math.min(backoffMs * 2, 50);
-    }
+      const writeRes = ManifestFileLock.writeJsonAtomically(
+        resolvedPath,
+        manifestPath,
+        this.prepareForDisk({
+          version: readRes.value.version || ConfigurationManifestReader.SUPPORTED_VERSION,
+          keyVaults: updatedVaults,
+          applications: { ...(readRes.value.applications ?? {}) }
+        })
+      );
+      return writeRes.ok ? ok(true) : writeRes;
+    });
   }
 
-  private static releaseLockSync(
-    manifestPath: string,
-    lockInfo: { readonly fd: number; readonly createdExclusively: boolean }
-  ): void {
-    const lockPath = `${manifestPath}.lock`;
-    try {
-      if (!lockInfo.createdExclusively) {
-        try {
-          fs.ftruncateSync(lockInfo.fd, 0);
-        } catch {
-          // ignore
-        }
-      }
-      fs.closeSync(lockInfo.fd);
-    } catch {
-      // ignore
+  private static prepareForDisk(manifest: ConfigurationManifest): Record<string, unknown> {
+    const diskVaults: Record<string, Record<string, unknown>> = {};
+    for (const [vaultName, entry] of Object.entries(manifest.keyVaults ?? {})) {
+      const settings = entry.settings ?? {};
+      const secrets = entry.secrets ?? {};
+      diskVaults[vaultName] = {
+        kind: entry.kind,
+        ...(entry.endpoint !== undefined ? { endpoint: entry.endpoint } : {}),
+        ...(entry.credential !== undefined ? { credential: entry.credential } : {}),
+        ...(entry.cacheTTLSeconds !== undefined ? { cacheTTLSeconds: entry.cacheTTLSeconds } : {}),
+        ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        ...(Object.keys(secrets).length > 0 ? { secrets } : {})
+      };
     }
 
-    if (lockInfo.createdExclusively) {
-      try {
-        fs.unlinkSync(lockPath);
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  private static isProcessAlive(pid: number): boolean {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch (err: unknown) {
-      const code = (err as { code?: string }).code;
-      return code === "EPERM";
-    }
+    return {
+      version: manifest.version || ConfigurationManifestReader.SUPPORTED_VERSION,
+      ...(Object.keys(diskVaults).length > 0 ? { keyVaults: diskVaults } : {}),
+      applications: manifest.applications ?? {}
+    };
   }
 }

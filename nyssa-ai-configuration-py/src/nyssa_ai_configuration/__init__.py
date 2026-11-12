@@ -75,9 +75,12 @@ from nyssa_ai_configuration.file_security.protected_file_system import (
     ProtectedFileSystem,
 )
 from nyssa_ai_configuration.keyring.keyring import (
+    MANIFEST_KEY_ACCOUNT,
     Keyring,
+    get_existing_key,
     get_or_create_key,
     resolve_keyring,
+    resolve_manifest_keyring,
 )
 from nyssa_ai_configuration.keyring.keyring_default import KeyringDefault
 from nyssa_ai_configuration.keyring.keyring_in_memory import KeyringInMemory
@@ -100,6 +103,8 @@ from nyssa_ai_configuration.manifest.types import (
     ApplicationManifestEntry,
     BootstrapOptions,
     ConfigurationManifestDocument,
+    ManifestSecretEnvelope,
+    VaultManifestEntry,
     VaultOptions,
 )
 from nyssa_ai_configuration.oauth.browser_launcher import BrowserLauncher
@@ -220,6 +225,8 @@ __all__ = [
     "KeyringProtectedFile",
     "KeyringSystemdCreds",
     "LoopbackSecretInputProvider",
+    "MANIFEST_KEY_ACCOUNT",
+    "ManifestSecretEnvelope",
     "NamespaceDocumentHandler",
     "OAuthFlowClient",
     "OAuthHeldGrant",
@@ -237,10 +244,13 @@ __all__ = [
     "SecretInputProvider",
     "SecretPromptRequest",
     "SecretReceipt",
+    "VaultManifestEntry",
     "VaultOptions",
     "fail",
     "fail_error",
+    "get_existing_key",
     "get_or_create_key",
     "ok",
     "resolve_keyring",
+    "resolve_manifest_keyring",
 ]

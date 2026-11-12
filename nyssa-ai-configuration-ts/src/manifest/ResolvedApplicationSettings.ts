@@ -2,16 +2,16 @@
 // Public interface:
 // `-- ResolvedApplicationSettings
 //     +-- configurationDirectory
-//     +-- keyVault
+//     +-- keyVaults
 //     `-- lockTimeoutMs
 
-import type { VaultOptions } from "./VaultOptions.js";
+import type { VaultManifestEntry } from "./VaultManifestEntry.js";
 
 /**
- * ResolvedApplicationSettings holds the normalized directory, timeout, and vault settings for an application.
+ * ResolvedApplicationSettings holds the normalized directory, timeout, and root keyVaults for an application.
  */
 export interface ResolvedApplicationSettings {
   readonly configurationDirectory: string;
   readonly lockTimeoutMs: number;
-  readonly keyVault?: VaultOptions | undefined;
+  readonly keyVaults?: Readonly<Record<string, VaultManifestEntry>> | undefined;
 }

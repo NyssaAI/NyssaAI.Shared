@@ -230,15 +230,33 @@ internal sealed class LoopbackSecretInputProvider : ISecretInputProvider, IDispo
         return sb.ToString();
     }
 
-    private static string FormatProviderLabel(string name)
+    internal static string FormatProviderLabel(string name)
     {
         var lower = name.ToLowerInvariant();
         if (lower == "aeslocal") return "Encrypted Locally (AES-256-GCM)";
         if (lower is "literal" or "default" or "plaintext" or "") return "Free Text (Unencrypted Plaintext)";
-        if (lower is "bws" or "bitwarden" or "bitwarden-secrets") return "Key Vault (Bitwarden Secrets Manager)";
-        if (lower.StartsWith("azure", StringComparison.Ordinal)) return "Key Vault (Azure Key Vault)";
-        if (lower.StartsWith("hashi", StringComparison.Ordinal) || lower == "vault") return "Key Vault (HashiCorp Vault)";
-        return $"Key Vault ({name})";
+
+        string baseLabel;
+        if (lower is "bws" or "bitwarden" or "bitwarden-secrets"
+            || lower.StartsWith("bws-", StringComparison.Ordinal)
+            || lower.StartsWith("bitwarden-", StringComparison.Ordinal))
+        {
+            baseLabel = "Key Vault (Bitwarden Secrets Manager)";
+        }
+        else if (lower.StartsWith("azure", StringComparison.Ordinal))
+        {
+            baseLabel = "Key Vault (Azure Key Vault)";
+        }
+        else if (lower.StartsWith("hashi", StringComparison.Ordinal) || lower == "vault")
+        {
+            baseLabel = "Key Vault (HashiCorp Vault)";
+        }
+        else
+        {
+            baseLabel = $"Key Vault ({name})";
+        }
+
+        return $"{baseLabel} [{name}]";
     }
 
     private static Dictionary<string, string> ParseFormEncoded(string body)

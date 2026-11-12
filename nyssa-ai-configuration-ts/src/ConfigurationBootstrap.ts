@@ -3,13 +3,15 @@
 // `-- ConfigurationBootstrap
 //     +-- createStore(options)
 //     +-- inferApplicationName()
-//     `-- resolveKeyring(configurationDirectory, options)
+//     +-- resolveKeyring(configurationDirectory, options)
+//     `-- resolveManifestKeyring(manifestPath, options)
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ok, fail, type Result } from "@nyssa-ai/result";
 import { ConfigurationManifestReader } from "./manifest/ConfigurationManifestReader.js";
 import { ConfigurationManifestWriter } from "./manifest/ConfigurationManifestWriter.js";
+import { ManifestVaultUnsealer } from "./manifest/ManifestVaultUnsealer.js";
 import { KeyringDefault } from "./keyring/KeyringDefault.js";
 import { KeyringOsPlatform } from "./keyring/KeyringOsPlatform.js";
 import { KeyringProtectedFile } from "./keyring/KeyringProtectedFile.js";
@@ -17,7 +19,6 @@ import { KeyringSystemdCreds } from "./keyring/KeyringSystemdCreds.js";
 import { ConfigurationCipherAesGcm } from "./encryption/ConfigurationCipherAesGcm.js";
 import { ConfigurationRecoveryTokenProtector } from "./recovery/ConfigurationRecoveryTokenProtector.js";
 import { ConfigurationStore } from "./values/ConfigurationStore.js";
-import { ConfigurationDocumentLocalFile } from "./values/ConfigurationDocumentLocalFile.js";
 import { NullConfigurationLogger } from "./logging/NullConfigurationLogger.js";
 import { ProtectedFileSystem } from "./fileSecurity/ProtectedFileSystem.js";
 import { DirectorySafety } from "./fileSecurity/DirectorySafety.js";
@@ -28,6 +29,7 @@ import type { IKeyring } from "./keyring/IKeyring.js";
 import type { IVaultProvider } from "./vault/IVaultProvider.js";
 import type { IVaultProviderFactory } from "./vault/IVaultProviderFactory.js";
 import type { VaultOptions } from "./manifest/VaultOptions.js";
+import type { VaultManifestEntry } from "./manifest/VaultManifestEntry.js";
 import type { OAuthOptions } from "./oauth/OAuthOptions.js";
 import type { IConfigurationLogger } from "./logging/IConfigurationLogger.js";
 
@@ -57,6 +59,11 @@ export class ConfigurationBootstrap {
       return fail("applicationName must be specified.", "Validation");
     }
 
+    const codeVaultsRes = ManifestVaultUnsealer.collectProgrammaticVaults(resolvedOptions);
+    if (!codeVaultsRes.ok) {
+      return codeVaultsRes;
+    }
+
     const logger = resolvedOptions.logger ?? new NullConfigurationLogger();
     const manifestPath =
       resolvedOptions.configManifest && resolvedOptions.configManifest.trim().length > 0
@@ -65,19 +72,13 @@ export class ConfigurationBootstrap {
 
     let configDir: string;
     let lockTimeoutMs = resolvedOptions.lockTimeoutMs ?? ConfigurationManifestReader.DEFAULT_LOCK_TIMEOUT_MS;
-    let effectiveVault: VaultOptions | undefined = resolvedOptions.keyVault;
+    let manifestKeyVaults: Readonly<Record<string, VaultManifestEntry>> = {};
 
     const readRes = ConfigurationManifestReader.readApplication(manifestPath, applicationName);
     if (readRes.ok) {
       configDir = readRes.value.configurationDirectory;
       lockTimeoutMs = resolvedOptions.lockTimeoutMs ?? readRes.value.lockTimeoutMs;
-      if (readRes.value.keyVault !== undefined) {
-        effectiveVault =
-          resolvedOptions.keyVault?.cacheTTLSeconds !== undefined &&
-          readRes.value.keyVault.cacheTTLSeconds === undefined
-            ? { ...readRes.value.keyVault, cacheTTLSeconds: resolvedOptions.keyVault.cacheTTLSeconds }
-            : readRes.value.keyVault;
-      }
+      manifestKeyVaults = readRes.value.keyVaults ?? {};
     } else if (readRes.category === "NotFound") {
       const defaultDir =
         resolvedOptions.configDirectory && resolvedOptions.configDirectory.trim().length > 0
@@ -93,35 +94,42 @@ export class ConfigurationBootstrap {
       if (!writeRes.ok) {
         return fail(`Failed to provision manifest section: ${writeRes.error}`, writeRes.category ?? "Forbidden");
       }
+      const afterWrite = ConfigurationManifestReader.readManifest(manifestPath);
+      if (!afterWrite.ok) return afterWrite;
       configDir = defaultDir;
+      manifestKeyVaults = afterWrite.value.keyVaults ?? {};
     } else {
       return readRes;
     }
 
     const dirRes = ProtectedFileSystem.createDirectory(configDir);
-    if (!dirRes.ok) {
-      return dirRes;
-    }
-
+    if (!dirRes.ok) return dirRes;
     const dirSafe = DirectorySafety.verify(configDir);
-    if (!dirSafe.ok) {
-      return dirSafe;
-    }
+    if (!dirSafe.ok) return dirSafe;
 
-    const keyring = this.resolveKeyring(configDir, resolvedOptions);
+    const keyring = this.resolveKeyring(configDir, {
+      ...resolvedOptions,
+      applicationName,
+      configManifest: manifestPath
+    });
     const keyRes = await KeyringDefault.getOrCreateKey(applicationName, keyring);
-    if (!keyRes.ok) {
-      return keyRes;
-    }
+    if (!keyRes.ok) return keyRes;
 
     const keyBuf = keyRes.value;
     const cipherRes = ConfigurationCipherAesGcm.create(keyBuf);
     const recoveryProtector = new ConfigurationRecoveryTokenProtector(keyBuf, applicationName, configDir);
     keyBuf.fill(0);
+    if (!cipherRes.ok) return cipherRes;
 
-    if (!cipherRes.ok) {
-      return cipherRes;
-    }
+    const effectiveVaultsRes = await ManifestVaultUnsealer.resolveEffectiveVaults(
+      codeVaultsRes.value,
+      manifestKeyVaults,
+      () =>
+        resolvedOptions.manifestKeyring ??
+        resolvedOptions.keyring ??
+        this.resolveManifestKeyring(manifestPath, { ...resolvedOptions, configDirectory: configDir })
+    );
+    if (!effectiveVaultsRes.ok) return effectiveVaultsRes;
 
     const vaultProviders = new Map<string, IVaultProvider>();
     const vaultCredentials = new Map<string, { readonly namespace: string; readonly key: string }>();
@@ -131,34 +139,13 @@ export class ConfigurationBootstrap {
     >();
     let storeRef: ConfigurationStore | undefined;
 
-    if (effectiveVault !== undefined) {
-      if (!effectiveVault.name || effectiveVault.name.trim().length === 0) {
-        return fail("keyVault.name must not be blank.", "Validation");
-      }
-      if (!effectiveVault.kind || effectiveVault.kind.trim().length === 0) {
-        return fail(`keyVault '${effectiveVault.name}' must specify a non-blank kind.`, "Validation");
-      }
-
+    for (const effectiveVault of effectiveVaultsRes.value.values()) {
       if (effectiveVault.credential !== undefined && effectiveVault.credential.trim().length > 0) {
         const cleanedCred = effectiveVault.credential.startsWith("oauth://")
           ? effectiveVault.credential.slice("oauth://".length)
           : effectiveVault.credential;
         const parts = cleanedCred.split("/");
-        if (parts.length !== 2 || !parts[0] || !parts[1]) {
-          return fail(
-            `keyVault.credential '${effectiveVault.credential}' must be in 'namespace/key' format.`,
-            "Validation"
-          );
-        }
-        const nsValid = ConfigurationDocumentLocalFile.validateSegment(parts[0], "namespace");
-        if (!nsValid.ok) {
-          return nsValid;
-        }
-        const keyValid = ConfigurationDocumentLocalFile.validateSegment(parts[1], "key");
-        if (!keyValid.ok) {
-          return keyValid;
-        }
-        vaultCredentials.set(effectiveVault.name, { namespace: parts[0], key: parts[1] });
+        vaultCredentials.set(effectiveVault.name, { namespace: parts[0]!, key: parts[1]! });
       }
 
       const factories = resolvedOptions.vaultFactories ?? [];
@@ -172,10 +159,7 @@ export class ConfigurationBootstrap {
         matchingFactory = new VaultProviderFactoryBitwarden(effectiveVault.kind);
       }
       if (!matchingFactory) {
-        return fail(
-          `No IVaultProviderFactory registered for vault kind '${effectiveVault.kind}'.`,
-          "Validation"
-        );
+        return fail(`No IVaultProviderFactory registered for vault kind '${effectiveVault.kind}'.`, "Validation");
       }
 
       const normalizedVault: VaultOptions = {
@@ -183,7 +167,6 @@ export class ConfigurationBootstrap {
         settings: effectiveVault.settings ?? {},
         secrets: effectiveVault.secrets ?? {}
       };
-
       const vaultName = normalizedVault.name;
       const providerRes = matchingFactory.create(normalizedVault, async (sig) => {
         if (!storeRef) {
@@ -191,10 +174,7 @@ export class ConfigurationBootstrap {
         }
         return storeRef.resolveVaultCredential(vaultName, sig);
       });
-
-      if (!providerRes.ok) {
-        return providerRes;
-      }
+      if (!providerRes.ok) return providerRes;
 
       const wrappedProvider = VaultProviderCaching.wrap(
         providerRes.value,
@@ -202,9 +182,7 @@ export class ConfigurationBootstrap {
         resolvedOptions.secretCache,
         resolvedOptions.clock
       );
-      if (!wrappedProvider.ok) {
-        return wrappedProvider;
-      }
+      if (!wrappedProvider.ok) return wrappedProvider;
 
       vaultProviders.set(vaultName, wrappedProvider.value);
 
@@ -213,9 +191,7 @@ export class ConfigurationBootstrap {
         let authOpts: OAuthOptions | undefined;
         if (matchingFactory.authorization) {
           const authRes = matchingFactory.authorization(normalizedVault);
-          if (!authRes.ok) {
-            return authRes;
-          }
+          if (!authRes.ok) return authRes;
           authOpts = authRes.value;
         }
         vaultAuth.set(vaultName, {
@@ -246,72 +222,91 @@ export class ConfigurationBootstrap {
     });
   }
 
-  /**
-   * Resolves the active keyring strategy when options.keyring is omitted:
-   * 1. Systemd Headless Server (CREDENTIALS_DIRECTORY) -> KeyringSystemdCreds
-   * 2. Protected File Fallback (.nyssa-key, NYSSA_CONFIG_DIR, or container/headless Linux) -> KeyringProtectedFile
-   * 3. Desktop Workstation -> KeyringOsPlatform
-   */
   public static resolveKeyring(configurationDirectory: string, options?: ConfigurationOptions): IKeyring {
-    if (options?.keyring !== undefined) {
-      return options.keyring;
+    if (options?.keyring !== undefined) return options.keyring;
+    if (KeyringSystemdCreds.isAvailable()) return new KeyringSystemdCreds(options?.systemdCredentialName);
+
+    const manifestDir =
+      options?.configManifest && options.configManifest.trim().length > 0
+        ? path.dirname(path.resolve(options.configManifest))
+        : undefined;
+
+    if (fs.existsSync(path.join(configurationDirectory, KeyringProtectedFile.KEY_FILENAME))) {
+      return new KeyringProtectedFile(configurationDirectory, manifestDir);
     }
 
-    if (KeyringSystemdCreds.isAvailable()) {
-      return new KeyringSystemdCreds(options?.systemdCredentialName);
+    if (process.platform === "linux") {
+      const accountName =
+        options?.applicationName && options.applicationName.trim().length > 0
+          ? options.applicationName.trim()
+          : this.inferApplicationName();
+      if (KeyringOsPlatform.hasLinuxCredentialFile(KeyringDefault.SERVICE_NAME, accountName)) {
+        return new KeyringOsPlatform();
+      }
     }
 
-    if (this.shouldUseProtectedFileKeyring(configurationDirectory)) {
-      return new KeyringProtectedFile(configurationDirectory);
+    if (this.isHeadlessOrContainerEnvironment()) {
+      return new KeyringProtectedFile(configurationDirectory, manifestDir);
     }
 
     return new KeyringOsPlatform();
   }
 
-  private static shouldUseProtectedFileKeyring(configurationDirectory: string): boolean {
-    const keyFilePath = path.join(configurationDirectory, KeyringProtectedFile.KEY_FILENAME);
-    if (fs.existsSync(keyFilePath)) {
-      return true;
-    }
+  public static resolveManifestKeyring(manifestPath: string, options?: ConfigurationOptions): IKeyring {
+    if (options?.manifestKeyring !== undefined) return options.manifestKeyring;
+    if (options?.keyring !== undefined) return options.keyring;
+    if (KeyringSystemdCreds.isAvailable()) return new KeyringSystemdCreds();
 
-    const envConfigDir = process.env["NYSSA_CONFIG_DIR"];
-    if (envConfigDir && envConfigDir.trim().length > 0) {
-      return true;
-    }
+    const manifestDir = path.dirname(path.resolve(manifestPath));
+    const configDir =
+      options?.configDirectory && options.configDirectory.trim().length > 0
+        ? path.resolve(options.configDirectory)
+        : manifestDir;
 
-    if (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv")) {
-      return true;
+    if (fs.existsSync(path.join(manifestDir, KeyringProtectedFile.MANIFEST_KEY_FILENAME))) {
+      return new KeyringProtectedFile(configDir, manifestDir);
     }
 
     if (
       process.platform === "linux" &&
-      !process.env["DBUS_SESSION_BUS_ADDRESS"] &&
-      !process.env["DISPLAY"] &&
-      !process.env["WAYLAND_DISPLAY"]
+      KeyringOsPlatform.hasLinuxCredentialFile(KeyringDefault.SERVICE_NAME, KeyringDefault.MANIFEST_ACCOUNT)
     ) {
-      return true;
+      return new KeyringOsPlatform();
     }
 
-    return false;
+    if (this.isHeadlessOrContainerEnvironment()) {
+      return new KeyringProtectedFile(configDir, manifestDir);
+    }
+
+    return new KeyringOsPlatform();
   }
 
   public static inferApplicationName(): string {
     try {
       const pkgPath = path.resolve(process.cwd(), "package.json");
       if (fs.existsSync(pkgPath)) {
-        const raw = fs.readFileSync(pkgPath, "utf8");
-        const parsed = JSON.parse(raw) as { name?: unknown };
+        const parsed = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { name?: unknown };
         if (typeof parsed.name === "string" && parsed.name.trim().length > 0) {
           const base = parsed.name.includes("/") ? parsed.name.split("/").pop()! : parsed.name;
           const sanitized = base.replace(/[^A-Za-z0-9._-]/g, "");
-          if (sanitized.length > 0) {
-            return sanitized;
-          }
+          if (sanitized.length > 0) return sanitized;
         }
       }
     } catch {
       // fall through
     }
     return "NyssaApp";
+  }
+
+  private static isHeadlessOrContainerEnvironment(): boolean {
+    const envConfigDir = process.env["NYSSA_CONFIG_DIR"];
+    if (envConfigDir && envConfigDir.trim().length > 0) return true;
+    if (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv")) return true;
+    return (
+      process.platform === "linux" &&
+      !process.env["DBUS_SESSION_BUS_ADDRESS"] &&
+      !process.env["DISPLAY"] &&
+      !process.env["WAYLAND_DISPLAY"]
+    );
   }
 }

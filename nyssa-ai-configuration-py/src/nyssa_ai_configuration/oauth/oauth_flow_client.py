@@ -132,7 +132,7 @@ class OauthFlowClient:
         print(auth_url)
         print("Waiting for authorization in browser...")
 
-        server.timeout = 30.0
+        server.timeout = 180.0
         thread = threading.Thread(target=server.handle_request, daemon=True)
         thread.start()
         try:
@@ -145,7 +145,7 @@ class OauthFlowClient:
                     webbrowser.open(auth_url)
                 except Exception:
                     print("Could not open browser automatically. Please open the link above manually.")
-            thread.join(timeout=30.0)
+            thread.join(timeout=180.0)
         finally:
             server.server_close()
 

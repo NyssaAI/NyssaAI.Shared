@@ -31,13 +31,13 @@ def _format_provider_label(name: str) -> str:
         return "Encrypted Locally (AES-256-GCM)"
     if lower in ("literal", "default", "plaintext", ""):
         return "Free Text (Unencrypted Plaintext)"
-    if lower in ("bws", "bitwarden", "bitwarden-secrets"):
-        return "Key Vault (Bitwarden Secrets Manager)"
+    if lower in ("bws", "bitwarden", "bitwarden-secrets") or lower.startswith(("bws-", "bitwarden-")):
+        return f"Key Vault (Bitwarden Secrets Manager) [{name}]"
     if lower.startswith("azure"):
-        return "Key Vault (Azure Key Vault)"
+        return f"Key Vault (Azure Key Vault) [{name}]"
     if lower.startswith("hashi") or lower == "vault":
-        return "Key Vault (HashiCorp Vault)"
-    return f"Key Vault ({name})"
+        return f"Key Vault (HashiCorp Vault) [{name}]"
+    return f"Key Vault ({name}) [{name}]"
 
 
 class LoopbackSecretInputProvider:

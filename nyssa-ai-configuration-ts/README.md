@@ -120,7 +120,8 @@ if (moveRes.ok) {
 | `lockTimeoutMs` | `10000` (10s) | Cross-process document lock acquisition timeout in milliseconds. |
 | `keyring` | Auto-detected (`KeyringSystemdCreds` -> `KeyringProtectedFile` -> `KeyringOsPlatform`) | Master key custody strategy (`KeyringSystemdCreds`, `KeyringProtectedFile`, `KeyringOsPlatform`, or `InMemoryKeyring`). |
 | `systemdCredentialName` | `undefined` (resolves `<service>.key`, `<account>.key`, `nyssa-key`, `master-key`, or single file) | Optional credential filename in `CREDENTIALS_DIRECTORY` when using `KeyringSystemdCreds`. |
-| `keyVault` | `undefined` | Optional external vault configuration (overridden whole if the manifest defines `keyVault`). |
+| `keyVault` | `undefined` | Optional programmatic vault configuration (layered with `keyVaults` and root `keyVaults` in `config-manifest.json` by `name`). |
+| `keyVaults` | `undefined` | Optional additional programmatic vault configurations (`readonly VaultOptions[]`), layered by `name` with root `keyVaults` in `config-manifest.json`. |
 | `vaultFactories` | `[]` | Registered `IVaultProviderFactory` implementations matched by `keyVault.kind`. |
 | `logger` | `NullConfigurationLogger` | Optional structured operational logger (`IConfigurationLogger`). |
 

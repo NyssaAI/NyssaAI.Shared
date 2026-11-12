@@ -2,15 +2,19 @@
 // Public interface:
 // `-- KeyringSystemdCreds
 //     +-- IMMUTABLE_ERROR_MESSAGE
+//     +-- MANIFEST_CREDENTIAL_FILENAMES
 //     +-- delete(service, account, signal)
+//     +-- findCredentialFile(credentialsDir, service, account, credentialName)
 //     +-- get(service, account, signal)
 //     +-- isAvailable()
 //     +-- new(credentialName)
+//     +-- sanitizeSegment(segment)
 //     `-- set(service, account, secret, signal)
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ok, fail, type Result } from "@nyssa-ai/result";
+import { KeyringDefault } from "./KeyringDefault.js";
 import type { IKeyring } from "./IKeyring.js";
 
 /**
@@ -21,11 +25,23 @@ export class KeyringSystemdCreds {
   public static readonly IMMUTABLE_ERROR_MESSAGE =
     "systemd-creds is immutable at runtime; credentials must be provisioned via systemd service configuration.";
 
+  public static readonly MANIFEST_CREDENTIAL_FILENAMES = [
+    "nyssa-ai-configuration._manifest",
+    "_manifest.key",
+    "_manifest",
+    "nyssa-manifest-key",
+    "nyssa-manifest-key.key"
+  ] as const;
+
   private readonly _credentialName: string | undefined;
 
   public constructor(credentialName?: string) {
     const trimmed = credentialName?.trim();
     this._credentialName = trimmed && trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  public static sanitizeSegment(segment: string): string {
+    return segment.replace(/[^A-Za-z0-9._-]/g, "_");
   }
 
   /**
@@ -41,6 +57,71 @@ export class KeyringSystemdCreds {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Resolves a credential file path inside CREDENTIALS_DIRECTORY with strict isolation
+   * between the shared '_manifest' master key and per-application keys.
+   */
+  public static findCredentialFile(
+    credentialsDir: string,
+    service: string,
+    account: string,
+    credentialName?: string
+  ): Result<string | null> {
+    const isManifest = account === KeyringDefault.MANIFEST_ACCOUNT;
+    const sanitizedService = this.sanitizeSegment(service);
+    const sanitizedName = `${sanitizedService}.${this.sanitizeSegment(account)}`;
+    const candidates: readonly string[] = isManifest
+      ? [`${sanitizedService}._manifest`, ...this.MANIFEST_CREDENTIAL_FILENAMES]
+      : credentialName !== undefined
+        ? [credentialName, `${credentialName}.key`]
+        : [
+            sanitizedName,
+            `${sanitizedName}.key`,
+            `${service}.key`,
+            `${account}.key`,
+            service,
+            account,
+            "nyssa-key",
+            "nyssa-key.key",
+            "master-key",
+            "master-key.key"
+          ];
+
+    for (const name of candidates) {
+      if (name.includes("/") || name.includes("\\") || name === ".." || name === ".") {
+        continue;
+      }
+      const candidatePath = path.join(credentialsDir, name);
+      if (path.dirname(candidatePath) === credentialsDir && fs.existsSync(candidatePath)) {
+        try {
+          if (fs.statSync(candidatePath).isFile()) {
+            return ok(candidatePath);
+          }
+        } catch {
+          // continue checking candidates
+        }
+      }
+    }
+
+    if (!isManifest && credentialName === undefined) {
+      const manifestSet = new Set<string>(this.MANIFEST_CREDENTIAL_FILENAMES);
+      try {
+        const entries = fs.readdirSync(credentialsDir, { withFileTypes: true });
+        const files = entries.filter(
+          (e) => e.isFile() && !manifestSet.has(e.name) && !e.name.endsWith("._manifest")
+        );
+        if (files.length === 1 && files[0] !== undefined) {
+          return ok(path.join(credentialsDir, files[0].name));
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return fail(`systemd-creds: failed to list '${credentialsDir}': ${message}`, "Unavailable");
+      }
+    }
+
+    return ok(null);
   }
 
   /**
@@ -73,9 +154,22 @@ export class KeyringSystemdCreds {
       return fail(`systemd-creds: CREDENTIALS_DIRECTORY '${credentialsDir}' does not exist.`, "NotFound");
     }
 
-    const fileRes = this.resolveCredentialFile(credentialsDir, service.trim(), account.trim());
+    const trimmedService = service.trim();
+    const trimmedAccount = account.trim();
+    const fileRes = KeyringSystemdCreds.findCredentialFile(
+      credentialsDir,
+      trimmedService,
+      trimmedAccount,
+      this._credentialName
+    );
     if (!fileRes.ok) {
       return fileRes;
+    }
+    if (fileRes.value === null) {
+      return fail(
+        `systemd-creds: no credential file found for '${trimmedService}/${trimmedAccount}' in '${credentialsDir}'.`,
+        "NotFound"
+      );
     }
 
     try {
@@ -111,60 +205,6 @@ export class KeyringSystemdCreds {
     void account;
     signal?.throwIfAborted();
     return fail(KeyringSystemdCreds.IMMUTABLE_ERROR_MESSAGE, "Forbidden");
-  }
-
-  private resolveCredentialFile(
-    credentialsDir: string,
-    service: string,
-    account: string
-  ): Result<string> {
-    const candidates =
-      this._credentialName !== undefined
-        ? [this._credentialName, `${this._credentialName}.key`]
-        : [
-            `${service}.key`,
-            `${account}.key`,
-            service,
-            account,
-            "nyssa-key",
-            "nyssa-key.key",
-            "master-key",
-            "master-key.key"
-          ];
-
-    for (const name of candidates) {
-      if (name.includes("/") || name.includes("\\") || name === ".." || name === ".") {
-        continue;
-      }
-      const candidatePath = path.join(credentialsDir, name);
-      if (path.dirname(candidatePath) === credentialsDir && fs.existsSync(candidatePath)) {
-        try {
-          if (fs.statSync(candidatePath).isFile()) {
-            return ok(candidatePath);
-          }
-        } catch {
-          // continue checking candidates
-        }
-      }
-    }
-
-    if (this._credentialName === undefined) {
-      try {
-        const entries = fs.readdirSync(credentialsDir, { withFileTypes: true });
-        const files = entries.filter((e) => e.isFile());
-        if (files.length === 1 && files[0] !== undefined) {
-          return ok(path.join(credentialsDir, files[0].name));
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return fail(`systemd-creds: failed to list '${credentialsDir}': ${message}`, "Unavailable");
-      }
-    }
-
-    return fail(
-      `systemd-creds: no credential file found for '${service}/${account}' in '${credentialsDir}'.`,
-      "NotFound"
-    );
   }
 
   private parseKeyMaterial(rawBytes: Buffer, filePath: string): Result<Buffer> {

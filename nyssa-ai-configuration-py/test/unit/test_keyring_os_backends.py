@@ -192,7 +192,8 @@ def test_keyring_default_linux_systemd_creds_encrypt_decrypt_delete_and_error_cl
     simulated_error = None
     assert keyring.delete_key("nyssa-ai-configuration", "OrdersService").ok
     assert not cred_file.exists()
-    assert keyring.get_key("nyssa-ai-configuration", "OrdersService").value is None
+    after_del = keyring.get_key("nyssa-ai-configuration", "OrdersService")
+    assert after_del.ok and after_del.value is None
 
 
 def test_keyring_default_windows_credman_read_write_delete_and_error_classification(

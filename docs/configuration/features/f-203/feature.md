@@ -41,11 +41,11 @@ Enterprise and team applications need to keep shared or regulated secrets in a r
 ## Inputs
 
 - Registered `ICloudKeyVaultFactory` instances matched by `VaultOptions.Kind`.
-- Resolved `VaultOptions` (`Name`, `Kind`, `Endpoint`, `Credential`, `Settings`, `Secrets`) from `BootstrapOptions` or `config-manifest.json`.
+- Resolved `VaultOptions` (`Name`, `Kind`, `Endpoint`, `Credential`, `CacheTTLSeconds`, `Settings`, `Secrets`) layered from `BootstrapOptions` (`KeyVault` / `KeyVaults`) and root `keyVaults` in `config-manifest.json`.
 
 ## Outputs
 
-- Internal `IConfigurationProvider` adapter registered under `VaultOptions.Name`.
+- Internal `IConfigurationProvider` adapter(s) registered under each configured `VaultOptions.Name`.
 - Local `ConfigurationPointer` entries in `<namespace>.json` and remote secret reads/writes/deletions delegated to `ICloudKeyVault`.
 
 ## Acceptance
@@ -53,7 +53,7 @@ Enterprise and team applications need to keep shared or regulated secrets in a r
 - Saving a value with `provider: "<vaultName>"` writes the secret to `ICloudKeyVault.WriteAsync` and records only the returned `ConfigurationPointer` and `"provider": "<vaultName>"` in `<namespace>.json`.
 - Reading that entry resolves the secret through `ICloudKeyVault.ReadAsync(pointer)`, including when assembled as part of a multi-provider namespace DTO (`GetAsAsync<T>(namespace)`).
 - Configuring a vault with an OAuth `credential` (`"ns/key"`) supplies a working `IAccessTokenSource` to the vault factory and blocks `CircularCredential` self-reference on both read and write.
-- Both `.NET` and `TypeScript/Node.js` implementations support pluggable cloud vault factories and pass multi-provider namespace tutorials.
+- `.NET`, `TypeScript/Node.js`, and `Python` implementations support multiple pluggable cloud vault factories and pass multi-provider namespace tutorials.
 - The path contract matches `.plan-product/config.json`.
 
 ## Dependencies
