@@ -63,11 +63,14 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Build local dependencies if needed
-        if: steps.target.outputs.pkg_dir == 'nyssa-ai-configuration-ts'
+        if: steps.target.outputs.pkg_dir == 'nyssa-ai-configuration-ts' || steps.target.outputs.pkg_dir == 'nyssa-ai-dbgateway-ts'
         run: |
-          cd nyssa-ai-result-ts
-          npm ci
-          npm run build
+          for dep_dir in nyssa-ai-result-ts nyssa-ai-logging-ts; do
+            (cd "$dep_dir" && npm ci && npm run build)
+          done
+          if [[ "${{ steps.target.outputs.pkg_dir }}" == "nyssa-ai-dbgateway-ts" ]]; then
+            (cd nyssa-ai-configuration-ts && npm ci && npm run build)
+          fi
 
       - name: Install dependencies
         working-directory: ${{ steps.target.outputs.pkg_dir }}
