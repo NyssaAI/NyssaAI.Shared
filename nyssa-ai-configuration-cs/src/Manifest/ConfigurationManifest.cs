@@ -4,9 +4,9 @@ namespace NyssaAI.Configuration.Manifest;
 
 /// <summary>
 /// ConfigurationManifest is the on-disk shape of <c>~/.nyssa-ai/config-manifest.json</c>: one file
-/// per user, one section per application name. A section says where that application's
-/// configuration directory is, which key vault it uses, and its lock timeout. Encryption is never
-/// mentioned because it is never optional.
+/// per user, shared root <c>keyVaults</c> definitions, and one section per application name. A
+/// section says where that application's configuration directory is and its lock timeout.
+/// Encryption is never optional.
 /// </summary>
 /// <remarks>
 /// The same schema is read from the default path and from a path the developer codes, and it is
@@ -22,6 +22,10 @@ internal sealed record ConfigurationManifest
     /// <summary>Gets the schema version.</summary>
     [JsonPropertyName("version")]
     public int Version { get; init; } = SupportedVersion;
+
+    /// <summary>Gets the shared cloud key vaults, keyed by vault provider name.</summary>
+    [JsonPropertyName("keyVaults")]
+    public Dictionary<string, VaultManifestEntry>? KeyVaults { get; init; }
 
     /// <summary>Gets the sections, keyed by application name.</summary>
     [JsonPropertyName("applications")]

@@ -16,7 +16,7 @@ Sign in interactively to a configured cloud key vault that authenticates with OA
 
 ## Starting Context
 
-The application manifest (or `BootstrapOptions.KeyVault`) configures a cloud key vault (e.g. `name: "contoso"`, `kind: "fake"`, `credential: "vault/contoso-token"`), and the registered `ICloudKeyVaultFactory` returns `OAuthOptions` from `Authorization(vaultOptions)`.
+Root `keyVaults` in `config-manifest.json` (or `BootstrapOptions.KeyVault` / `BootstrapOptions.KeyVaults`) configures a cloud key vault (e.g. `name: "contoso"`, `kind: "fake"`, `credential: "vault/contoso-token"`), and the registered `ICloudKeyVaultFactory` returns `OAuthOptions` from `Authorization(vaultOptions)`.
 
 ## Entry Route
 

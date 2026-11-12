@@ -114,12 +114,14 @@ class KeyringDefault:
     @staticmethod
     def _get_windows(target: str) -> Result[bytes | None]:
         try:
-            advapi32 = ctypes.windll.advapi32
+            windll: object = getattr(ctypes, "windll")
+            advapi32 = getattr(windll, "advapi32")
+            get_last_error = getattr(ctypes, "GetLastError")
             cred_cls = _win_credential_type()
             cred_ptr = ctypes.POINTER(cred_cls)()
             res = advapi32.CredReadW(target, 1, 0, ctypes.byref(cred_ptr))
             if not res:
-                err = ctypes.GetLastError()
+                err = int(get_last_error())
                 return ok(None) if err == 1168 else fail(f"CredReadW failed with error {err}.", "Unavailable")
             try:
                 cred = cred_ptr.contents
@@ -139,7 +141,9 @@ class KeyringDefault:
     @staticmethod
     def _set_windows(target: str, b64_secret: str) -> Result[None]:
         try:
-            advapi32 = ctypes.windll.advapi32
+            windll: object = getattr(ctypes, "windll")
+            advapi32 = getattr(windll, "advapi32")
+            get_last_error = getattr(ctypes, "GetLastError")
             cred_cls = _win_credential_type()
             blob = b64_secret.encode("utf-16le")
             cred = cred_cls()
@@ -151,7 +155,7 @@ class KeyringDefault:
             cred.Persist = 2
             res = advapi32.CredWriteW(ctypes.byref(cred), 0)
             if not res:
-                return fail(f"CredWriteW failed with error {ctypes.GetLastError()}.", "Unavailable")
+                return fail(f"CredWriteW failed with error {int(get_last_error())}.", "Unavailable")
             return ok(None)
         except Exception as exc:
             return fail(f"Windows keyring write error: {exc}", "Unavailable", exc)
@@ -159,10 +163,12 @@ class KeyringDefault:
     @staticmethod
     def _delete_windows(target: str) -> Result[None]:
         try:
-            advapi32 = ctypes.windll.advapi32
+            windll: object = getattr(ctypes, "windll")
+            advapi32 = getattr(windll, "advapi32")
+            get_last_error = getattr(ctypes, "GetLastError")
             res = advapi32.CredDeleteW(target, 1, 0)
             if not res:
-                err = ctypes.GetLastError()
+                err = int(get_last_error())
                 if err != 1168:
                     return fail(f"CredDeleteW failed with error {err}.", "Unavailable")
             return ok(None)

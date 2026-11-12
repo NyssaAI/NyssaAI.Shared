@@ -4,9 +4,12 @@
 """Keyring package."""
 
 from nyssa_ai_configuration.keyring.keyring import (
+    MANIFEST_KEY_ACCOUNT,
     Keyring,
+    get_existing_key,
     get_or_create_key,
     resolve_keyring,
+    resolve_manifest_keyring,
 )
 from nyssa_ai_configuration.keyring.keyring_default import KeyringDefault
 from nyssa_ai_configuration.keyring.keyring_in_memory import KeyringInMemory
@@ -19,6 +22,9 @@ __all__ = [
     "KeyringInMemory",
     "KeyringProtectedFile",
     "KeyringSystemdCreds",
+    "MANIFEST_KEY_ACCOUNT",
+    "get_existing_key",
     "get_or_create_key",
     "resolve_keyring",
+    "resolve_manifest_keyring",
 ]

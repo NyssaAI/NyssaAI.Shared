@@ -7,9 +7,11 @@
 //     +-- configDirectory
 //     +-- configManifest
 //     +-- keyVault
+//     +-- keyVaults
 //     +-- keyring
 //     +-- lockTimeoutMs
 //     +-- logger
+//     +-- manifestKeyring
 //     +-- oauthClient
 //     +-- secretCache
 //     +-- systemdCredentialName
@@ -33,12 +35,16 @@ export interface ConfigurationOptions {
   readonly configDirectory?: string | undefined;
   /** Custom manifest file path (defaults to ~/.nyssa-ai/config-manifest.json). */
   readonly configManifest?: string | undefined;
-  /** Developer-supplied default vault configuration (overridden whole if the manifest section defines keyVault). */
+  /** Developer-supplied single default vault configuration (overridden whole if root manifest keyVaults defines a matching name). */
   readonly keyVault?: VaultOptions | undefined;
+  /** Additional developer-supplied named vault configurations layered beneath root manifest keyVaults. */
+  readonly keyVaults?: ReadonlyArray<VaultOptions> | undefined;
   /** Registered vault provider factories keyed by VaultOptions.kind. */
   readonly vaultFactories?: ReadonlyArray<IVaultProviderFactory> | undefined;
-  /** Custom keyring implementation for master key custody. */
+  /** Custom keyring implementation for application master key custody. */
   readonly keyring?: IKeyring | undefined;
+  /** Optional custom keyring implementation dedicated to '_manifest' master key custody. */
+  readonly manifestKeyring?: IKeyring | undefined;
   /** Optional custom secret cache store (e.g. OS keyring cache for CLI processes) used by VaultProviderCaching. */
   readonly secretCache?: SecretCache | undefined;
   /** Name of the systemd credential file in CREDENTIALS_DIRECTORY (defaults to applicationName or master-key). */

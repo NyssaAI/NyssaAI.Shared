@@ -12,27 +12,27 @@ Manifest Reader (`ConfigurationManifestReader`).
 
 ## Goal
 
-Verify that a configuration manifest containing sensitive bootstrap secrets (such as `keyVault.secrets`) is completely private—meaning other accounts on the machine cannot read or execute it—and provide an exact remediation command if exposed.
+Verify that a configuration manifest containing sensitive bootstrap secret envelopes (such as root `keyVaults.<vaultName>.secrets`) is completely private—meaning other accounts on the machine cannot read or execute it—and provide an exact remediation command if exposed.
 
 ## Starting Context
 
-A manifest file exists at `~/.nyssa-ai/config-manifest.json` (or a custom path). The manifest has been parsed or is about to be used, and contains at least one application entry with a non-empty `keyVault.secrets` collection.
+A manifest file exists at `~/.nyssa-ai/config-manifest.json` (or a custom path). Immediately after parsing the root JSON object, at least one root `keyVaults.<vaultName>.secrets` map (or legacy `applications.<app>.keyVault.secrets` map) is present and non-empty.
 
 ## Entry Route
 
-Invoked via `DirectorySafety.VerifyPrivateFile(manifestPath)` before consuming secrets from the manifest.
+Invoked first via `DirectorySafety.VerifyPrivateFile(manifestPath)` during `ConfigurationManifestReader.Read` / `readManifest` / `read_manifest`, before running legacy-section or secret-envelope validation.
 
 ## Trigger
 
-An application section in the manifest declares remote vault authentication settings containing static secrets (`keyVault.secrets`).
+A manifest declares vault bootstrap secrets under root `keyVaults.<vaultName>.secrets` (or legacy `applications.<app>.keyVault.secrets`).
 
 ## Process
 
 ```text
 Actor verifies private file read permissions
-+-- Starting context: manifest file path identified with keyVault.secrets
-+-- Entry route: DirectorySafety.VerifyPrivateFile(path) called
-+-- Trigger: manifest contains vault secrets requiring read lockdown
++-- Starting context: manifest file path identified with non-empty keyVaults.<vaultName>.secrets
++-- Entry route: DirectorySafety.VerifyPrivateFile(path) called first after JSON parse
++-- Trigger: manifest contains vault secret entries requiring read lockdown
 +-- Step 1: Execute baseline write safety verification (UC-001)
 |   +-- Call DirectorySafety.VerifyFile(path)
 |   +-- Verification fails (untrusted owner or writable by others)
@@ -68,11 +68,11 @@ Actor verifies private file read permissions
 ### Step 3: Inspect platform read security descriptors
 - **Windows Details:** Scans all access rules for `AccessControlType.Allow` where `(rule.FileSystemRights & FileSystemRights.ReadData) != 0`. If `rule.IdentityReference` matches `WorldSid`, `AuthenticatedUserSid`, `BuiltinUsersSid`, or `BuiltinGuestsSid`, the check fails immediately. The technical error message details the offending group and includes the command: `icacls "<path>" /inheritance:r /grant:r "%USERNAME%:F"`.
 - **Unix Details:** Evaluates `mode & (UnixFileMode.OtherRead | UnixFileMode.OtherExecute)` and `mode & (UnixFileMode.GroupRead | UnixFileMode.GroupExecute)`. If any group or other bit is set, it fails immediately with `ErrorCategory.Forbidden`. The technical error message specifies which bits leaked access and instructs the operator to run: `chmod 600 '<path>'`.
-- **Secret Safety:** The error message never prints or references the contents of `keyVault.secrets`, only the path, offending permissions, and remediation command.
+- **Secret Safety:** The error message never prints or references the contents or ciphertext of `keyVaults.<vaultName>.secrets`, only the path, offending permissions, and remediation command.
 
 ## Success
 
-The manifest file is verified to be non-readable by any unauthorized account on the machine, preventing secret exposure before startup completes.
+The manifest file is verified to be non-readable by any unauthorized account on the machine, preventing secret or ciphertext exposure before startup completes.
 
 ## Failure Cases
 
@@ -82,7 +82,7 @@ The manifest file is verified to be non-readable by any unauthorized account on 
 
 ## Consistency Check
 
-- Unique coverage: Specifically validates *read* permissions on files containing unencrypted bootstrap secrets.
+- Unique coverage: Specifically validates *read* permissions first on manifest files containing non-empty root `keyVaults.<vaultName>.secrets` (or legacy `applications.<app>.keyVault.secrets`) entries.
 - Closest related use cases: `UC-001` only validates write and ownership safety; `UC-003` handles writing protected files initially.
 - Contradictions: None found.
 

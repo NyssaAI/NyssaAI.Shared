@@ -4,9 +4,9 @@
     "net10.0": {
       "Microsoft.DotNet.ILCompiler": {
         "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "AawF393Q+VkdrnrnI1gu612zh5iqpa1AGSvnKCQ3IkMgSKJXIQbO1sXYRgEzOU4f0cPZ6MaCCF29xZSGWlmbuQ=="
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "MjeBT/P5YgUuXfwSbI3ms+F5DkQ2+ilynoHE2jA/Kto//MaE/wtP5EveCAL8abpxFGw9tlHNTAV1j60Wh1oLqg=="
       },
       "Microsoft.Extensions.DependencyInjection": {
         "type": "Direct",
@@ -49,9 +49,9 @@
       },
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "xi+BDjFpW+Sb+MHFHaH6Y/gV9I8BluFwRXc1QyCdoZbIK26eNiBeFuMTe/FMwc33G1wdHCyDg7CVTmb8OdQrMQ=="
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "u0WnRcZgBZYHlVFpbe/3Adpmb9rmNJ8/fmEwqc/xjB7fFppq+gfaLJd3Sdaw+J02zV0eP/T9dneQ3Dv5jWw6bw=="
       },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
@@ -300,26 +300,13 @@
         "resolved": "10.0.11",
         "contentHash": "QTXEoQBzz00SFWbo7nAg1Ogd4f99lwqcO9uAJ7MYSLEUR28f6As32QktrqG2Fr9cfAfd1GjLyGYspE7Ipj7P6w=="
       },
-      "nyssaai.configuration": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.11, )",
-          "Microsoft.Extensions.Http": "[10.0.11, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.11, )",
-          "NyssaAI.Result": "[0.2.1, )"
-        }
-      },
       "nyssaai.dbgateway": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.11, )",
-          "Npgsql": "[10.0.3, )",
-          "NyssaAI.Configuration": "[0.3.1, )"
+          "Npgsql": "[10.0.3, )"
         }
-      },
-      "nyssaai.result": {
-        "type": "Project"
       },
       "Microsoft.Data.Sqlite": {
         "type": "CentralTransitive",
@@ -337,20 +324,6 @@
         "requested": "[10.0.11, )",
         "resolved": "10.0.11",
         "contentHash": "/a1aJz4m7ylhEDf25ugQChLQoN5XwoGjWw/BoR/ZWWKsO1v4DdJElS1uyngahz4B/eOzjFk1KNTkarRLE5wsIg=="
-      },
-      "Microsoft.Extensions.Http": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.11, )",
-        "resolved": "10.0.11",
-        "contentHash": "ujx8RvcKzkxPFBguwgiygbwWVHVK0P7HFlNJ6I0JBRb28tzwe42jixBoA+dGmqG9IHepPVcm04vv2IDnU93ekA==",
-        "dependencies": {
-          "Microsoft.Extensions.Configuration.Abstractions": "10.0.11",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.11",
-          "Microsoft.Extensions.Diagnostics": "10.0.11",
-          "Microsoft.Extensions.Logging": "10.0.11",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.11",
-          "Microsoft.Extensions.Options": "10.0.11"
-        }
       },
       "Microsoft.Extensions.Logging": {
         "type": "CentralTransitive",
@@ -398,17 +371,17 @@
     "net10.0/linux-x64": {
       "Microsoft.DotNet.ILCompiler": {
         "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "AawF393Q+VkdrnrnI1gu612zh5iqpa1AGSvnKCQ3IkMgSKJXIQbO1sXYRgEzOU4f0cPZ6MaCCF29xZSGWlmbuQ==",
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "MjeBT/P5YgUuXfwSbI3ms+F5DkQ2+ilynoHE2jA/Kto//MaE/wtP5EveCAL8abpxFGw9tlHNTAV1j60Wh1oLqg==",
         "dependencies": {
-          "runtime.linux-x64.Microsoft.DotNet.ILCompiler": "10.0.12"
+          "runtime.linux-x64.Microsoft.DotNet.ILCompiler": "10.0.15"
         }
       },
       "runtime.linux-x64.Microsoft.DotNet.ILCompiler": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "wAa+LAE6+Bkd+pEJvGdnQU8PZQRzvhurpQ4hzsOTpRuedIq1kunJcz86xBCBlzsc+QlVdCKVUPzEfB3uYVB7Gw=="
+        "resolved": "10.0.15",
+        "contentHash": "bxsHJDYsOBbOO/UnDDm6zG4Osn5EOW7bk8VBmCRH4r4RBkD5KerbNxYFFk2Pw7uRhqOaXACel0IoancPxgig4w=="
       },
       "SQLitePCLRaw.lib.e_sqlite3": {
         "type": "Transitive",
@@ -424,17 +397,17 @@
     "net10.0/win-x64": {
       "Microsoft.DotNet.ILCompiler": {
         "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "AawF393Q+VkdrnrnI1gu612zh5iqpa1AGSvnKCQ3IkMgSKJXIQbO1sXYRgEzOU4f0cPZ6MaCCF29xZSGWlmbuQ==",
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "MjeBT/P5YgUuXfwSbI3ms+F5DkQ2+ilynoHE2jA/Kto//MaE/wtP5EveCAL8abpxFGw9tlHNTAV1j60Wh1oLqg==",
         "dependencies": {
-          "runtime.win-x64.Microsoft.DotNet.ILCompiler": "10.0.12"
+          "runtime.win-x64.Microsoft.DotNet.ILCompiler": "10.0.15"
         }
       },
       "runtime.win-x64.Microsoft.DotNet.ILCompiler": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "clsgU9GnioCJ+PBzQTCoJHxLXRU+7O/BzYrwRT8CUP7jgyYjNgJmNsQ/kbzAA7MG5kDvFoFvIBGHGzYdINh/EQ=="
+        "resolved": "10.0.15",
+        "contentHash": "WEtOJ41ItA7fJ+pqQFYgCmZxiX5d6AByfLWbifqEjyjkfFXmD9/T9V7xTwrvh5OxkJkBhnZsygcdU0Al9MNcVw=="
       },
       "SQLitePCLRaw.lib.e_sqlite3": {
         "type": "Transitive",

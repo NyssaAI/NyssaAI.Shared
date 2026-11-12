@@ -54,6 +54,14 @@ public sealed class BootstrapOptions
     /// </summary>
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
-    /// <summary>Gets or sets the key vault this application reads sealed values through, or null when it uses none.</summary>
+    /// <summary>Gets or sets the primary key vault this application reads sealed values through, or null when it uses none.</summary>
     public VaultOptions? KeyVault { get; set; }
+
+    /// <summary>
+    /// Gets additional key vaults this application reads sealed values through. Distinct vault
+    /// names coexist alongside <see cref="KeyVault"/> and root <c>keyVaults</c> entries in the
+    /// configuration manifest; a manifest vault with the same <see cref="VaultOptions.Name"/>
+    /// replaces the programmatic entry whole.
+    /// </summary>
+    public IList<VaultOptions> KeyVaults { get; } = [];
 }

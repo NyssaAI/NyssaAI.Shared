@@ -31,11 +31,11 @@ These files define the operational schema of the configuration component itself:
 ### A. The Bootstrap Manifest (`config-manifest.json`)
 The central file read and written by the configuration component to bootstrap applications and discover their storage:
 - **Default Path**: `~/.nyssa-ai/config-manifest.json` (where `~` is the user profile root).
-- **Function**: Maps application names to their storage directories, configures document lock timeouts, and declares external cloud key vaults.
+- **Function**: Maps application names to their storage directories, configures document lock timeouts, and declares shared root-level external cloud key vaults (`keyVaults`).
 - **Files**:
-  - [`config-manifest.json`](config-manifest.json): Full multi-application manifest with cloud vault and custom timeout settings.
-  - [`config-manifest.minimal.json`](config-manifest.minimal.json): Minimal manifest automatically provisioned on an application's first run.
-  - [`config-manifest.vault.json`](config-manifest.vault.json): Advanced manifest configuring Bitwarden Secrets Manager and Azure Key Vault integrations.
+  - [`config-manifest.json`](config-manifest.json): Full multi-application manifest with a shared root `keyVaults` entry and custom timeout settings.
+  - [`config-manifest.minimal.json`](config-manifest.minimal.json): Minimal manifest automatically provisioned on an application's first run (`keyVaults` omitted when empty).
+  - [`config-manifest.vault.json`](config-manifest.vault.json): Advanced multi-vault manifest configuring Bitwarden Secrets Manager (project-scoped) and Azure Key Vault integrations at the root `keyVaults` level.
 
 ### B. Namespace Document Envelope (`namespace-envelope.template.json`)
 - **File**: [`namespace-envelope.template.json`](namespace-envelope.template.json)
@@ -66,34 +66,42 @@ Application data (such as database credentials, API keys, or mail server setting
 ```json
 {
   "version": 1,
+  "keyVaults": {
+    "<VaultName>": {
+      "kind": "<string>",
+      "endpoint": "<URI string>",
+      "credential": "<namespace/key>",
+      "cacheTTLSeconds": 60,
+      "settings": {
+        "<key>": "<string value>"
+      },
+      "secrets": {
+        "<key>": {
+          "value": "<FormatVersion 2 AES-256-GCM Base64URL ciphertext>",
+          "provider": "aesLocal",
+          "encrypted": true
+        }
+      }
+    }
+  },
   "applications": {
     "<ApplicationName>": {
       "configurationDirectory": "<string>",
-      "lockTimeoutMs": 10000,
-      "keyVault": {
-        "name": "<string>",
-        "kind": "<string>",
-        "endpoint": "<URI string>",
-        "credential": "<namespace/key>",
-        "cacheTTLSeconds": 60,
-        "settings": {
-          "<key>": "<string value>"
-        },
-        "secrets": {
-          "<key>": "<string secret value>"
-        }
-      }
+      "lockTimeoutMs": 10000
     }
   }
 }
 ```
 
 - **`version`** (`int`): Strictly `1`.
-- **`applications`** (`object`): Map of application sections. Sibling sections are preserved during writes.
+- **`keyVaults`** (`object`, optional): Shared root-level map of external cloud key vaults keyed by `<VaultName>` (cannot be blank, contain `/`, `\`, whitespace, or control characters, or use case-insensitively reserved names `"aesLocal"`, `"literal"`, `"oauth"`, `"default"`, `"plaintext"`). Omitted on disk when empty (`{}`).
+  - Each entry defines `kind`, optional absolute `endpoint` URI, optional local OAuth `credential` pointer (`"ns/key"`), optional `cacheTTLSeconds` (`integer >= 0`, defaults to `60`, `0` disables caching; also accepted under `settings["cacheTTLSeconds"]`), optional `settings` map (omitted when empty), and optional `secrets` map (omitted when empty; redundant inner `"name"` is omitted when writing and must match `<VaultName>` if present).
+  - **`secrets` Mandatory Encryption**: Every `keyVaults.<VaultName>.secrets.<secretKey>` entry MUST be an encrypted `aesLocal` envelope (`{"value": "<FormatVersion 2 Base64URL>", "provider": "aesLocal", "encrypted": true}`) sealed with the shared manifest master key (`service = "nyssa-ai-configuration"`, `account = "_manifest"`) and AAD `("keyVaults/<VaultName>", "<secretKey>")`. Plaintext strings are rejected with `Validation`.
+  - **Layering**: Manifest `keyVaults` entries layer over programmatic `BootstrapOptions` vaults (`keyVault` / `keyVaults`) by `name`: a matching manifest vault replaces the programmatic vault whole (inheriting code `cacheTTLSeconds` only when omitted in the manifest), while distinct vault names coexist.
+- **`applications`** (`object`): Map of application sections. Sibling `applications` and `keyVaults` entries are preserved during writes. Legacy per-application `applications.<ApplicationName>.keyVault` blocks are rejected with `Validation`.
 - **`configurationDirectory`** (`string`): Absolute or manifest-relative directory where `<namespace>.json` files reside. Once recorded, this location is canonical.
 - **`lockTimeoutMs`** (`integer`, recommended): Maximum wait duration for cross-process locks specified in integer milliseconds (e.g., `10000` for 10 seconds). For backward compatibility, libraries also accept `"lockTimeout": "hh:mm:ss"`. Defaults to 10000 ms (10 seconds) if omitted.
-- **`keyVault`** (`object`, optional): Replaces code-level vault options in full. Contains `name`, `kind`, optional HTTPS `endpoint`, local OAuth `credential` pointer (`"ns/key"`), optional `cacheTTLSeconds` (`integer >= 0`, defaults to `60`, `0` disables caching; also accepted under `settings["cacheTTLSeconds"]`), `settings` map, and `secrets` map.
-- **Permissions**: If `keyVault.secrets` has 1+ entries, POSIX `0600` / Windows private-file restrictions are strictly enforced.
+- **Permissions**: Whenever any `keyVaults.<VaultName>.secrets` (or legacy `applications.<ApplicationName>.keyVault.secrets`) entry is non-empty, `DirectorySafety.VerifyPrivateFile` (POSIX `0600` / Windows user-private ACL) runs **first** before validation and fails closed with `Forbidden` if readable by other accounts.
 
 ---
 

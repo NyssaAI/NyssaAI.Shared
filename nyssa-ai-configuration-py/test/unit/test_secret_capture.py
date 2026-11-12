@@ -316,6 +316,7 @@ def test_capture_secret_forced_provider(tmp_path: Path) -> None:
     invalid_opts = CaptureSecretOptions(forced_provider="nonexistent_vault", input_provider=mock_input)
     fail_res = client.capture_secret("app", "api_key2", invalid_opts)
     assert not fail_res.ok
+    assert fail_res.errors[0].technical_message is not None
     assert "not available" in fail_res.errors[0].technical_message
 
 
@@ -349,3 +350,46 @@ def test_capture_secret_unforced_defaults_to_aeslocal_but_allows_user_selection(
     assert "literal" in captured_reqs[0].available_providers
     assert captured_reqs[0].preferred_provider == "aesLocal"
     assert res.value.provider == "literal"
+
+
+def test_cli_and_loopback_provider_labels_distinguish_multiple_bitwarden_vaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    out_cli = io.StringIO()
+    in_cli = io.StringIO("2\n")
+    cli_provider = CliSecretInputProvider(stream_in=in_cli, stream_out=out_cli)
+    monkeypatch.setattr("getpass.getpass", lambda prompt="", stream=None: "vault-secret")
+
+    req = SecretPromptRequest(
+        namespace="payments",
+        key="stripeKey",
+        prompt_message="Enter Stripe Key",
+        available_providers=["aesLocal", "bws-corporate", "bws-prod", "bws-staging", "literal"],
+        preferred_provider="aesLocal",
+        confirm=False,
+        timeout_seconds=5.0,
+    )
+    cli_res = cli_provider.capture(req)
+    assert cli_res.ok
+    assert cli_res.value.selected_provider == "bws-corporate"
+    cli_text = out_cli.getvalue()
+    assert "Encrypted Locally (AES-256-GCM)" in cli_text
+    assert "[aesLocal]" not in cli_text
+    assert "Key Vault (Bitwarden Secrets Manager) [bws-corporate]" in cli_text
+    assert "Key Vault (Bitwarden Secrets Manager) [bws-prod]" in cli_text
+    assert "Key Vault (Bitwarden Secrets Manager) [bws-staging]" in cli_text
+
+    out_loop = io.StringIO()
+    loop_provider = LoopbackSecretInputProvider(stream_out=out_loop)
+    t = threading.Thread(target=lambda: loop_provider.capture(req), daemon=True)
+    t.start()
+    url = loop_provider.wait_for_url(timeout=5.0)
+    assert url is not None
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        html_body = resp.read().decode("utf-8")
+    loop_provider.cancel()
+    t.join(timeout=5.0)
+
+    assert "Key Vault (Bitwarden Secrets Manager) [bws-corporate]" in html_body
+    assert "Key Vault (Bitwarden Secrets Manager) [bws-prod]" in html_body
+    assert "Key Vault (Bitwarden Secrets Manager) [bws-staging]" in html_body
+    assert "[aesLocal]" not in html_body
+    assert "[literal]" not in html_body

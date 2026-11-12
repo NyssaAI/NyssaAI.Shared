@@ -48,9 +48,9 @@ try {
 
     $tsPackages = @(
         'nyssa-ai-result-ts',
+        'nyssa-ai-logging-ts',
         'nyssa-ai-configuration-ts',
-        'nyssa-ai-dbgateway-ts',
-        'nyssa-ai-logging-ts'
+        'nyssa-ai-dbgateway-ts'
     )
     foreach ($tsPkg in $tsPackages) {
         Push-Location (Join-Path $repoRoot $tsPkg)

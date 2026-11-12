@@ -82,30 +82,25 @@ public sealed class BitwardenVaultTutorials
                 CloudKeyVaultBitwarden.CommandFailed("bitwarden", "unexpected command")));
         }
 
-        workstation.WriteManifest(
-            """
+        ConfigurationServiceCollectionExtensions.SetManifestKeyVault(
+            workstation.ManifestPath,
+            new VaultOptions
             {
-              "version": 1,
-              "applications": {
-                "SomeApp-cli": {
-                  "configurationDirectory": "SomeApp-cli",
-                  "keyVault": {
-                    "name": "bitwarden",
-                    "kind": "bitwarden-secrets",
-                    "endpoint": "https://api.bitwarden.com",
-                    "cacheTTLSeconds": 60,
-                    "settings": {
-                      "organizationId": "11111111-2222-3333-4444-555555555555",
-                      "projectId": "99999999-8888-7777-6666-555555555555"
-                    },
-                    "secrets": {
-                      "accessToken": "bws-machine-token-xyz"
-                    }
-                  }
-                }
-              }
-            }
-            """);
+                Name = "bitwarden",
+                Kind = "bitwarden-secrets",
+                Endpoint = new Uri("https://api.bitwarden.com"),
+                CacheTTLSeconds = 60,
+                Settings =
+                {
+                    ["organizationId"] = "11111111-2222-3333-4444-555555555555",
+                    ["projectId"] = "99999999-8888-7777-6666-555555555555",
+                },
+                Secrets =
+                {
+                    ["accessToken"] = "bws-machine-token-xyz",
+                },
+            },
+            workstation.Keyring);
 
         ISecretCache secretCache = new SecretCacheInMemory(workstation.Clock);
         var services = workstation.CreateServices();
@@ -137,5 +132,112 @@ public sealed class BitwardenVaultTutorials
         Assert.Equal("whsec_live_bws_987", resolvedAfterExpiry);
         Assert.False(removal.RemoteValueRemains);
         Assert.Empty(remoteStore);
+    }
+
+    [Fact]
+    public async Task MultiVaultCoexistence_CorporateProdAndStagingBitwardenVaults_IsolatesProjectsAndMovesSecretsAsync()
+    {
+        using var workstation = new Workstation();
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var tokenToProject = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["token-corp"] = "proj-corp",
+            ["token-prod"] = "proj-prod",
+            ["token-staging"] = "proj-staging",
+        };
+        var storesByProject = new Dictionary<string, Dictionary<string, (string Id, string Value)>>(StringComparer.Ordinal)
+        {
+            ["proj-corp"] = new(StringComparer.Ordinal),
+            ["proj-prod"] = new(StringComparer.Ordinal),
+            ["proj-staging"] = new(StringComparer.Ordinal),
+        };
+        var nextId = 0;
+
+        ValueTask<Result<string>> MultiProjectRunner(
+            string binary,
+            IReadOnlyList<string> args,
+            IReadOnlyDictionary<string, string> env,
+            CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!env.TryGetValue(CloudKeyVaultBitwarden.AccessTokenEnvironmentVariable, out var token)
+                || !tokenToProject.TryGetValue(token, out var authorizedProject))
+            {
+                return ValueTask.FromResult(Result<string>.Failure(
+                    CloudKeyVaultBitwarden.CommandFailed("bws", "unauthorized", ErrorCategory.Forbidden)));
+            }
+
+            var projectStore = storesByProject[authorizedProject];
+
+            if (args is ["secret", "list", var listProject, "--output", "json"] && listProject == authorizedProject)
+            {
+                var items = projectStore.Select(kv => new { id = kv.Value.Id, key = kv.Key, value = kv.Value.Value }).ToList();
+                return ValueTask.FromResult(Result<string>.Success(JsonSerializer.Serialize(items)));
+            }
+
+            if (args is ["secret", "create", var key, var val, var createProject, "--output", "json"] && createProject == authorizedProject)
+            {
+                var id = $"{authorizedProject}-uuid-{++nextId}";
+                projectStore[key] = (id, val);
+                return ValueTask.FromResult(Result<string>.Success(
+                    JsonSerializer.Serialize(new { id, key, value = val })));
+            }
+
+            if (args is ["secret", "delete", var delId])
+            {
+                var match = projectStore.FirstOrDefault(kv => kv.Value.Id == delId);
+                if (match.Key is not null)
+                    projectStore.Remove(match.Key);
+                return ValueTask.FromResult(Result<string>.Success(string.Empty));
+            }
+
+            return ValueTask.FromResult(Result<string>.Failure(
+                CloudKeyVaultBitwarden.CommandFailed("bws", "unexpected command or project mismatch", ErrorCategory.Forbidden)));
+        }
+
+        foreach (var (vaultName, projectId, accessToken) in new[]
+        {
+            ("bws-corporate", "proj-corp", "token-corp"),
+            ("bws-prod", "proj-prod", "token-prod"),
+            ("bws-staging", "proj-staging", "token-staging"),
+        })
+        {
+            ConfigurationServiceCollectionExtensions.SetManifestKeyVault(
+                workstation.ManifestPath,
+                new VaultOptions
+                {
+                    Name = vaultName,
+                    Kind = "bitwarden-secrets",
+                    Settings = { ["organizationId"] = "org-nyssa", ["projectId"] = projectId },
+                    Secrets = { ["accessToken"] = accessToken },
+                },
+                workstation.Keyring);
+        }
+
+        var services = workstation.CreateServices();
+        services.AddBitwardenSecretsVault(new CloudKeyVaultFactoryBitwarden(runner: MultiProjectRunner));
+        services.AddNyssaConfiguration(workstation.Locate);
+        workstation.StartApplication(services);
+        var configuration = workstation.Host.GetRequiredService<IConfiguration>();
+
+        await configuration.SetAsync("billing", "stripeKey", "sk_corp_1", provider: "bws-corporate", cancellationToken: cancellationToken);
+        await configuration.SetAsync("billing", "prodKey", "sk_prod_1", provider: "bws-prod", cancellationToken: cancellationToken);
+        await configuration.SetAsync("api", "signingKey", "sk_stage_2", provider: "bws-staging", cancellationToken: cancellationToken);
+
+        Assert.Equal("sk_corp_1", await configuration.GetAsync("billing", "stripeKey", cancellationToken));
+        Assert.Equal("sk_prod_1", await configuration.GetAsync("billing", "prodKey", cancellationToken));
+        Assert.Equal("sk_stage_2", await configuration.GetAsync("api", "signingKey", cancellationToken));
+        Assert.True(storesByProject["proj-corp"].ContainsKey("billing/stripeKey"));
+        Assert.True(storesByProject["proj-prod"].ContainsKey("billing/prodKey"));
+        Assert.True(storesByProject["proj-staging"].ContainsKey("api/signingKey"));
+
+        var moved = await configuration.MoveAsync("api", "signingKey", "bws-prod", cancellationToken);
+        Assert.Equal("bws-staging", moved.From);
+        Assert.Equal("bws-prod", moved.To);
+        Assert.True(moved.SourceWithdrawn);
+        Assert.Empty(storesByProject["proj-staging"]);
+        Assert.True(storesByProject["proj-prod"].ContainsKey("api/signingKey"));
+        Assert.Equal("sk_stage_2", await configuration.GetAsync("api", "signingKey", cancellationToken));
     }
 }

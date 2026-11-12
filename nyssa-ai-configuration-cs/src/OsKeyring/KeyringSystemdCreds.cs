@@ -13,18 +13,32 @@ internal sealed class KeyringSystemdCreds : IKeyring
     /// <summary>The environment variable set by systemd when service credentials are mounted.</summary>
     public const string CredentialsDirectoryVariable = "CREDENTIALS_DIRECTORY";
 
+    private const string ManifestAccount = "_manifest";
+
     private const string ImmutableMessage =
         "systemd-creds is immutable at runtime; credentials must be provisioned via systemd service configuration.";
 
+    private static readonly string[] ManifestCredentialNames =
+    [
+        "nyssa-ai-configuration._manifest",
+        "_manifest.key",
+        "_manifest",
+        "nyssa-manifest-key",
+        "nyssa-manifest-key.key",
+    ];
+
     private readonly string? _systemdCredentialName;
+    private readonly string? _credentialsDirectory;
 
     /// <summary>
     /// Creates a keyring backed by <c>CREDENTIALS_DIRECTORY</c>.
     /// </summary>
     /// <param name="systemdCredentialName">Optional explicit credential filename to look up first.</param>
-    public KeyringSystemdCreds(string? systemdCredentialName = null)
+    /// <param name="credentialsDirectory">Optional directory override for deterministic testing; reads <c>CREDENTIALS_DIRECTORY</c> when null.</param>
+    public KeyringSystemdCreds(string? systemdCredentialName = null, string? credentialsDirectory = null)
     {
         _systemdCredentialName = systemdCredentialName;
+        _credentialsDirectory = credentialsDirectory;
     }
 
     /// <summary>
@@ -43,7 +57,7 @@ internal sealed class KeyringSystemdCreds : IKeyring
         if (target.IsFailure)
             return Result<string?>.Failure(target.Errors);
 
-        var directory = Environment.GetEnvironmentVariable(CredentialsDirectoryVariable);
+        var directory = _credentialsDirectory ?? Environment.GetEnvironmentVariable(CredentialsDirectoryVariable);
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
             return Result<string?>.Failure(DirectoryUnavailable);
 
@@ -86,16 +100,59 @@ internal sealed class KeyringSystemdCreds : IKeyring
         string service,
         string key)
     {
+        if (string.Equals(key, ManifestAccount, StringComparison.Ordinal))
+        {
+            string?[] manifestCandidates =
+            [
+                credName,
+                .. ManifestCredentialNames,
+            ];
+
+            foreach (var candidate in manifestCandidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                    continue;
+
+                var path = Path.Combine(directory, candidate);
+                if (!File.Exists(path))
+                    continue;
+
+                var value = File.ReadAllText(path).Trim();
+                if (value.Length > 0)
+                    return value;
+            }
+
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(explicitName))
+        {
+            foreach (var candidate in new[] { explicitName, $"{explicitName}.key" })
+            {
+                var path = Path.Combine(directory, candidate);
+                if (!File.Exists(path))
+                    continue;
+
+                var value = File.ReadAllText(path).Trim();
+                if (value.Length > 0)
+                    return value;
+            }
+
+            return null;
+        }
+
         string?[] candidates =
         [
-            explicitName,
             credName,
+            $"{credName}.key",
             $"{service}.key",
             $"{key}.key",
             service,
             key,
             "nyssa-key",
+            "nyssa-key.key",
             "master-key",
+            "master-key.key",
         ];
 
         foreach (var candidate in candidates)
@@ -112,7 +169,9 @@ internal sealed class KeyringSystemdCreds : IKeyring
                 return value;
         }
 
-        var files = Directory.GetFiles(directory);
+        var files = Directory.GetFiles(directory)
+            .Where(file => !IsManifestCredentialFile(Path.GetFileName(file)))
+            .ToArray();
         if (files.Length == 1)
         {
             var value = File.ReadAllText(files[0]).Trim();
@@ -122,6 +181,10 @@ internal sealed class KeyringSystemdCreds : IKeyring
 
         return null;
     }
+
+    internal static bool IsManifestCredentialFile(string fileName) =>
+        ManifestCredentialNames.Contains(fileName, StringComparer.Ordinal)
+        || fileName.EndsWith("._manifest", StringComparison.Ordinal);
 
     /// <summary>The failure returned when Set or Delete is called on an immutable systemd credential directory.</summary>
     public static Error ImmutableStore { get; } = Error.FromMessages(

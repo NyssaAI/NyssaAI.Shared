@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
+import { ConfigurationManifestWriter } from "../../src/manifest/ConfigurationManifestWriter.js";
 import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
 import { ok, fail, type Result } from "@nyssa-ai/result";
 import type { IBrowserLauncher } from "../../src/oauth/IBrowserLauncher.js";
@@ -93,7 +94,6 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     if (!clientRes.ok) return;
     const client = clientRes.value;
 
-    // 1. First-time interactive PKCE setup
     const authRes = await client.authorize("graph", "mailToken", {
       authorizationEndpoint: "https://login.example.com/oauth2/v2.0/authorize",
       tokenEndpoint: "https://login.example.com/oauth2/v2.0/token",
@@ -104,21 +104,18 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     expect(browserLaunchCount).toBe(1);
     expect(capturedCodeVerifier.length).toBeGreaterThanOrEqual(43);
 
-    // Verify encrypted tokens on disk
     const rawGraph = fs.readFileSync(path.join(configDir, "graph.json"), "utf8");
     expect(rawGraph).not.toContain("access-token-initial");
     expect(rawGraph).not.toContain("refresh-token-initial");
 
-    // 2. Get mailToken while valid (no refresh, no browser)
     const validTokenRes = await client.get("graph", "mailToken");
     expect(validTokenRes.ok && validTokenRes.value).toBe("access-token-initial");
     expect(browserLaunchCount).toBe(1);
 
-    // 3. Advance clock within 5-minute expiry window (e.g., 56 minutes after a 60-minute grant)
     currentNowMs = Date.parse("2026-10-22T12:56:00Z");
     const refreshedTokenRes = await client.get("graph", "mailToken");
     expect(refreshedTokenRes.ok && refreshedTokenRes.value).toBe("access-token-refreshed");
-    expect(browserLaunchCount).toBe(1); // 0 additional browser launches
+    expect(browserLaunchCount).toBe(1);
   });
 
   it("oauthTutorials_invalidGrantMarksReauthRequiredAndReauthorizeClearsIt (F-202 UC-003)", async () => {
@@ -179,7 +176,6 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
 
     expect((await client.authorize("github", "oauthCred", oauthOpts)).ok).toBe(true);
 
-    // Expire token and trigger invalid_grant
     currentNowMs = Date.parse("2026-10-22T14:00:00Z");
     const expiredRes = await client.get("github", "oauthCred");
     expect(expiredRes.ok).toBe(false);
@@ -187,14 +183,12 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
       expect(expiredRes.category).toBe("Forbidden");
     }
 
-    // Verify reauth_required is persisted on the entry in github.json
     const docOnDisk = JSON.parse(fs.readFileSync(path.join(configDir, "github.json"), "utf8")) as Record<
       string,
       { reauth_required?: boolean }
     >;
     expect(docOnDisk["oauthCred"]?.reauth_required).toBe(true);
 
-    // Re-run reauthorize() using stored endpoint metadata to recover
     expect((await client.reauthorize("github", "oauthCred")).ok).toBe(true);
 
     const docAfterReauth = JSON.parse(
@@ -252,7 +246,6 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
       ).ok
     ).toBe(true);
 
-    // Advance clock past expiry and simulate a disk write failure AFTER .pending/slack.oauth.json is written
     currentNowMs = Date.parse("2026-10-22T13:30:00Z");
     client.setDocumentWriteInterceptor(() => fail("Simulated disk full during OAuth refresh write", "Unavailable"));
 
@@ -263,15 +256,14 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     const pendingOAuthPath = path.join(configDir, ".pending", "slack.oauth.json");
     expect(fs.existsSync(pendingOAuthPath)).toBe(true);
 
-    // Remove disk failure interceptor; next get("slack", "botGrant") replays .pending/slack.oauth.json without calling refreshToken again!
     client.setDocumentWriteInterceptor(undefined);
     const recoveredGet = await client.get("slack", "botGrant");
     expect(recoveredGet.ok && recoveredGet.value).toBe("rotated-access-from-journal");
-    expect(refreshCalls).toBe(1); // still 1 — did not call refreshToken a second time!
+    expect(refreshCalls).toBe(1);
     expect(fs.existsSync(pendingOAuthPath)).toBe(false);
   });
 
-  it("oauthTutorials_vaultCredentialResolutionAndOAuthRemoval_resolvesWithoutCycleAndRemovesCleanly (F-202 UC-005 & UC-006)", async () => {
+  it("oauthTutorials_rootManifestVaultCredentialResolutionAndOAuthRemoval_resolvesWithoutCycleAndRemovesCleanly (F-202 UC-005 & UC-006)", async () => {
     const currentNowMs = Date.parse("2026-10-22T12:00:00Z");
     const vaultSecrets = new Map<string, string>([["corp/apiSecret", "vault-secret-value-777"]]);
     let resolvedBearerToken = "";
@@ -300,9 +292,9 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
           scopes: ["https://vault.azure.net/.default"]
         });
       },
-      create(_options, getCredential): Result<IVaultProvider> {
+      create(options, getCredential): Result<IVaultProvider> {
         return ok({
-          name: "corpVault",
+          name: options.name,
           async getSecret(name: string, sig?: AbortSignal): Promise<Result<string>> {
             const credRes = await getCredential(sig);
             if (!credRes.ok) return credRes;
@@ -327,18 +319,23 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
       }
     };
 
+    expect(
+      (
+        await ConfigurationManifestWriter.setVault(manifestPath, {
+          name: "corpVault",
+          kind: "azure-key-vault",
+          credential: "oauth://azure-auth/vaultGrant",
+          settings: { vaultUri: "https://corp.vault.azure.net/" }
+        })
+      ).ok
+    ).toBe(true);
+
     const clientRes = await ConfigurationClient.initialize({
       applicationName: "VaultOAuthApp",
       configManifest: manifestPath,
       configDirectory: configDir,
       keyring,
       oauthClient,
-      keyVault: {
-        name: "corpVault",
-        kind: "azure-key-vault",
-        credential: "azure-auth/vaultGrant",
-        settings: { vaultUri: "https://corp.vault.azure.net/" }
-      },
       vaultFactories: [fakeVaultFactory],
       clock: () => currentNowMs
     });
@@ -346,10 +343,8 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     if (!clientRes.ok) return;
     const client = clientRes.value;
 
-    // Authorize OAuth credential for corpVault via authorizeProvider (stored at "azure-auth/vaultGrant")
     expect((await client.authorizeProvider("corpVault")).ok).toBe(true);
 
-    // Store a secret in corpVault -> resolves OAuth token from "azure-auth/vaultGrant"
     expect(
       (
         await client.set("corp", "apiSecret", "vault-secret-value-777", {
@@ -360,7 +355,6 @@ describe("OAuthTutorials Public Use Cases (F-202)", () => {
     ).toBe(true);
     expect(resolvedBearerToken).toBe("valid-oauth-vault-token");
 
-    // Removing OAuth credential via remove()
     const rmRes = await client.remove("azure-auth", "vaultGrant");
     expect(rmRes.ok).toBe(true);
 

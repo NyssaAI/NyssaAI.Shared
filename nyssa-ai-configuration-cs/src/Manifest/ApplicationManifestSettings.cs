@@ -9,6 +9,7 @@ internal sealed record ApplicationManifestSettings
     /// <summary>Gets the document lock timeout the section names, or null for the default.</summary>
     public TimeSpan? LockTimeout { get; init; }
 
-    /// <summary>Gets the key vault the section names, normalized, or null when it names none.</summary>
-    public VaultManifestEntry? KeyVault { get; init; }
+    /// <summary>Gets the normalized root key vaults from the manifest, keyed by vault provider name.</summary>
+    public IReadOnlyDictionary<string, VaultManifestEntry> KeyVaults { get; init; } =
+        new Dictionary<string, VaultManifestEntry>(StringComparer.Ordinal);
 }

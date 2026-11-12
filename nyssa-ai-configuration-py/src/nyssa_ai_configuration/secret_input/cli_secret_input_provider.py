@@ -22,13 +22,13 @@ def _format_provider_label(name: str) -> str:
         return "Encrypted Locally (AES-256-GCM)"
     if lower in ("literal", "default", "plaintext", ""):
         return "Free Text (Unencrypted Literal)"
-    if lower in ("bws", "bitwarden", "bitwarden-secrets"):
-        return "Key Vault (Bitwarden Secrets Manager)"
+    if lower in ("bws", "bitwarden", "bitwarden-secrets") or lower.startswith(("bws-", "bitwarden-")):
+        return f"Key Vault (Bitwarden Secrets Manager) [{name}]"
     if lower.startswith("azure"):
-        return "Key Vault (Azure Key Vault)"
+        return f"Key Vault (Azure Key Vault) [{name}]"
     if lower.startswith("hashi") or lower == "vault":
-        return "Key Vault (HashiCorp Vault)"
-    return f"Key Vault ({name})"
+        return f"Key Vault (HashiCorp Vault) [{name}]"
+    return f"Key Vault ({name}) [{name}]"
 
 
 class CliSecretInputProvider:
@@ -48,7 +48,7 @@ class CliSecretInputProvider:
             selected_provider = request.preferred_provider
             if len(request.available_providers) == 1:
                 label = _format_provider_label(request.available_providers[0])
-                self._stream_out.write(f"Storage destination: {label} [{request.available_providers[0]}] (Fixed by application)\n")
+                self._stream_out.write(f"Storage destination: {label} (Fixed by application)\n")
             elif len(request.available_providers) > 1:
                 self._stream_out.write("Select storage destination:\n")
                 default_idx = 1
@@ -58,7 +58,7 @@ class CliSecretInputProvider:
                         default_idx = idx
                     def_str = " (Default)" if is_def else ""
                     label = _format_provider_label(prov)
-                    self._stream_out.write(f"  [{idx}] {label} [{prov}]{def_str}\n")
+                    self._stream_out.write(f"  [{idx}] {label}{def_str}\n")
 
                 self._stream_out.write(f"Destination [{default_idx}]: ")
                 self._stream_out.flush()

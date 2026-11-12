@@ -36,7 +36,7 @@ internal sealed class CloudKeyVaultProvider : IConfigurationProvider
 
     public string? TargetReference(ConfigurationValue entry) => entry.Value;
 
-    public ICloudKeyVaultRecovery? Recovery => (_vault as CloudKeyVaultCaching)?.Recovery ?? (_vault as ICloudKeyVaultRecovery);
+    public ICloudKeyVaultRecovery? Recovery => _vault is CloudKeyVaultCaching caching ? caching.Recovery : _vault as ICloudKeyVaultRecovery;
 
     /// <inheritdoc/>
     public async ValueTask<Result<string>> ReadAsync(

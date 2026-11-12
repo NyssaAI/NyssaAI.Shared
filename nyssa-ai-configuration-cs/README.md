@@ -88,29 +88,34 @@ For example, a manifest can map `OrdersApp` to `D:/apps/orders/config`. The `ord
 ```
 * Once that directory is recorded in the manifest, it is canonical. The app code can suggest a location, but the manifest is what is used for locating the configuration data.
 
-In addition, the manifest can specify a secure key vault, its connection and authentication settings. If those details are present, the library will load the key vault provider and will enable it to keep encrypted secrets in a cloud vault; the local files will hold a pointer to that cloud vault secret.
+In addition, the manifest can specify one or more shared cloud key vaults under root `keyVaults`, with AES-256-GCM encrypted vault bootstrap secrets sealed under the manifest master key (`nyssa-ai-configuration/_manifest`). Any application in `applications` can store pointers against any configured root vault:
 ```json
 {
   "version": 1,
-  "applications": {
-    "OrdersApp": {
-      "configurationDirectory": "D:/apps/orders/config",
-      "keyVault": {
-        "name": "mailVault",
-        "kind": "bitwarden-secrets",
-        "settings": {
-          "organizationId": "11111111-1111-4111-8111-111111111111"
-        },
-        "secrets": {
-          "accessToken": "<bitwarden-machine-account-access-token>"
+  "keyVaults": {
+    "mailVault": {
+      "kind": "bitwarden-secrets",
+      "settings": {
+        "organizationId": "11111111-1111-4111-8111-111111111111"
+      },
+      "secrets": {
+        "accessToken": {
+          "value": "<FormatVersion 2 AES-256-GCM Base64URL ciphertext>",
+          "provider": "aesLocal",
+          "encrypted": true
         }
       }
+    }
+  },
+  "applications": {
+    "OrdersApp": {
+      "configurationDirectory": "D:/apps/orders/config"
     }
   }
 }
 ```
 
-This example uses the Bitwarden Secrets provider. Register its factory and replace the example organization ID and access token with your own values.
+This example uses the Bitwarden Secrets provider. Register its factory and use `SetManifestKeyVault` (or `nyssa-secrets vault set`) to seal the machine-account access token into `config-manifest.json`.
 
 You can specify a custom manifest location in application code, and use that manifest for as many applications as you see fit. If no path is supplied by application code, the manifest will be created in the default location.
 
@@ -145,7 +150,7 @@ For example, `mailserverSettings.json` can build one DTO from plain settings, a 
 }
 ```
 
-The encrypted password is a placeholder. The pointer `mailserverSettings/ApiKey` uses the Bitwarden Secrets implementation's `namespace/key` format. The adapter finds the secret with that name in the configured organization and retrieves its value. `mailVault` is the configured vault name; it must match the manifest's `keyVault.name`, with the Bitwarden factory registered for kind `bitwarden-secrets`. `encrypted` describes the local value, so it is omitted for a vault pointer.
+The encrypted password is a placeholder. The pointer `mailserverSettings/ApiKey` uses the Bitwarden Secrets implementation's `namespace/key` format. The adapter finds the secret with that name in the configured organization and retrieves its value. `mailVault` is the configured vault name; it must match the root `keyVaults` map key (`keyVaults.mailVault`), with the Bitwarden factory registered for kind `bitwarden-secrets`. `encrypted` describes the local value, so it is omitted for a vault pointer.
 
 Entries retain their `value` wrapper and omit metadata at its default: no `provider` means plaintext, and absent `encrypted` or `reauth_required` means false. Nondefault metadata is written when needed. The `"json": true` marker is retained for typed strings and provider-backed JSON so reads preserve their encoding.
 
@@ -575,7 +580,7 @@ The manifest records where each application's settings are stored. An operator c
 1. **Identify the application.** When options are constructed, the application name comes from the entry assembly's title, or its name if the title is blank or absent. Set `ApplicationName` to use another value. Constructing options without an entry assembly throws `InvalidOperationException`.
 2. **Read the application's section.** At any manifest location, the library creates a missing file or application section using `ConfigDirectory`. An invalid, unreadable, or unsafe manifest causes initialization to fail.
 3. **Use the recorded data directory.** Once the application's section exists, its `configurationDirectory` determines where settings are stored. Relative paths resolve against the manifest's directory. Changing `ConfigDirectory` does not move existing files or replace the recorded path.
-4. **Apply bootstrap overrides.** A vault defined in the manifest replaces all of `BootstrapOptions.KeyVault`. A manifest lock timeout overrides `BootstrapOptions.LockTimeout`.
+4. **Apply bootstrap overrides.** Root `keyVaults` entries in the manifest layer over programmatic vaults in `BootstrapOptions.KeyVault` and `BootstrapOptions.KeyVaults` by vault name (replacing a same-named programmatic vault whole while keeping distinct vaults active). A manifest lock timeout overrides `BootstrapOptions.LockTimeout`.
 
 For example, suppose `D:/apps/tool/config-manifest.json` records `./data` as the configuration directory. The `mail` namespace is stored at `D:/apps/tool/data/mail.json`, even if `options.ConfigDirectory` points to another location.
 

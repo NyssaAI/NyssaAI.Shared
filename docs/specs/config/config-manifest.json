@@ -1,22 +1,27 @@
 {
   "version": 1,
+  "keyVaults": {
+    "corporateVault": {
+      "kind": "bitwarden-secrets",
+      "endpoint": "https://vault.example.com",
+      "credential": "auth/bitwarden-token",
+      "cacheTTLSeconds": 60,
+      "settings": {
+        "organizationId": "b1a2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+      },
+      "secrets": {
+        "machineAccessToken": {
+          "value": "AggQ7xK9mP2vQ8nL4rW1yB5cD6eF7gH8jK9mN0pQ1rS2tU3vW4xY5zA6bC7d",
+          "provider": "aesLocal",
+          "encrypted": true
+        }
+      }
+    }
+  },
   "applications": {
     "OrdersApp": {
       "configurationDirectory": "D:/apps/orders/config",
-      "lockTimeoutMs": 10000,
-      "keyVault": {
-        "name": "corporateVault",
-        "kind": "bitwarden-secrets",
-        "endpoint": "https://vault.example.com",
-        "credential": "auth/bitwarden-token",
-        "cacheTTLSeconds": 60,
-        "settings": {
-          "organizationId": "b1a2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
-        },
-        "secrets": {
-          "machineAccessToken": "<token-redacted-for-security>"
-        }
-      }
+      "lockTimeoutMs": 10000
     },
     "NotificationService": {
       "configurationDirectory": "./config/notifications",

@@ -19,6 +19,7 @@ from nyssa_ai_configuration import (
     CloudKeyVaultFactoryBitwarden,
     CloudKeyVaultOperation,
     CloudKeyVaultPreparation,
+    CloudKeyVaultRecovery,
     CloudKeyVaultStepEffect,
     ConfigurationPointer,
     ConfigurationStepState,
@@ -194,7 +195,11 @@ def test_cloud_key_vault_caching_ttl_eviction_scope_and_fail_open() -> None:
             return "bitwarden"
 
         @property
-        def recovery(self) -> _FakeInnerVault:
+        def store_identity(self) -> str:
+            return "store-1"
+
+        @property
+        def recovery(self) -> CloudKeyVaultRecovery | None:
             return self
 
         def read(self, pointer: ConfigurationPointer) -> Result[str]:
@@ -254,30 +259,35 @@ def test_cloud_key_vault_caching_ttl_eviction_scope_and_fail_open() -> None:
     assert dev_vault.cache_ttl_seconds == 60
 
     ptr = ConfigurationPointer(provider="bitwarden", value="payments/apiKey")
-    assert dev_vault.read(ptr).value == "v1"
+    r1 = dev_vault.read(ptr)
+    assert r1.ok and r1.value == "v1"
     assert read_calls[0] == 1
 
     # Cache hit before 60s TTL
     now[0] += 59.0
-    assert dev_vault.read(ptr).value == "v1"
+    r2 = dev_vault.read(ptr)
+    assert r2.ok and r2.value == "v1"
     assert read_calls[0] == 1
 
     # Scope isolation: prod vault with same shared_cache and pointer does not read dev's cached secret
     backing["payments/apiKey"] = "prod-v1"
     wrapped_prod = CloudKeyVaultCaching.wrap(_FakeInnerVault(), prod_opts, cache=shared_cache, clock=lambda: now[0])
     assert wrapped_prod.ok
-    assert wrapped_prod.value.read(ptr).value == "prod-v1"
+    rp = wrapped_prod.value.read(ptr)
+    assert rp.ok and rp.value == "prod-v1"
     assert read_calls[0] == 2
 
     # Expiry at >= 60s
     backing["payments/apiKey"] = "v2"
     now[0] += 2.0
-    assert dev_vault.read(ptr).value == "v2"
+    r3 = dev_vault.read(ptr)
+    assert r3.ok and r3.value == "v2"
     assert read_calls[0] == 3
 
     # Write evicts immediately
     assert dev_vault.write("payments", "apiKey", "v3").ok
-    assert dev_vault.read(ptr).value == "v3"
+    r4 = dev_vault.read(ptr)
+    assert r4.ok and r4.value == "v3"
     assert read_calls[0] == 4
 
     # Two-phase recovery execute evicts immediately
@@ -288,10 +298,12 @@ def test_cloud_key_vault_caching_ttl_eviction_scope_and_fail_open() -> None:
         key="apiKey",
         value="v4",
     )
-    prep = dev_vault.recovery.prepare(op)  # type: ignore[union-attr]
+    assert dev_vault.recovery is not None
+    prep = dev_vault.recovery.prepare(op)
     assert prep.ok
-    assert dev_vault.recovery.execute(op, prep.value).ok  # type: ignore[union-attr]
-    assert dev_vault.read(ptr).value == "v4"
+    assert dev_vault.recovery.execute(op, prep.value).ok
+    r5 = dev_vault.read(ptr)
+    assert r5.ok and r5.value == "v4"
     assert read_calls[0] == 5
 
     # Remove evicts immediately
@@ -322,6 +334,7 @@ def test_cloud_key_vault_caching_ttl_eviction_scope_and_fail_open() -> None:
 
     backing["payments/apiKey"] = "resilient-val"
     resilient = CloudKeyVaultCaching(_FakeInnerVault(), cache_ttl_seconds=60, cache=_BrokenCache())
-    assert resilient.read(ptr).value == "resilient-val"
+    rr = resilient.read(ptr)
+    assert rr.ok and rr.value == "resilient-val"
     assert resilient.write("payments", "apiKey", "resilient-val-2").ok
     resilient.clear_cache()
