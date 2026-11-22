@@ -2,6 +2,7 @@
 using NyssaAI.Results;
 using NyssaAI.Configuration.Contracts;
 using NyssaAI.Configuration.Encryption;
+using NyssaAI.Configuration.Manifest;
 using NyssaAI.Configuration.Values;
 using NyssaAI.Configuration.Tests.Support;
 
@@ -19,6 +20,66 @@ public sealed class ConfigurationStoreTests
         var read = await store.GetAsync("service", "url", TestContext.Current.CancellationToken);
         Assert.True(read.IsSuccess);
         Assert.Equal("https://example.test", read.Value);
+    }
+
+    [Fact]
+    public async Task SharedNamespace_UsesRegisteredFileWhileUnlistedNamespaceStaysApplicationLocal()
+    {
+        using var home = new TemporaryDirectory();
+        var manifestPath = Path.Combine(home.Path, "config-manifest.json");
+        await File.WriteAllTextAsync(manifestPath, """
+            {
+              "version": 1,
+              "namespaceRegistry": { "crm": "./shared/crm.json" },
+              "applications": {
+                "first": { "configurationDirectory": "./first", "sharedNamespaces": ["crm"] },
+                "second": { "configurationDirectory": "./second", "sharedNamespaces": ["crm"] }
+              }
+            }
+            """, TestContext.Current.CancellationToken);
+        var firstSettings = ConfigurationManifestReader.ReadApplication(manifestPath, "first").Value;
+        var secondSettings = ConfigurationManifestReader.ReadApplication(manifestPath, "second").Value;
+        var first = new ConfigurationStore(new ConfigurationDocumentFactoryLocalFile(
+            firstSettings.ConfigurationDirectory, namespaceFiles: firstSettings.NamespaceFiles));
+        var second = new ConfigurationStore(new ConfigurationDocumentFactoryLocalFile(
+            secondSettings.ConfigurationDirectory, namespaceFiles: secondSettings.NamespaceFiles));
+
+        Assert.True((await first.SetAsync("crm", "region", "global", cancellationToken: TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal("global", (await second.GetAsync("crm", "region", TestContext.Current.CancellationToken)).Value);
+        Assert.True((await first.SetAsync("private", "owner", "first", cancellationToken: TestContext.Current.CancellationToken)).IsSuccess);
+        var privateRead = await second.GetAsync("private", "owner", TestContext.Current.CancellationToken);
+
+        Assert.True(privateRead.IsFailure);
+        Assert.Equal(Path.Combine(home.Path, "shared", "crm.json"), firstSettings.NamespaceFiles["crm"]);
+        Assert.True(File.Exists(Path.Combine(home.Path, "first", "private.json")));
+        Assert.False(File.Exists(Path.Combine(home.Path, "second", "private.json")));
+    }
+
+    [Fact]
+    public async Task SharedNamespace_WritableByOtherAccounts_IsRefused()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Exposure is expressed as POSIX mode bits here; Windows ACLs are covered by the FileSecurity tests.");
+            return;
+        }
+
+        using var home = new TemporaryDirectory();
+        var sharedDir = Path.Combine(home.Path, "shared");
+        Directory.CreateDirectory(sharedDir);
+        File.SetUnixFileMode(sharedDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var sharedFile = Path.Combine(sharedDir, "crm.json");
+        await File.WriteAllTextAsync(sharedFile, """{"region":{"value":"global"}}""", TestContext.Current.CancellationToken);
+        File.SetUnixFileMode(sharedFile, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherWrite);
+
+        var store = new ConfigurationStore(new ConfigurationDocumentFactoryLocalFile(
+            Path.Combine(home.Path, "app"),
+            namespaceFiles: new Dictionary<string, string>(StringComparer.Ordinal) { ["crm"] = sharedFile }));
+
+        var read = await store.GetAsync("crm", "region", TestContext.Current.CancellationToken);
+
+        Assert.True(read.IsFailure);
+        Assert.Equal(ErrorCategory.Forbidden, Assert.Single(read.Errors).Category);
     }
 
     [Fact]
@@ -166,6 +227,8 @@ public sealed class ConfigurationStoreTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("nested/namespace")]
+    [InlineData("trailing.")]
+    [InlineData("a..b")]
     public async Task Get_WithNamespaceThatIsNotAFileName_ReturnsFailure(string @namespace)
     {
         using var directory = new TemporaryDirectory();

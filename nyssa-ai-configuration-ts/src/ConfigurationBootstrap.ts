@@ -73,12 +73,14 @@ export class ConfigurationBootstrap {
     let configDir: string;
     let lockTimeoutMs = resolvedOptions.lockTimeoutMs ?? ConfigurationManifestReader.DEFAULT_LOCK_TIMEOUT_MS;
     let manifestKeyVaults: Readonly<Record<string, VaultManifestEntry>> = {};
+    let namespaceFiles: Readonly<Record<string, string>> = {};
 
     const readRes = ConfigurationManifestReader.readApplication(manifestPath, applicationName);
     if (readRes.ok) {
       configDir = readRes.value.configurationDirectory;
       lockTimeoutMs = resolvedOptions.lockTimeoutMs ?? readRes.value.lockTimeoutMs;
       manifestKeyVaults = readRes.value.keyVaults ?? {};
+      namespaceFiles = readRes.value.namespaceFiles ?? {};
     } else if (readRes.category === "NotFound") {
       const defaultDir =
         resolvedOptions.configDirectory && resolvedOptions.configDirectory.trim().length > 0
@@ -94,10 +96,12 @@ export class ConfigurationBootstrap {
       if (!writeRes.ok) {
         return fail(`Failed to provision manifest section: ${writeRes.error}`, writeRes.category ?? "Forbidden");
       }
-      const afterWrite = ConfigurationManifestReader.readManifest(manifestPath);
+      const afterWrite = ConfigurationManifestReader.readApplication(manifestPath, applicationName);
       if (!afterWrite.ok) return afterWrite;
-      configDir = defaultDir;
+      configDir = afterWrite.value.configurationDirectory;
+      lockTimeoutMs = resolvedOptions.lockTimeoutMs ?? afterWrite.value.lockTimeoutMs;
       manifestKeyVaults = afterWrite.value.keyVaults ?? {};
+      namespaceFiles = afterWrite.value.namespaceFiles ?? {};
     } else {
       return readRes;
     }
@@ -209,7 +213,8 @@ export class ConfigurationBootstrap {
       oauthClient: resolvedOptions.oauthClient,
       browserLauncher: resolvedOptions.browserLauncher,
       clock: resolvedOptions.clock,
-      recoveryProtector
+      recoveryProtector,
+      namespaceFiles
     });
     storeRef = store;
 

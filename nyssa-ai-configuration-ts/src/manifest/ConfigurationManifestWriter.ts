@@ -79,6 +79,9 @@ export class ConfigurationManifestWriter {
         this.prepareForDisk({
           version: manifest.version || ConfigurationManifestReader.SUPPORTED_VERSION,
           ...(manifest.keyVaults !== undefined ? { keyVaults: manifest.keyVaults } : {}),
+          ...(Object.keys(manifest.namespaceRegistry ?? {}).length > 0
+            ? { namespaceRegistry: manifest.namespaceRegistry }
+            : {}),
           applications: apps
         })
       );
@@ -184,6 +187,9 @@ export class ConfigurationManifestWriter {
         this.prepareForDisk({
           version: manifest.version || ConfigurationManifestReader.SUPPORTED_VERSION,
           keyVaults: updatedVaults,
+          ...(Object.keys(manifest.namespaceRegistry ?? {}).length > 0
+            ? { namespaceRegistry: manifest.namespaceRegistry }
+            : {}),
           applications: { ...(manifest.applications ?? {}) }
         })
       );
@@ -222,6 +228,9 @@ export class ConfigurationManifestWriter {
         this.prepareForDisk({
           version: readRes.value.version || ConfigurationManifestReader.SUPPORTED_VERSION,
           keyVaults: updatedVaults,
+          ...(Object.keys(readRes.value.namespaceRegistry ?? {}).length > 0
+            ? { namespaceRegistry: readRes.value.namespaceRegistry }
+            : {}),
           applications: { ...(readRes.value.applications ?? {}) }
         })
       );
@@ -247,6 +256,9 @@ export class ConfigurationManifestWriter {
     return {
       version: manifest.version || ConfigurationManifestReader.SUPPORTED_VERSION,
       ...(Object.keys(diskVaults).length > 0 ? { keyVaults: diskVaults } : {}),
+      ...(Object.keys(manifest.namespaceRegistry ?? {}).length > 0
+        ? { namespaceRegistry: manifest.namespaceRegistry }
+        : {}),
       applications: manifest.applications ?? {}
     };
   }

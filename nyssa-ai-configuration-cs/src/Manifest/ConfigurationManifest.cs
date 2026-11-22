@@ -27,6 +27,10 @@ internal sealed record ConfigurationManifest
     [JsonPropertyName("keyVaults")]
     public Dictionary<string, VaultManifestEntry>? KeyVaults { get; init; }
 
+    /// <summary>Gets the registered namespace files, keyed by namespace name.</summary>
+    [JsonPropertyName("namespaceRegistry")]
+    public Dictionary<string, string>? NamespaceRegistry { get; init; }
+
     /// <summary>Gets the sections, keyed by application name.</summary>
     [JsonPropertyName("applications")]
     public Dictionary<string, ApplicationManifestEntry>? Applications { get; init; }

@@ -12,4 +12,8 @@ internal sealed record ApplicationManifestSettings
     /// <summary>Gets the normalized root key vaults from the manifest, keyed by vault provider name.</summary>
     public IReadOnlyDictionary<string, VaultManifestEntry> KeyVaults { get; init; } =
         new Dictionary<string, VaultManifestEntry>(StringComparer.Ordinal);
+
+    /// <summary>Gets the absolute files selected by this application from the namespace registry.</summary>
+    public IReadOnlyDictionary<string, string> NamespaceFiles { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }

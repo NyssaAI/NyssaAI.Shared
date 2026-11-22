@@ -372,3 +372,31 @@ def test_resolve_keyring_prefers_existing_linux_cred_file_before_headless_fallba
 
     assert isinstance(resolve_keyring(config_dir, opts), KeyringDefault)
     assert isinstance(resolve_manifest_keyring(manifest_path), KeyringDefault)
+
+
+def test_resolve_keyring_uses_default_systemd_creds_with_custom_manifest_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify custom manifest paths still share the application's existing Linux credential."""
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    monkeypatch.delenv("NYSSA_SYSTEMD_CREDS_DIR", raising=False)
+    monkeypatch.setenv("NYSSA_CONFIG_DIR", str(tmp_path / "env-cfg"))
+    monkeypatch.setattr("nyssa_ai_configuration.keyring.keyring.sys.platform", "linux")
+
+    home_dir = tmp_path / "home"
+    credentials_dir = home_dir / ".nyssa-ai" / "credentials"
+    credentials_dir.mkdir(parents=True)
+    (credentials_dir / "nyssa-ai-configuration.OrdersApp.cred").write_text("encrypted-app", encoding="utf-8")
+    (credentials_dir / "nyssa-ai-configuration._manifest.cred").write_text("encrypted-manifest", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: home_dir)
+
+    config_dir = tmp_path / "custom-config"
+    manifest_path = tmp_path / "custom-manifest" / "config-manifest.json"
+    opts = BootstrapOptions(
+        application_name="OrdersApp",
+        configuration_directory=str(config_dir),
+        manifest_path=str(manifest_path),
+    )
+
+    assert isinstance(resolve_keyring(config_dir, opts), KeyringDefault)
+    assert isinstance(resolve_manifest_keyring(manifest_path), KeyringDefault)

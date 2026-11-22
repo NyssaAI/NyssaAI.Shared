@@ -2,7 +2,8 @@
 # Public interface:
 # +-- ApplicationManifestEntry
 # |   +-- configuration_directory
-# |   `-- lock_timeout_ms
+# |   +-- lock_timeout_ms
+# |   `-- namespace_files
 # +-- BootstrapOptions
 # |   +-- application_name
 # |   +-- configuration_directory
@@ -15,6 +16,7 @@
 # +-- ConfigurationManifestDocument
 # |   +-- applications
 # |   +-- key_vaults
+# |   +-- namespace_registry
 # |   `-- version
 # +-- ManifestSecretEnvelope
 # |   +-- encrypted
@@ -83,6 +85,7 @@ class ApplicationManifestEntry:
 
     configuration_directory: str
     lock_timeout_ms: int = 10000
+    namespace_files: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,7 @@ class ConfigurationManifestDocument:
     version: int = 1
     applications: Mapping[str, ApplicationManifestEntry] = field(default_factory=dict)
     key_vaults: Mapping[str, VaultManifestEntry] = field(default_factory=dict)
+    namespace_registry: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

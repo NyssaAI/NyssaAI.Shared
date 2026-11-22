@@ -6,6 +6,7 @@
 # |   `-- tls
 # +-- test_keyed_dto_and_literal_quotes_round_trip(tmp_path)
 # +-- test_legacy_namespace_settings_read_merge_and_replace_migration(tmp_path)
+# +-- test_registered_namespace_is_shared_but_unlisted_namespace_remains_application_local(tmp_path)
 # `-- test_set_namespace_and_merge_settings_preserve_existing_key_providers(tmp_path)
 """Use-case tests for F-102 structured settings, namespace decomposition, and legacy compatibility."""
 
@@ -55,6 +56,40 @@ def test_keyed_dto_and_literal_quotes_round_trip(tmp_path: Path) -> None:
     str_loaded = client.get_as("Connections", "quotedLiteral", str)
     assert str_loaded.ok
     assert str_loaded.value == '"already-quoted"'
+
+
+def test_registered_namespace_is_shared_but_unlisted_namespace_remains_application_local(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "config-manifest.json"
+    manifest = {
+        "version": 1,
+        "namespaceRegistry": {"crm": "./shared/crm.json"},
+        "applications": {
+            "first": {"configurationDirectory": "./first", "sharedNamespaces": ["crm"]},
+            "second": {"configurationDirectory": "./second", "sharedNamespaces": ["crm"]},
+        },
+    }
+    assert ProtectedFileSystem.create_file(manifest_path, json.dumps(manifest)).ok
+
+    first = ConfigurationClient.create(
+        BootstrapOptions(application_name="first", manifest_path=str(manifest_path)),
+        keyring=KeyringInMemory(),
+    )
+    second = ConfigurationClient.create(
+        BootstrapOptions(application_name="second", manifest_path=str(manifest_path)),
+        keyring=KeyringInMemory(),
+    )
+    assert first.ok and second.ok
+
+    assert first.value.set("crm", "region", "global").ok
+    assert second.value.get("crm", "region").value == "global"
+    assert first.value.set("private", "owner", "first").ok
+    private_read = second.value.get("private", "owner")
+
+    assert not private_read.ok
+    assert private_read.category == "NotFound"
+    assert (tmp_path / "shared" / "crm.json").exists()
+    assert (tmp_path / "first" / "private.json").exists()
+    assert not (tmp_path / "second" / "private.json").exists()
 
 
 def test_set_namespace_and_merge_settings_preserve_existing_key_providers(tmp_path: Path) -> None:

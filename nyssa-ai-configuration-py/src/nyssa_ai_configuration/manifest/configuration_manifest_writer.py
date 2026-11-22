@@ -84,15 +84,18 @@ class ConfigurationManifestWriter:
             existing_res = self._load_existing(resolved_manifest)
             if not existing_res.ok:
                 return existing_res
-            existing_doc, apps_dict = existing_res.value
+            existing_doc, apps_dict, namespace_registry = existing_res.value
 
             resolved_config_dir = str(Path(str(configuration_directory)).resolve())
-            apps_dict[application_name] = {
-                "configurationDirectory": resolved_config_dir,
-                "lockTimeoutMs": timeout_val,
-            }
+            current_section = apps_dict.get(application_name)
+            updated_section = dict(current_section) if isinstance(current_section, dict) else {}
+            updated_section.update(
+                configurationDirectory=resolved_config_dir,
+                lockTimeoutMs=timeout_val,
+            )
+            apps_dict[application_name] = updated_section
 
-            serialized = self._serialize_document(existing_doc.key_vaults, apps_dict)
+            serialized = self._serialize_document(existing_doc.key_vaults, apps_dict, namespace_registry)
             write_res = ProtectedFileSystem.create_file(resolved_manifest, serialized)
             if not write_res.ok:
                 return write_res
@@ -140,7 +143,7 @@ class ConfigurationManifestWriter:
             existing_res = self._load_existing(resolved_manifest)
             if not existing_res.ok:
                 return existing_res
-            existing_doc, apps_dict = existing_res.value
+            existing_doc, apps_dict, namespace_registry = existing_res.value
 
             envelopes: dict[str, ManifestSecretEnvelope] = {}
             if preserve_existing_secrets and norm_vault.name in existing_doc.key_vaults:
@@ -166,7 +169,7 @@ class ConfigurationManifestWriter:
             updated_vaults = dict(existing_doc.key_vaults)
             updated_vaults[entry.name] = entry
 
-            serialized = self._serialize_document(updated_vaults, apps_dict)
+            serialized = self._serialize_document(updated_vaults, apps_dict, namespace_registry)
             write_res = ProtectedFileSystem.create_file(resolved_manifest, serialized)
             if not write_res.ok:
                 return write_res
@@ -213,13 +216,13 @@ class ConfigurationManifestWriter:
             existing_res = self._load_existing(resolved_manifest)
             if not existing_res.ok:
                 return existing_res
-            existing_doc, apps_dict = existing_res.value
+            existing_doc, apps_dict, namespace_registry = existing_res.value
             if v_name not in existing_doc.key_vaults:
                 return ok(False)
 
             updated_vaults = dict(existing_doc.key_vaults)
             updated_vaults.pop(v_name, None)
-            serialized = self._serialize_document(updated_vaults, apps_dict)
+            serialized = self._serialize_document(updated_vaults, apps_dict, namespace_registry)
             write_res = ProtectedFileSystem.create_file(resolved_manifest, serialized)
             if not write_res.ok:
                 return write_res
@@ -241,9 +244,9 @@ class ConfigurationManifestWriter:
     @staticmethod
     def _load_existing(
         resolved_manifest: Path,
-    ) -> Result[tuple[ConfigurationManifestDocument, dict[str, object]]]:
+    ) -> Result[tuple[ConfigurationManifestDocument, dict[str, object], dict[str, object]]]:
         if not resolved_manifest.exists():
-            return ok((ConfigurationManifestDocument(version=_SUPPORTED_VERSION, applications={}, key_vaults={}), {}))
+            return ok((ConfigurationManifestDocument(version=_SUPPORTED_VERSION, applications={}, key_vaults={}), {}, {}))
         doc_res = ConfigurationManifestReader.read_manifest(resolved_manifest)
         if not doc_res.ok:
             return doc_res
@@ -251,7 +254,9 @@ class ConfigurationManifestWriter:
         loaded: object = json.loads(ConfigurationManifestReader.strip_jsonc(raw))
         raw_apps = loaded.get("applications") if isinstance(loaded, dict) else None
         apps_dict: dict[str, object] = dict(raw_apps) if isinstance(raw_apps, dict) else {}
-        return ok((doc_res.value, apps_dict))
+        raw_registry = loaded.get("namespaceRegistry") if isinstance(loaded, dict) else None
+        namespace_registry: dict[str, object] = dict(raw_registry) if isinstance(raw_registry, dict) else {}
+        return ok((doc_res.value, apps_dict, namespace_registry))
 
     @staticmethod
     def _seal_vault_secrets(
@@ -285,6 +290,7 @@ class ConfigurationManifestWriter:
     def _serialize_document(
         key_vaults: Mapping[str, VaultManifestEntry],
         applications: Mapping[str, object],
+        namespace_registry: Mapping[str, object],
     ) -> str:
         doc: dict[str, object] = {"version": _SUPPORTED_VERSION}
         if key_vaults:
@@ -292,6 +298,8 @@ class ConfigurationManifestWriter:
                 name: ConfigurationManifestWriter._serialize_vault_entry(entry)
                 for name, entry in key_vaults.items()
             }
+        if namespace_registry:
+            doc["namespaceRegistry"] = dict(namespace_registry)
         doc["applications"] = dict(applications)
         return json.dumps(doc, indent=2) + "\n"
 

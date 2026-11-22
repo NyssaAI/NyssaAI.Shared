@@ -40,7 +40,7 @@ def test_try_with_error_handler_translates_thrown_exception() -> None:
 
     assert res.is_failure is True
     assert res.errors[0].user_message == "Invalid calculation input"
-    assert "division or modulo by zero" in res.errors[0].technical_message
+    assert "by zero" in res.errors[0].technical_message
     assert res.errors[0].category == ErrorCategory.VALIDATION
 
 

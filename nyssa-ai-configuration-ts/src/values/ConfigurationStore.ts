@@ -59,7 +59,8 @@ export class ConfigurationStore {
       readonly vaultProviders?: ReadonlyMap<string, IVaultProvider> | undefined; readonly vaultCredentials?: ReadonlyMap<string, { readonly namespace: string; readonly key: string }> | undefined;
       readonly vaultAuth?: ReadonlyMap<string, { readonly namespace: string; readonly key: string; readonly options?: OAuthOptions | undefined }> | undefined;
       readonly oauthClient?: IOAuthFlowClient | undefined; readonly browserLauncher?: IBrowserLauncher | undefined;
-      readonly clock?: (() => number) | undefined; readonly recoveryProtector?: ConfigurationRecoveryTokenProtector | undefined;
+      readonly clock?: (() => number) | undefined; readonly namespaceFiles?: Readonly<Record<string, string>> | undefined;
+      readonly recoveryProtector?: ConfigurationRecoveryTokenProtector | undefined;
     }
   ) {
     const resolvedDir = path.resolve(configurationDirectory);
@@ -69,8 +70,7 @@ export class ConfigurationStore {
     const oauthManager = new OAuthTokenManager(resolvedDir, cipher, options?.oauthClient, options?.browserLauncher, options?.clock);
     const journalManager = new PendingJournalManager(resolvedDir);
     this._resolver = new ConfigurationEntryResolver(
-      resolvedDir, lockTimeoutMs, cipher, vaultProviders, this._vaultCredentials, oauthManager, journalManager
-    );
+      resolvedDir, lockTimeoutMs, cipher, vaultProviders, this._vaultCredentials, oauthManager, journalManager, options?.namespaceFiles);
     this._recoveryCoordinator = new ConfigurationRecoveryCoordinator(this._resolver, options?.recoveryProtector);
     this._namespaceHandler = new NamespaceDocumentHandler(this._resolver, this._recoveryCoordinator);
     this._mover = new ConfigurationMover(this._resolver, this._recoveryCoordinator);

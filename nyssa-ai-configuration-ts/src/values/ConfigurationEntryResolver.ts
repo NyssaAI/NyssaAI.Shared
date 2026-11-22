@@ -8,7 +8,7 @@
 //     +-- getDocumentPath(namespace)
 //     +-- invokeWriteInterceptor(namespace)
 //     +-- journalManager
-//     +-- new(configurationDirectory, lockTimeoutMs, cipher, vaultProviders, vaultCredentials, oauthManager, journalManager)
+//     +-- new(configurationDirectory, lockTimeoutMs, cipher, vaultProviders, vaultCredentials, oauthManager, journalManager, namespaceFiles)
 //     +-- normalizeProviderName(entry)
 //     +-- oauthManager
 //     +-- prepareEntryForProvider(namespace, key, value, providerName, signal)
@@ -38,6 +38,7 @@ export class ConfigurationEntryResolver {
   public readonly journalManager: PendingJournalManager;
 
   private readonly _configurationDirectory: string;
+  private readonly _namespaceFiles: Readonly<Record<string, string>>;
   private readonly _lockTimeoutMs: number;
   private readonly _cipher?: IConfigurationCipher | undefined;
   private readonly _vaultCredentials: ReadonlyMap<string, { readonly namespace: string; readonly key: string }>;
@@ -50,9 +51,11 @@ export class ConfigurationEntryResolver {
     vaultProviders: ReadonlyMap<string, IVaultProvider>,
     vaultCredentials: ReadonlyMap<string, { readonly namespace: string; readonly key: string }>,
     oauthManager: OAuthTokenManager,
-    journalManager: PendingJournalManager
+    journalManager: PendingJournalManager,
+    namespaceFiles: Readonly<Record<string, string>> = {}
   ) {
     this._configurationDirectory = configurationDirectory;
+    this._namespaceFiles = namespaceFiles;
     this._lockTimeoutMs = lockTimeoutMs;
     this._cipher = cipher;
     this.vaultProviders = vaultProviders;
@@ -80,7 +83,7 @@ export class ConfigurationEntryResolver {
   }
 
   public getDocumentPath(namespace: string): string {
-    return path.join(this._configurationDirectory, `${namespace}.json`);
+    return this._namespaceFiles[namespace] ?? path.join(this._configurationDirectory, `${namespace}.json`);
   }
 
   public getDocument(namespace: string): ConfigurationDocumentLocalFile {

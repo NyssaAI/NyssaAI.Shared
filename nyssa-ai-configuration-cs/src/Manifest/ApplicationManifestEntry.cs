@@ -18,6 +18,10 @@ internal sealed record ApplicationManifestEntry
     [JsonPropertyName("lockTimeoutMs")]
     public int? LockTimeoutMs { get; init; }
 
+    /// <summary>Gets the registered namespaces this application opts into.</summary>
+    [JsonPropertyName("sharedNamespaces")]
+    public string[]? SharedNamespaces { get; init; }
+
     /// <summary>
     /// Gets any legacy per-application <c>keyVault</c> element solely so the reader can enforce
     /// the private-file gate first and reject legacy per-application vault sections with a clear

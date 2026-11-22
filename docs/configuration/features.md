@@ -43,7 +43,7 @@ Enforces restrictive directory and file permissions (`0700`/`0600` on POSIX, own
 [Feature Guide: Protected File System & Cross-Process Locking](features/f-001/feature.md)
 
 **F-002: Configuration Manifest & First-Use Provisioning**  
-Reads, validates, and atomically provisions application sections in `~/.nyssa-ai/config-manifest.json` (or a custom manifest path), resolves canonical configuration directories, and applies operator overrides for lock timeouts and cloud key vaults.  
+Reads, validates, and atomically provisions application sections in `~/.nyssa-ai/config-manifest.json` (or a custom manifest path), resolves canonical configuration directories, supports per-application opt-in to root-registered shared namespace files, and applies operator overrides for lock timeouts and cloud key vaults.<br>
 [Feature Guide: Configuration Manifest & First-Use Provisioning](features/f-002/feature.md)
 
 **F-003: OS Keyring Custody & Address-Bound Local Encryption**  

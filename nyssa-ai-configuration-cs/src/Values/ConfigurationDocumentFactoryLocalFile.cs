@@ -20,7 +20,7 @@ namespace NyssaAI.Configuration.Values;
 internal sealed class ConfigurationDocumentFactoryLocalFile : IConfigurationDocumentFactory
 {
     /// <summary>The namespace name reserved for the manifest, which no store may write.</summary>
-    public const string RegistryNamespace = "config-manifest";
+    public const string ManifestNamespace = "config-manifest";
 
     private static readonly HashSet<string> WindowsReservedNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,6 +31,7 @@ internal sealed class ConfigurationDocumentFactoryLocalFile : IConfigurationDocu
 
     private readonly string _directory;
     private readonly TimeSpan? _lockTimeout;
+    private readonly IReadOnlyDictionary<string, string> _namespaceFiles;
 
     /// <summary>Creates a factory over one configuration directory.</summary>
     /// <param name="directory">The directory holding the namespace documents.</param>
@@ -38,10 +39,15 @@ internal sealed class ConfigurationDocumentFactoryLocalFile : IConfigurationDocu
     /// How long a document waits for its cross-process lock before failing; the document's own
     /// default when null. A non-positive value is reported by <see cref="Create"/>.
     /// </param>
-    public ConfigurationDocumentFactoryLocalFile(string directory, TimeSpan? lockTimeout = null)
+    /// <param name="namespaceFiles">The manifest-registered files selected by the application.</param>
+    public ConfigurationDocumentFactoryLocalFile(
+        string directory,
+        TimeSpan? lockTimeout = null,
+        IReadOnlyDictionary<string, string>? namespaceFiles = null)
     {
         _directory = Path.GetFullPath(directory);
         _lockTimeout = lockTimeout;
+        _namespaceFiles = namespaceFiles ?? new Dictionary<string, string>(StringComparer.Ordinal);
     }
 
     /// <inheritdoc/>
@@ -53,15 +59,17 @@ internal sealed class ConfigurationDocumentFactoryLocalFile : IConfigurationDocu
         // The manifest lives at ~/.nyssa-ai/config-manifest.json. A store whose directory is
         // ~/.nyssa-ai writing this namespace would replace the manifest with an entries document
         // and destroy every application's section.
-        var path = Path.Combine(_directory, $"{@namespace}.json");
-        if (IsRegistryNamespace(@namespace) || IsRegistryPath(path))
+        var path = _namespaceFiles.TryGetValue(@namespace, out var registeredPath)
+            ? Path.GetFullPath(registeredPath)
+            : Path.Combine(_directory, $"{@namespace}.json");
+        if (IsManifestNamespace(@namespace) || IsManifestPath(path))
             return Result<IConfigurationDocument>.Failure(NamespaceReserved(@namespace));
 
         // Checked here rather than at resolution, because this is the point where the directory
         // stops being a candidate and starts being read from and written to. A directory another
         // account can write to lets that account swap a namespace document for one of its own,
         // and every value the reader gets back is well-formed and correctly sealed.
-        var safe = DirectorySafety.Verify(_directory);
+        var safe = DirectorySafety.Verify(Path.GetDirectoryName(path)!);
         if (safe.IsFailure)
             return Result<IConfigurationDocument>.Failure(safe.Errors);
 
@@ -78,7 +86,7 @@ internal sealed class ConfigurationDocumentFactoryLocalFile : IConfigurationDocu
         $"Namespace '{@namespace}' must be letters, digits, '.', '_' or '-', not start with '.', and not name a reserved device.",
         ErrorCategory.Validation);
 
-    /// <summary>The failure returned when a namespace would address the roots registry.</summary>
+    /// <summary>The failure returned when a namespace would address the configuration manifest.</summary>
     /// <param name="namespace">The namespace that was rejected.</param>
     public static Error NamespaceReserved(string @namespace) => Error.FromMessages(
         "The configuration namespace is reserved.",
@@ -87,7 +95,10 @@ internal sealed class ConfigurationDocumentFactoryLocalFile : IConfigurationDocu
 
     private static bool IsPortableFileName(string @namespace)
     {
-        if (string.IsNullOrEmpty(@namespace) || @namespace[0] == '.')
+        if (string.IsNullOrEmpty(@namespace)
+            || @namespace[0] == '.'
+            || @namespace.EndsWith('.')
+            || @namespace.Contains("..", StringComparison.Ordinal))
             return false;
 
         foreach (var character in @namespace)
@@ -100,19 +111,19 @@ internal sealed class ConfigurationDocumentFactoryLocalFile : IConfigurationDocu
         return !WindowsReservedNames.Contains(stem);
     }
 
-    private static bool IsRegistryNamespace(string @namespace) =>
-        string.Equals(@namespace, RegistryNamespace, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(@namespace, RegistryNamespace + ".json", StringComparison.OrdinalIgnoreCase);
+    private static bool IsManifestNamespace(string @namespace) =>
+        string.Equals(@namespace, ManifestNamespace, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(@namespace, ManifestNamespace + ".json", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsRegistryPath(string path)
+    private static bool IsManifestPath(string path)
     {
-        var registry = Path.Combine(
+        var manifest = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".nyssa-ai",
-            RegistryNamespace + ".json");
+            ManifestNamespace + ".json");
         return string.Equals(
             Path.GetFullPath(path),
-            Path.GetFullPath(registry),
+            Path.GetFullPath(manifest),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 }

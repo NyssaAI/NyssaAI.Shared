@@ -30,7 +30,11 @@ internal interface IValues
     /// <summary>Opens the local document set holding one configuration directory's namespaces.</summary>
     /// <param name="configurationDirectory">The directory the namespace documents live in.</param>
     /// <param name="lockTimeout">The bounded wait for a document lock; the feature default when null.</param>
-    IConfigurationDocumentFactory OpenDocuments(string configurationDirectory, TimeSpan? lockTimeout = null);
+    /// <param name="namespaceFiles">The manifest-registered files selected by the application.</param>
+    IConfigurationDocumentFactory OpenDocuments(
+        string configurationDirectory,
+        TimeSpan? lockTimeout = null,
+        IReadOnlyDictionary<string, string>? namespaceFiles = null);
 
     /// <summary>Opens the entry store over one document set and the providers it may resolve through.</summary>
     /// <param name="documents">The documents entries are persisted in.</param>

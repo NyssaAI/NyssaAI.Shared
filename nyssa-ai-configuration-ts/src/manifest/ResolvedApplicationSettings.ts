@@ -3,7 +3,8 @@
 // `-- ResolvedApplicationSettings
 //     +-- configurationDirectory
 //     +-- keyVaults
-//     `-- lockTimeoutMs
+//     +-- lockTimeoutMs
+//     `-- namespaceFiles
 
 import type { VaultManifestEntry } from "./VaultManifestEntry.js";
 
@@ -14,4 +15,5 @@ export interface ResolvedApplicationSettings {
   readonly configurationDirectory: string;
   readonly lockTimeoutMs: number;
   readonly keyVaults?: Readonly<Record<string, VaultManifestEntry>> | undefined;
+  readonly namespaceFiles?: Readonly<Record<string, string>> | undefined;
 }
