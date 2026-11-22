@@ -9,7 +9,7 @@
 #     +-- list(namespace)
 #     +-- merge_settings(namespace, serialized)
 #     +-- move(namespace, key, destination_provider)
-#     +-- new(configuration_directory, lock_timeout_ms, cipher, vaults, credentials, oauth_provider, recovery_protector, logger, clock)
+#     +-- new(configuration_directory, lock_timeout_ms, cipher, vaults, credentials, oauth_provider, recovery_protector, logger, clock, namespace_files)
 #     +-- reauthorize(namespace, key, browser_launcher)
 #     +-- recover(handle)
 #     +-- remove(namespace, key)
@@ -59,9 +59,11 @@ class ConfigurationStore:
         recovery_protector: ConfigurationRecoveryTokenProtector | None = None,
         logger: ConfigurationLogger | None = None,
         clock: Callable[[], float] = time.monotonic,
+        namespace_files: Mapping[str, str] | None = None,
     ) -> None:
         """Initialize store with directory, timeout, cipher, vaults, credentials, OAuth provider, recovery protector, and logger."""
         self._dir = Path(str(configuration_directory)).resolve()
+        self._namespace_files = dict(namespace_files) if namespace_files is not None else {}
         self._lock_timeout_ms = lock_timeout_ms
         self._cipher = cipher
         self._vaults: dict[str, CloudKeyVault] = dict(vaults) if vaults is not None else {}
@@ -265,8 +267,15 @@ class ConfigurationStore:
         return self._recovery.recover(handle)
 
     def _open_document(self, namespace: str) -> ConfigurationDocumentLocalFile:
+        registered_path = self._namespace_files.get(namespace)
         return ConfigurationDocumentLocalFile(
-            self._dir, namespace, self._lock_timeout_ms, self._write_interceptor, self._logger, self._clock
+            self._dir,
+            namespace,
+            self._lock_timeout_ms,
+            self._write_interceptor,
+            self._logger,
+            self._clock,
+            registered_path,
         )
 
     def _read_through(self, entry: ConfigurationValue, namespace: str, key: str) -> Result[str]:

@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using System.Text.Json;
-using NyssaAI.Configuration.FileSecurity;
 using NyssaAI.Results;
 
 namespace NyssaAI.Configuration.Manifest;
@@ -34,7 +32,7 @@ internal static class ConfigurationManifestWriter
         string configurationDirectory,
         TimeSpan? lockTimeout = null)
     {
-        var locked = AcquireLock(path, lockTimeout ?? DefaultLockTimeout);
+        var locked = ManifestFileLock.Acquire(path, lockTimeout ?? DefaultLockTimeout);
         if (locked.IsFailure)
             return Result<string>.Failure(locked.Errors);
 
@@ -44,7 +42,7 @@ internal static class ConfigurationManifestWriter
         if (recorded.IsFailure)
             return Result<string>.Failure(recorded.Errors);
 
-        var published = Publish(path, recorded.Value);
+        var published = ManifestFileLock.Publish(path, recorded.Value);
         return published.IsFailure
             ? Result<string>.Failure(published.Errors)
             : Result<string>.Success(configurationDirectory);
@@ -79,35 +77,35 @@ internal static class ConfigurationManifestWriter
         bool preserveExistingSecrets = false,
         TimeSpan? lockTimeout = null)
     {
-        var nameValid = ConfigurationManifestReader.ValidateVaultName(vault.Name);
+        var nameValid = ManifestVaultValidator.ValidateVaultName(vault.Name);
         if (nameValid.IsFailure)
             return nameValid;
 
         var vaultName = vault.Name!;
-        var kindValid = ConfigurationManifestReader.ValidateVaultKind(vaultName, vault.Kind);
+        var kindValid = ManifestVaultValidator.ValidateVaultKind(vaultName, vault.Kind);
         if (kindValid.IsFailure)
             return kindValid;
 
-        var endpointValid = ConfigurationManifestReader.ValidateEndpointString(vaultName, vault.Endpoint);
+        var endpointValid = ManifestVaultValidator.ValidateEndpointString(vaultName, vault.Endpoint);
         if (endpointValid.IsFailure)
             return endpointValid;
 
-        var normalizedCredential = ConfigurationManifestReader.ValidateAndNormalizeCredential(vaultName, vault.Credential);
+        var normalizedCredential = ManifestVaultValidator.ValidateAndNormalizeCredential(vaultName, vault.Credential);
         if (normalizedCredential.IsFailure)
             return Result.Failure(normalizedCredential.Errors);
 
-        var ttlValid = ConfigurationManifestReader.ValidateCacheTtl(vaultName, vault.CacheTTLSeconds, vault.Settings, path);
+        var ttlValid = ManifestVaultValidator.ValidateCacheTtl(vaultName, vault.CacheTTLSeconds, vault.Settings, path);
         if (ttlValid.IsFailure)
             return ttlValid;
 
         if (sealSecrets is null && vault.Secrets is not null)
         {
-            var secretsValid = ConfigurationManifestReader.ValidateNormalizedSecrets(vaultName, vault.Secrets);
+            var secretsValid = ManifestVaultValidator.ValidateNormalizedSecrets(vaultName, vault.Secrets);
             if (secretsValid.IsFailure)
                 return secretsValid;
         }
 
-        var locked = AcquireLock(path, lockTimeout ?? DefaultLockTimeout);
+        var locked = ManifestFileLock.Acquire(path, lockTimeout ?? DefaultLockTimeout);
         if (locked.IsFailure)
             return Result.Failure(locked.Errors);
 
@@ -164,7 +162,7 @@ internal static class ConfigurationManifestWriter
             },
         };
 
-        return Publish(path, manifest with
+        return ManifestFileLock.Publish(path, manifest with
         {
             KeyVaults = keyVaults,
             Applications = manifest.Applications ?? new Dictionary<string, ApplicationManifestEntry>(StringComparer.Ordinal),
@@ -183,14 +181,14 @@ internal static class ConfigurationManifestWriter
         string vaultName,
         TimeSpan? lockTimeout = null)
     {
-        var nameValid = ConfigurationManifestReader.ValidateVaultName(vaultName);
+        var nameValid = ManifestVaultValidator.ValidateVaultName(vaultName);
         if (nameValid.IsFailure)
             return Result<bool>.Failure(nameValid.Errors);
 
         if (!File.Exists(path))
             return Result<bool>.Success(false);
 
-        var locked = AcquireLock(path, lockTimeout ?? DefaultLockTimeout);
+        var locked = ManifestFileLock.Acquire(path, lockTimeout ?? DefaultLockTimeout);
         if (locked.IsFailure)
             return Result<bool>.Failure(locked.Errors);
 
@@ -207,7 +205,7 @@ internal static class ConfigurationManifestWriter
         if (!keyVaults.Remove(vaultName))
             return Result<bool>.Success(false);
 
-        var published = Publish(path, existing.Value with { KeyVaults = keyVaults });
+        var published = ManifestFileLock.Publish(path, existing.Value with { KeyVaults = keyVaults });
         return published.IsFailure
             ? Result<bool>.Failure(published.Errors)
             : Result<bool>.Success(true);
@@ -250,6 +248,9 @@ internal static class ConfigurationManifestWriter
         return manifest with
         {
             KeyVaults = keyVaults,
+            NamespaceRegistry = manifest.NamespaceRegistry is { Count: > 0 }
+                ? new Dictionary<string, string>(manifest.NamespaceRegistry, StringComparer.Ordinal)
+                : null,
             Applications = applications,
         };
     }
@@ -295,98 +296,10 @@ internal static class ConfigurationManifestWriter
     }
 
     /// <summary>The failure returned when the manifest cannot be written.</summary>
-    public static Error NotWritable(string path, Exception exception) => Error.FromMessages(
-        "The configuration manifest could not be saved.",
-        $"manifest: writing '{path}' failed: {exception.GetType().Name}: {exception.Message}",
-        exception is UnauthorizedAccessException ? ErrorCategory.Forbidden : ErrorCategory.Unexpected);
+    public static Error NotWritable(string path, Exception exception) =>
+        ManifestFileLock.NotWritable(path, exception);
 
     /// <summary>The failure returned when the manifest lock cannot be acquired within its bound.</summary>
-    public static Error LockNotAcquired(string path, TimeSpan waited) => Error.FromMessages(
-        "The configuration manifest is in use. Try again.",
-        $"manifest: could not take the lock on '{path}' within {waited.TotalSeconds:0.###}s",
-        ErrorCategory.Unavailable);
-
-    // The synchronous twin of PublishAsync: same temporary file, same rename, same cleanup.
-    private static Result Publish(string path, ConfigurationManifest manifest)
-    {
-        var created = ProtectedFileSystem.CreateDirectory(Path.GetDirectoryName(path)!);
-        if (created.IsFailure)
-            return created;
-
-        var temporary = path + ".tmp." + Guid.NewGuid().ToString("N");
-        try
-        {
-            var prepared = PrepareForWrite(manifest);
-            var content = JsonSerializer.Serialize(prepared, ManifestJsonContext.Default.ConfigurationManifest);
-            var written = ProtectedFileSystem.WriteAllText(temporary, content);
-            if (written.IsFailure)
-                return written;
-
-            // This is the adapter boundary: the file system throws here and nowhere above it.
-            try
-            {
-                File.Move(temporary, path, true);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                return Result.Failure(NotWritable(path, exception));
-            }
-
-            return Result.Success();
-        }
-        finally
-        {
-            try
-            {
-                File.Delete(temporary);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                // Cleanup cannot replace the publication result.
-            }
-        }
-    }
-
-    // The synchronous twin of AcquireLockAsync: the same lock file and the same bounded wait,
-    // waiting on the calling thread because the caller has nothing else to do with it.
-    private static Result<FileStream> AcquireLock(string path, TimeSpan lockTimeout)
-    {
-        var lockPath = path + ".lock";
-        var created = ProtectedFileSystem.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        if (created.IsFailure)
-            return Result<FileStream>.Failure(created.Errors);
-
-        var safe = DirectorySafety.Verify(Path.GetDirectoryName(lockPath)!);
-        if (safe.IsFailure)
-            return Result<FileStream>.Failure(safe.Errors);
-
-        // This is the adapter boundary: the lock file throws for a read-only or directory-shaped path.
-        try
-        {
-            var started = Stopwatch.GetTimestamp();
-            var backoff = TimeSpan.FromMilliseconds(5);
-            while (true)
-            {
-                try
-                {
-                    return Result<FileStream>.Success(new FileStream(
-                        lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None));
-                }
-                catch (IOException)
-                {
-                    var elapsed = Stopwatch.GetElapsedTime(started);
-                    if (elapsed >= lockTimeout)
-                        return Result<FileStream>.Failure(LockNotAcquired(path, elapsed));
-
-                    var remaining = lockTimeout - elapsed;
-                    Thread.Sleep(backoff < remaining ? backoff : remaining);
-                    backoff = backoff < TimeSpan.FromMilliseconds(50) ? backoff * 2 : backoff;
-                }
-            }
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            return Result<FileStream>.Failure(NotWritable(path, exception));
-        }
-    }
+    public static Error LockNotAcquired(string path, TimeSpan waited) =>
+        ManifestFileLock.LockNotAcquired(path, waited);
 }

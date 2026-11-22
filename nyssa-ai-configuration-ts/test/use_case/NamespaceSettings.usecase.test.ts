@@ -4,6 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { ConfigurationClient } from "../../src/ConfigurationClient.js";
 import { InMemoryKeyring } from "../../src/keyring/InMemoryKeyring.js";
+import { ProtectedFileSystem } from "../../src/fileSecurity/ProtectedFileSystem.js";
 
 describe("NamespaceSettings Public Use Cases (F-102)", () => {
   let tempDir: string;
@@ -70,6 +71,43 @@ describe("NamespaceSettings Public Use Cases (F-102)", () => {
       });
       expect(readRes.value.legacyHeader).toBeUndefined();
     }
+  });
+
+  it("namespaceSettings_registeredNamespaceIsSharedButUnlistedNamespaceRemainsLocal", async () => {
+    const manifest = {
+      version: 1,
+      namespaceRegistry: { crm: "./shared/crm.json" },
+      applications: {
+        First: { configurationDirectory: "./first", sharedNamespaces: ["crm"] },
+        Second: { configurationDirectory: "./second", sharedNamespaces: ["crm"] }
+      }
+    };
+    expect(ProtectedFileSystem.createFile(manifestPath, JSON.stringify(manifest)).ok).toBe(true);
+
+    const firstRes = await ConfigurationClient.initialize({
+      applicationName: "First",
+      configManifest: manifestPath,
+      keyring
+    });
+    const secondRes = await ConfigurationClient.initialize({
+      applicationName: "Second",
+      configManifest: manifestPath,
+      keyring
+    });
+    expect(firstRes.ok).toBe(true);
+    expect(secondRes.ok).toBe(true);
+    if (!firstRes.ok || !secondRes.ok) return;
+
+    expect((await firstRes.value.set("crm", "region", "global")).ok).toBe(true);
+    expect((await secondRes.value.get("crm", "region")).value).toBe("global");
+    expect((await firstRes.value.set("private", "owner", "First")).ok).toBe(true);
+    const privateRead = await secondRes.value.get("private", "owner");
+
+    expect(privateRead.ok).toBe(false);
+    if (!privateRead.ok) expect(privateRead.category).toBe("NotFound");
+    expect(fs.existsSync(path.join(tempDir, "shared", "crm.json"))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, "first", "private.json"))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, "second", "private.json"))).toBe(false);
   });
 
   it("namespaceSettings_mergeSettings_updatesProvidedKeysAndPreservesUnmentionedAndEncryptedKeys (F-102 UC-003)", async () => {

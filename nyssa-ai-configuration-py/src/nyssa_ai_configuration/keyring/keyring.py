@@ -42,7 +42,7 @@ class Keyring(Protocol):
         ...
 
 
-def _linux_cred_exists(account_name: str, manifest_dir: Path | None) -> bool:
+def _linux_cred_exists(account_name: str) -> bool:
     if not sys.platform.startswith("linux") or not account_name.strip():
         return False
     sanitized_account = _SANITIZE_RE.sub("_", account_name.strip())
@@ -50,9 +50,6 @@ def _linux_cred_exists(account_name: str, manifest_dir: Path | None) -> bool:
     env_dir = os.environ.get("NYSSA_SYSTEMD_CREDS_DIR", "").strip()
     if env_dir:
         return (Path(env_dir) / cred_filename).is_file()
-    default_manifest_dir = (Path.home() / ".nyssa-ai").resolve()
-    if manifest_dir is not None and manifest_dir != default_manifest_dir:
-        return False
     return (Path.home() / ".nyssa-ai" / "credentials" / cred_filename).is_file()
 
 
@@ -109,7 +106,7 @@ def resolve_keyring(
         if options is not None and options.application_name and options.application_name.strip()
         else (config_dir.name if os.environ.get("NYSSA_SYSTEMD_CREDS_DIR", "").strip() else "")
     )
-    if account_candidate and _linux_cred_exists(account_candidate, resolved_manifest_dir):
+    if account_candidate and _linux_cred_exists(account_candidate):
         return KeyringDefault()
 
     if _use_protected_file_fallback():
@@ -140,7 +137,7 @@ def resolve_manifest_keyring(
     if (manifest_dir / _MANIFEST_KEY_FILENAME).is_file():
         return KeyringProtectedFile(manifest_dir, manifest_directory=manifest_dir)
 
-    if _linux_cred_exists(MANIFEST_KEY_ACCOUNT, manifest_dir):
+    if _linux_cred_exists(MANIFEST_KEY_ACCOUNT):
         return KeyringDefault()
 
     if _use_protected_file_fallback():

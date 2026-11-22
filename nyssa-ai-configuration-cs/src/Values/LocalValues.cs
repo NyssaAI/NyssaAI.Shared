@@ -9,8 +9,11 @@ namespace NyssaAI.Configuration.Values;
 internal sealed class LocalValues : IValues
 {
     /// <inheritdoc/>
-    public IConfigurationDocumentFactory OpenDocuments(string configurationDirectory, TimeSpan? lockTimeout = null) =>
-        new ConfigurationDocumentFactoryLocalFile(configurationDirectory, lockTimeout);
+    public IConfigurationDocumentFactory OpenDocuments(
+        string configurationDirectory,
+        TimeSpan? lockTimeout = null,
+        IReadOnlyDictionary<string, string>? namespaceFiles = null) =>
+        new ConfigurationDocumentFactoryLocalFile(configurationDirectory, lockTimeout, namespaceFiles);
 
     /// <inheritdoc/>
     public Result<IConfigurationValues> OpenStore(

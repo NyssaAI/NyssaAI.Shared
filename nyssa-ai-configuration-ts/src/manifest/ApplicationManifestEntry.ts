@@ -3,7 +3,8 @@
 // `-- ApplicationManifestEntry
 //     +-- configurationDirectory
 //     +-- lockTimeout
-//     `-- lockTimeoutMs
+//     +-- lockTimeoutMs
+//     `-- sharedNamespaces
 
 /**
  * ApplicationManifestEntry represents one application's section inside the manifest.
@@ -12,4 +13,5 @@ export interface ApplicationManifestEntry {
   readonly configurationDirectory?: string | undefined;
   readonly lockTimeout?: string | number | undefined;
   readonly lockTimeoutMs?: number | undefined;
+  readonly sharedNamespaces?: readonly string[] | undefined;
 }

@@ -78,6 +78,92 @@ describe("ConfigurationManifestReader and Writer", () => {
     }
   });
 
+  it("manifestReader_sharedNamespaceOptIn_resolvesRegisteredPathAndRejectsUnknownNames", () => {
+    ProtectedFileSystem.createFile(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        namespaceRegistry: {
+          crm: "./shared/crm.json",
+          private: "./shared/private.json"
+        },
+        applications: {
+          Tool: {
+            configurationDirectory: "./tool",
+            sharedNamespaces: ["crm"]
+          }
+        }
+      })
+    );
+
+    const readRes = ConfigurationManifestReader.readApplication(manifestPath, "Tool");
+    expect(readRes.ok).toBe(true);
+    if (readRes.ok) {
+      expect(readRes.value.namespaceFiles).toEqual({ crm: path.resolve(tempDir, "shared", "crm.json") });
+    }
+
+    ProtectedFileSystem.createFile(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        namespaceRegistry: { crm: "./shared/crm.json" },
+        applications: { Tool: { configurationDirectory: "./tool", sharedNamespaces: ["missing"] } }
+      })
+    );
+    const unknownRes = ConfigurationManifestReader.readManifest(manifestPath);
+    expect(unknownRes.ok).toBe(false);
+    if (!unknownRes.ok) {
+      expect(unknownRes.category).toBe("Validation");
+      expect(unknownRes.message).toContain("unknown namespaceRegistry entry 'missing'");
+    }
+  });
+
+  it("manifestReader_prototypeLikeNamespace_resolvesAsOwnRegistryEntry", () => {
+    const payload = JSON.parse(
+      '{"version":1,"namespaceRegistry":{"__proto__":"./shared/proto.json"},"applications":{"Tool":{"configurationDirectory":"./tool","sharedNamespaces":["__proto__"]}}}'
+    ) as Record<string, unknown>;
+    ProtectedFileSystem.createFile(manifestPath, JSON.stringify(payload));
+
+    const readRes = ConfigurationManifestReader.readApplication(manifestPath, "Tool");
+
+    expect(readRes.ok).toBe(true);
+    if (readRes.ok) {
+      expect(readRes.value.namespaceFiles).toEqual(Object.fromEntries([["__proto__", path.resolve(tempDir, "shared", "proto.json")]]));
+    }
+  });
+
+  it("manifestWriter_updatesPreserveNamespaceRegistryAndApplicationOptIns", async () => {
+    ProtectedFileSystem.createFile(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        namespaceRegistry: { crm: "./shared/crm.json" },
+        applications: {
+          Tool: { configurationDirectory: "./tool", sharedNamespaces: ["crm"] }
+        }
+      })
+    );
+
+    const directoryRes = ConfigurationManifestWriter.setConfigurationDirectory(
+      manifestPath,
+      "Tool",
+      "./updated-tool"
+    );
+    expect(directoryRes.ok).toBe(true);
+    const vaultRes = await ConfigurationManifestWriter.setVault(manifestPath, {
+      name: "test-vault",
+      kind: "test"
+    });
+    expect(vaultRes.ok).toBe(true);
+
+    const raw = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+      namespaceRegistry: Record<string, string>;
+      applications: Record<string, { sharedNamespaces: string[] }>;
+    };
+    expect(raw.namespaceRegistry).toEqual({ crm: "./shared/crm.json" });
+    expect(raw.applications.Tool?.sharedNamespaces).toEqual(["crm"]);
+  });
+
   it("manifestReader_withCommentsAndTrailingCommas_parsesRootKeyVaultsAndTimeout", () => {
     const annotatedJsonc = `{
       // Manifest version

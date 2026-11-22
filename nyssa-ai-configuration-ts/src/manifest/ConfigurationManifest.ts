@@ -3,6 +3,7 @@
 // `-- ConfigurationManifest
 //     +-- applications
 //     +-- keyVaults
+//     +-- namespaceRegistry
 //     `-- version
 
 import type { ApplicationManifestEntry } from "./ApplicationManifestEntry.js";
@@ -14,5 +15,6 @@ import type { VaultManifestEntry } from "./VaultManifestEntry.js";
 export interface ConfigurationManifest {
   readonly version: number;
   readonly keyVaults?: Readonly<Record<string, VaultManifestEntry>> | undefined;
+  readonly namespaceRegistry?: Readonly<Record<string, string>> | undefined;
   readonly applications?: Readonly<Record<string, ApplicationManifestEntry>> | undefined;
 }

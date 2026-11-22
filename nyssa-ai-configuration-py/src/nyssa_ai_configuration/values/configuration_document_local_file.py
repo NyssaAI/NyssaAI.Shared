@@ -2,7 +2,7 @@
 # Public interface:
 # `-- ConfigurationDocumentLocalFile
 #     +-- modify(mutator)
-#     +-- new(configuration_directory, namespace, lock_timeout_ms, write_interceptor, logger, clock)
+#     +-- new(configuration_directory, namespace, lock_timeout_ms, write_interceptor, logger, clock, document_path)
 #     +-- read()
 #     `-- write(entries)
 """Local file-backed configuration namespace document."""
@@ -33,11 +33,16 @@ class ConfigurationDocumentLocalFile:
         write_interceptor: Callable[[str], Result[None]] | None = None,
         logger: ConfigurationLogger | None = None,
         clock: Callable[[], float] = time.monotonic,
+        document_path: str | Path | None = None,
     ) -> None:
         """Initialize for a specific namespace inside configuration_directory."""
         self.namespace = namespace
-        self._dir = Path(str(configuration_directory)).resolve()
-        self.file_path = (self._dir / f"{namespace}.json").resolve()
+        self.file_path = (
+            Path(str(document_path)).resolve()
+            if document_path is not None
+            else (Path(str(configuration_directory)).resolve() / f"{namespace}.json").resolve()
+        )
+        self._dir = self.file_path.parent
         self._lock_timeout_ms = lock_timeout_ms
         self._write_interceptor = write_interceptor
         self._logger = logger

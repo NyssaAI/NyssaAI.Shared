@@ -17,6 +17,7 @@ import { ok, fail, type Result } from "@nyssa-ai/result";
 import { DirectorySafety } from "../fileSecurity/DirectorySafety.js";
 import { TimeSpanParser } from "./TimeSpanParser.js";
 import { ManifestVaultValidator } from "./ManifestVaultValidator.js";
+import { ManifestNamespaceRegistry } from "./ManifestNamespaceRegistry.js";
 import type { ConfigurationManifest } from "./ConfigurationManifest.js";
 import type { ApplicationManifestEntry } from "./ApplicationManifestEntry.js";
 import type { VaultManifestEntry } from "./VaultManifestEntry.js";
@@ -119,6 +120,10 @@ export class ConfigurationManifestReader {
       );
     }
 
+    const namespaceRegistryRes = ManifestNamespaceRegistry.parse(manifestPath, root["namespaceRegistry"]);
+    if (!namespaceRegistryRes.ok) return namespaceRegistryRes;
+    const normalizedNamespaceRegistry = namespaceRegistryRes.value;
+
     const normalizedApps: Record<string, ApplicationManifestEntry> = {};
     for (const [appName, rawSection] of Object.entries((rawApps as Record<string, unknown> | undefined) ?? {})) {
       if (!rawSection || typeof rawSection !== "object" || Array.isArray(rawSection)) {
@@ -134,6 +139,13 @@ export class ConfigurationManifestReader {
           "Validation"
         );
       }
+      const namespaceFilesRes = ManifestNamespaceRegistry.resolveApplicationFiles(
+        manifestPath,
+        appName,
+        sectionObj["sharedNamespaces"],
+        normalizedNamespaceRegistry
+      );
+      if (!namespaceFilesRes.ok) return namespaceFilesRes;
       const { keyVault: _ignored, ...rest } = sectionObj;
       void _ignored;
       normalizedApps[appName] = rest as ApplicationManifestEntry;
@@ -151,6 +163,7 @@ export class ConfigurationManifestReader {
     return ok({
       version: this.SUPPORTED_VERSION,
       keyVaults: normalizedVaults,
+      namespaceRegistry: normalizedNamespaceRegistry,
       applications: normalizedApps
     });
   }
@@ -182,6 +195,14 @@ export class ConfigurationManifestReader {
         "NotFound"
       );
     }
+
+    const namespaceFilesRes = ManifestNamespaceRegistry.resolveApplicationFiles(
+      manifestPath,
+      applicationName,
+      section.sharedNamespaces,
+      manifest.namespaceRegistry ?? {}
+    );
+    if (!namespaceFilesRes.ok) return namespaceFilesRes;
 
     let lockTimeoutMs = this.DEFAULT_LOCK_TIMEOUT_MS;
     if (section.lockTimeoutMs !== undefined && section.lockTimeoutMs !== null) {
@@ -215,7 +236,8 @@ export class ConfigurationManifestReader {
     return ok({
       configurationDirectory: this.resolveDirectory(manifestPath, section.configurationDirectory),
       lockTimeoutMs,
-      keyVaults: manifest.keyVaults ?? {}
+      keyVaults: manifest.keyVaults ?? {},
+      namespaceFiles: namespaceFilesRes.value
     });
   }
 

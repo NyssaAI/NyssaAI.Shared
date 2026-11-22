@@ -82,6 +82,7 @@ class ConfigurationBootstrap:
 
         manifest_vaults = doc_res.value.key_vaults if doc_res.ok else {}
         existing = doc_res.value.applications.get(app_name) if doc_res.ok else None
+        namespace_files = dict(existing.namespace_files) if existing is not None else {}
         if existing is not None:
             config_dir = existing.configuration_directory
             timeout_ms = options.lock_timeout_ms if options.lock_timeout_ms is not None else existing.lock_timeout_ms
@@ -101,6 +102,13 @@ class ConfigurationBootstrap:
             )
             if not prov_res.ok:
                 return prov_res
+            refreshed = ConfigurationManifestReader.read_manifest(manifest_path)
+            if not refreshed.ok:
+                return refreshed
+            refreshed_app = refreshed.value.applications.get(app_name)
+            if refreshed_app is None:
+                return fail(f"manifest: '{manifest_path}' has no section for '{app_name}' after provisioning", "Validation")
+            namespace_files = dict(refreshed_app.namespace_files)
 
         unsealed_res = cls._unseal_manifest_vaults(manifest_path, manifest_vaults, keyring, manifest_keyring)
         if not unsealed_res.ok:
@@ -137,7 +145,16 @@ class ConfigurationBootstrap:
         vaults, credentials, vault_auth = wired_res.value
 
         store = ConfigurationStore(
-            config_dir, timeout_ms, cipher, vaults, credentials, oauth_provider, protector, logger, clock
+            config_dir,
+            timeout_ms,
+            cipher,
+            vaults,
+            credentials,
+            oauth_provider,
+            protector,
+            logger,
+            clock,
+            namespace_files,
         )
         store_box.append(store)
         return ok((app_name, config_dir, timeout_ms, store, vault_auth))

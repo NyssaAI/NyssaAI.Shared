@@ -274,6 +274,10 @@ internal sealed class ConfigurationDocumentLocalFile : IConfigurationDocument
             return Result<IReadOnlyDictionary<string, ConfigurationValue>>.Success(
                 new Dictionary<string, ConfigurationValue>(StringComparer.Ordinal));
 
+        var fileSafe = DirectorySafety.VerifyFile(_path);
+        if (fileSafe.IsFailure)
+            return Result<IReadOnlyDictionary<string, ConfigurationValue>>.Failure(fileSafe.Errors);
+
         // This is the adapter boundary: System.Text.Json and the file system throw here, and
         // nothing above this method ever sees those exceptions.
         try

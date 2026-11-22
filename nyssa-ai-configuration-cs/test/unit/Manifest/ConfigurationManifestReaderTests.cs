@@ -86,6 +86,51 @@ public sealed class ConfigurationManifestReaderTests
     }
 
     [Fact]
+    public void ReadApplication_ResolvesOnlyOptedInNamespaceFilesBesideTheManifest()
+    {
+        using var home = new TemporaryDirectory();
+        var path = Write(home.Path, """
+            {
+              "version": 1,
+              "namespaceRegistry": { "crm": "./shared/crm.json", "private": "./shared/private.json" },
+              "applications": {
+                "tool": {
+                  "configurationDirectory": "tool",
+                  "sharedNamespaces": ["crm"]
+                }
+              }
+            }
+            """);
+
+        var read = ConfigurationManifestReader.ReadApplication(path, "tool");
+
+        Assert.True(read.IsSuccess, read.ToString());
+        Assert.Equal(Path.Combine(Path.GetDirectoryName(path)!, "shared", "crm.json"), read.Value.NamespaceFiles["crm"]);
+        Assert.False(read.Value.NamespaceFiles.ContainsKey("private"));
+    }
+
+    [Fact]
+    public void Read_UnknownSharedNamespace_IsAValidationFailure()
+    {
+        using var home = new TemporaryDirectory();
+        var path = Write(home.Path, """
+            {
+              "version": 1,
+              "namespaceRegistry": { "crm": "./shared/crm.json" },
+              "applications": {
+                "tool": { "configurationDirectory": "tool", "sharedNamespaces": ["missing"] }
+              }
+            }
+            """);
+
+        var read = ConfigurationManifestReader.Read(path);
+
+        Assert.True(read.IsFailure);
+        Assert.Equal(ErrorCategory.Validation, Assert.Single(read.Errors).Category);
+        Assert.Contains("unknown namespaceRegistry entry 'missing'", read.Errors[0].TechnicalMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReadApplication_KeepsAnAbsoluteDirectory()
     {
         using var home = new TemporaryDirectory();

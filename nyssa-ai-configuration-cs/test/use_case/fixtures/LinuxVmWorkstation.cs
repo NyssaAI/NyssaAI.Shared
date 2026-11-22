@@ -27,9 +27,10 @@ public sealed class LinuxVmWorkstation : IDisposable
 
         try
         {
+            // Model a host rather than Docker so each language exercises the shared Linux keyring.
             _containerId = RunHostProcess(
                 "docker",
-                ["run", "-d", "--rm", "--tmpfs", "/tmp/keyrings:rw,exec,mode=0700", "-v", $"{repoRoot}:/repo:ro", "-v", $"{hostBin}:/host-bin:ro", ImageName, "sleep", "300"],
+                ["run", "-d", "--rm", "--tmpfs", "/tmp/keyrings:rw,exec,mode=0700", "-v", $"{repoRoot}:/repo:ro", "-v", $"{hostBin}:/host-bin:ro", ImageName, "bash", "-lc", "rm -f /.dockerenv /run/.containerenv; exec sleep 300"],
                 stdin: null
             ).Trim();
         }
@@ -93,7 +94,7 @@ public sealed class LinuxVmWorkstation : IDisposable
     public void WriteWithPython(string applicationName, string @namespace, string key, string value, string? provider = null, string? manifestPath = null, string? configDirectory = null) =>
         ExecBash(
             $$"""
-            PYTHONPATH=/repo/nyssa-ai-configuration-py/src /opt/venv/bin/python - {{Quote(applicationName)}} {{Quote(@namespace)}} {{Quote(key)}} {{Quote(value)}} {{Quote(provider ?? "")}} {{Quote(manifestPath ?? "")}} {{Quote(configDirectory ?? "")}} <<'EOF'
+            PYTHONPATH=/repo/nyssa-ai-result-py/src:/repo/nyssa-ai-configuration-py/src /opt/venv/bin/python - {{Quote(applicationName)}} {{Quote(@namespace)}} {{Quote(key)}} {{Quote(value)}} {{Quote(provider ?? "")}} {{Quote(manifestPath ?? "")}} {{Quote(configDirectory ?? "")}} <<'EOF'
             import sys
             from nyssa_ai_configuration import BootstrapOptions, ConfigurationClient
             _, app_name, ns, key, val, provider, manifest_path, config_dir = sys.argv
@@ -109,7 +110,7 @@ public sealed class LinuxVmWorkstation : IDisposable
     public string ReadWithPython(string applicationName, string @namespace, string key, string? manifestPath = null, string? configDirectory = null) =>
         ExecBash(
             $$"""
-            PYTHONPATH=/repo/nyssa-ai-configuration-py/src /opt/venv/bin/python - {{Quote(applicationName)}} {{Quote(@namespace)}} {{Quote(key)}} {{Quote(manifestPath ?? "")}} {{Quote(configDirectory ?? "")}} <<'EOF'
+            PYTHONPATH=/repo/nyssa-ai-result-py/src:/repo/nyssa-ai-configuration-py/src /opt/venv/bin/python - {{Quote(applicationName)}} {{Quote(@namespace)}} {{Quote(key)}} {{Quote(manifestPath ?? "")}} {{Quote(configDirectory ?? "")}} <<'EOF'
             import sys
             from nyssa_ai_configuration import BootstrapOptions, ConfigurationClient
             _, app_name, ns, key, manifest_path, config_dir = sys.argv
@@ -137,7 +138,7 @@ public sealed class LinuxVmWorkstation : IDisposable
     {
         var credName = $"{service}.{account}";
         var credFile = $"/home/svc_acme/.nyssa-ai/credentials/{credName}.cred";
-        return ExecBash($"systemd-creds decrypt --name={Quote(credName)} --user {Quote(credFile)} -").Trim();
+        return ExecBash($"systemd-creds decrypt --name={Quote(credName)} {Quote(credFile)} -").Trim();
     }
 
     private void InitializeVmEnvironment()
@@ -224,9 +225,10 @@ public sealed class LinuxVmWorkstation : IDisposable
             try
             {
                 const string dockerfile = """
-                    FROM nyssa-pilot-warm:2026-10-12
+                    FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:bef136a371963aaa46ec97882845ef6f54dec15728bb4b128b1c2a400ffbc9b4
                     RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                        dbus-x11 gnome-keyring libsecret-tools libsecret-1-0 && rm -rf /var/lib/apt/lists/* && \
+                        ca-certificates curl dbus-x11 gnome-keyring libsecret-tools libsecret-1-0 nodejs systemd && \
+                        rm -rf /var/lib/apt/lists/* && \
                         curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh && \
                         UV_PYTHON_INSTALL_DIR=/opt/python uv venv /opt/venv --python 3.13 && \
                         uv pip install --python /opt/venv/bin/python cryptography
@@ -267,15 +269,17 @@ public sealed class LinuxVmWorkstation : IDisposable
 
         using (var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start {fileName}."))
         {
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
             if (stdin is not null)
             {
                 process.StandardInput.Write(stdin);
                 process.StandardInput.Close();
             }
 
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
             process.WaitForExit();
+            var stdout = stdoutTask.GetAwaiter().GetResult();
+            var stderr = stderrTask.GetAwaiter().GetResult();
             if (process.ExitCode != 0)
             {
                 var details = new StringBuilder()

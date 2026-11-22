@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NyssaAI.Configuration.Encryption;
 using NyssaAI.Configuration.Manifest;
 using NyssaAI.Configuration.Tests.Support;
@@ -75,6 +76,40 @@ public sealed class ConfigurationManifestWriterTests
         var rawJson = File.ReadAllText(path);
         Assert.DoesNotContain("\"name\":", rawJson, StringComparison.Ordinal);
         Assert.DoesNotContain("\"settings\":", rawJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SetConfigurationDirectory_PreservesNamespaceRegistryAndApplicationOptIns()
+    {
+        using var home = new TemporaryDirectory();
+        var path = ConfigurationManifestReader.DefaultPathFor(home.Path);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, """
+            {
+              "version": 1,
+              "namespaceRegistry": { "crm": "./shared/crm.json" },
+              "applications": {
+                "tool": {
+                  "configurationDirectory": "old-tool",
+                  "sharedNamespaces": ["crm"]
+                }
+              }
+            }
+            """);
+
+        var written = ConfigurationManifestWriter.SetConfigurationDirectory(
+            path, "tool", Path.Combine(home.Path, "new-tool"));
+
+        Assert.True(written.IsSuccess, written.ToString());
+        var read = ConfigurationManifestReader.ReadApplication(path, "tool");
+        Assert.True(read.IsSuccess, read.ToString());
+        Assert.Equal(
+            Path.Combine(Path.GetDirectoryName(path)!, "shared", "crm.json"),
+            read.Value.NamespaceFiles["crm"]);
+        using var json = JsonDocument.Parse(File.ReadAllText(path));
+        Assert.Equal("./shared/crm.json", json.RootElement.GetProperty("namespaceRegistry").GetProperty("crm").GetString());
+        Assert.Equal("crm", json.RootElement.GetProperty("applications").GetProperty("tool")
+            .GetProperty("sharedNamespaces")[0].GetString());
     }
 
     [Fact]
